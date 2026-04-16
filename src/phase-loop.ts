@@ -69,9 +69,8 @@ async function askContinue(nextLabel: string): Promise<boolean> {
     output: process.stdout,
   })
   return new Promise(resolve => {
-    console.log(`\n${DIM}${HR}${RESET}`)
-    process.stdout.write(`  ${BOLD}${YELLOW}▶  Proceed to ${nextLabel}? [Y/n]${RESET} `)
-    rl.question('', answer => {
+    const prompt = `\n${DIM}${HR}${RESET}\n  ${BOLD}${YELLOW}▶  Proceed to ${nextLabel}? [Y/n]${RESET} `
+    rl.question(prompt, answer => {
       rl.close()
       console.log(`${DIM}${HR}${RESET}`)
       resolve(answer.trim().toLowerCase() !== 'n')
