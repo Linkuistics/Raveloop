@@ -38,10 +38,14 @@ export class ClaudeCodeAgent implements Agent {
   }
 
   async invokeHeadless(prompt: string, ctx: PlanContext, phase: LLMPhase): Promise<string> {
-    const args = ['--allow-dangerously-skip-permissions', '-p', prompt, '--verbose', '--output-format', 'stream-json']
+    const args = [
+      '--bare',                          // skip hooks, plugins, MCP, auto-memory
+      '--dangerously-skip-permissions',   // headless needs no permission prompts
+      '-p', prompt,
+      '--verbose', '--output-format', 'stream-json',
+    ]
     const model = this.config.models[phase]
     if (model) args.push('--model', model)
-    if (this.dangerous) args.push('--dangerously-skip-permissions')
 
     return new Promise((resolve, reject) => {
       const chunks: string[] = []
