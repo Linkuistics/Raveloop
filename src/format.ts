@@ -222,8 +222,8 @@ export function formatResultText(text: string): string {
 export function writeLine(output: FormattedOutput): void {
   if (!output.text) return
   if (output.persist) {
-    // Clear any lingering progress, print permanently
-    process.stderr.write(RESTORE_CURSOR + CLEAR_LINE + output.text + '\n')
+    // Clear any lingering progress, print permanently, then save cursor below persist content
+    process.stderr.write(RESTORE_CURSOR + CLEAR_LINE + output.text + '\n' + SAVE_CURSOR)
   } else {
     // Restore to saved position, clear line, write progress, then save position for next restore
     const cols = process.stderr.columns ?? 80

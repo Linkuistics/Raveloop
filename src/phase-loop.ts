@@ -74,7 +74,8 @@ async function askContinue(nextLabel: string): Promise<boolean> {
 
 async function handleScriptPhase(
   phase: ScriptPhase,
-  planDir: string
+  planDir: string,
+  headroom: number
 ): Promise<boolean> {
   const name = planName(planDir)
 
@@ -87,7 +88,12 @@ async function handleScriptPhase(
 
     case ScriptPhase.GitCommitReflect: {
       showCommit('reflect', name, gitCommitPlan(planDir, name, 'reflect'))
-      writePhase(planDir, LLMPhase.Dream)
+      if (shouldDream(planDir, headroom)) {
+        writePhase(planDir, LLMPhase.Dream)
+      } else {
+        console.log(`  ${DIM}⏭  Dream skipped (memory within headroom)${RESET}`)
+        writePhase(planDir, ScriptPhase.GitCommitDream)
+      }
       return true
     }
 
@@ -122,7 +128,7 @@ export async function phaseLoop(
     const phase = readPhase(ctx.planDir)
 
     if (isScriptPhase(phase)) {
-      const shouldContinue = await handleScriptPhase(phase, ctx.planDir)
+      const shouldContinue = await handleScriptPhase(phase, ctx.planDir, config.headroom)
       if (!shouldContinue) {
         console.log(`\n${DIM}Exiting.${RESET}`)
         return
@@ -154,14 +160,6 @@ export async function phaseLoop(
     if (newPhase === phase) {
       errorBanner(`Phase did not advance from ${phase}. Stopping.`)
       return
-    }
-
-    // Dream trigger: after reflect, check if dream is needed
-    if (readPhase(ctx.planDir) === LLMPhase.Dream) {
-      if (!shouldDream(ctx.planDir, config.headroom)) {
-        console.log(`  ${DIM}⏭  Dream skipped (memory within headroom)${RESET}`)
-        writePhase(ctx.planDir, ScriptPhase.GitCommitDream)
-      }
     }
 
     // After dream phase completes, update baseline
