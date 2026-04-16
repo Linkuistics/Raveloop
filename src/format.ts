@@ -76,13 +76,45 @@ export function formatToolCall(tool: ToolCall, phase?: LLMPhase): FormattedOutpu
  */
 export function extractEditContext(oldStr?: string, newStr?: string): string | undefined {
   const source = newStr ?? oldStr ?? ''
-  // Look for a markdown heading
   const headingMatch = source.match(/^#{1,4}\s+(.{1,60})/m)
   if (headingMatch) return headingMatch[1].trim()
-  // Look for a bold item
   const boldMatch = source.match(/\*\*(.{1,60}?)\*\*/m)
   if (boldMatch) return boldMatch[1].trim()
   return undefined
+}
+
+/**
+ * Clean up a tool name for display.
+ * Strips MCP prefixes: mcp__server-name__tool_name → tool_name
+ */
+export function cleanToolName(name: string): string {
+  const mcpMatch = name.match(/^mcp__[^_]+(?:__)?(.+)$/)
+  if (mcpMatch) return mcpMatch[1]
+  return name
+}
+
+/** Common parameter keys to extract as detail, in priority order. */
+const DETAIL_KEYS = ['path', 'file_path', 'command', 'pattern', 'query', 'url', 'prompt', 'mode']
+
+/**
+ * Extract a meaningful detail string from a tool's input parameters.
+ */
+export function extractToolDetail(input: Record<string, unknown>): string {
+  for (const key of DETAIL_KEYS) {
+    const val = input[key]
+    if (typeof val === 'string' && val.length > 0) {
+      const truncated = val.length > 80 ? val.slice(0, 77) + '...' : val
+      return truncated
+    }
+  }
+  // Fallback: show first string-valued parameter
+  for (const [, val] of Object.entries(input)) {
+    if (typeof val === 'string' && val.length > 0) {
+      const truncated = val.length > 60 ? val.slice(0, 57) + '...' : val
+      return truncated
+    }
+  }
+  return ''
 }
 
 /**

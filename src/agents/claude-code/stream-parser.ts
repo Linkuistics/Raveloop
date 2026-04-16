@@ -1,5 +1,5 @@
 import { type LLMPhase } from '../../types.js'
-import { formatToolCall, extractEditContext, formatResultText, type FormattedOutput } from '../../format.js'
+import { formatToolCall, extractEditContext, extractToolDetail, cleanToolName, formatResultText, type FormattedOutput } from '../../format.js'
 
 interface ContentBlock {
   type: string
@@ -52,7 +52,10 @@ export function formatClaudeStreamLine(line: string, phase?: LLMPhase): Formatte
           case 'Bash':
             return formatToolCall({ name: block.name, detail: (input.command as string).slice(0, 120) }, phase)
           default:
-            return formatToolCall({ name: block.name }, phase)
+            return formatToolCall({
+              name: cleanToolName(block.name),
+              detail: extractToolDetail(input),
+            }, phase)
         }
       }
     }

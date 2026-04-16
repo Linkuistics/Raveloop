@@ -1,5 +1,5 @@
 import { type LLMPhase } from '../../types.js'
-import { formatToolCall, extractEditContext, formatResultText, type FormattedOutput } from '../../format.js'
+import { formatToolCall, extractEditContext, extractToolDetail, cleanToolName, formatResultText, type FormattedOutput } from '../../format.js'
 
 export function formatPiStreamLine(line: string, phase?: LLMPhase): FormattedOutput | null {
   if (!line.trim()) return null
@@ -33,7 +33,10 @@ export function formatPiStreamLine(line: string, phase?: LLMPhase): FormattedOut
       case 'bash':
         return formatToolCall({ name, detail: (input.command as string).slice(0, 120) }, phase)
       default:
-        return formatToolCall({ name }, phase)
+        return formatToolCall({
+          name: cleanToolName(name),
+          detail: extractToolDetail(input),
+        }, phase)
     }
   }
 
