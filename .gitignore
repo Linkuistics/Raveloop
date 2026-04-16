@@ -1,0 +1,7 @@
+# Pi session storage (tests may use ephemeral local dirs)
+.pi/
+*.session.jsonl
+# Test tee files
+test/tmp/
+# OS
+.DS_Store
