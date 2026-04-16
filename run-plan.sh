@@ -299,10 +299,228 @@ compose_prompt() {
 }
 
 # -----------------------------------------------------------------------------
-# Main loop placeholder (guarded — only runs when executed directly)
+# Main loop (guarded — only runs if this script is executed directly)
 # -----------------------------------------------------------------------------
 
 if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
-    echo "run-plan.sh: main loop not yet implemented" >&2
-    exit 1
+    PLAN_ARG=""
+
+    for arg in "$@"; do
+        case "$arg" in
+            -*)
+                echo "Unknown option: $arg" >&2
+                echo "Usage: $0 <plan-dir>" >&2
+                exit 1
+                ;;
+            *)
+                if [ -n "$PLAN_ARG" ]; then
+                    echo "Unexpected extra argument: $arg" >&2
+                    exit 1
+                fi
+                PLAN_ARG="$arg"
+                ;;
+        esac
+    done
+
+    if [ -z "$PLAN_ARG" ]; then
+        echo "Usage: $0 <plan-dir>" >&2
+        exit 1
+    fi
+
+    if [ ! -d "$PLAN_ARG" ]; then
+        echo "Error: $PLAN_ARG is not a directory" >&2
+        exit 1
+    fi
+
+    DIR="$(cd "$PLAN_ARG" && pwd)"
+
+    # Walk up from the plan dir to find the project root (.git)
+    PROJECT="$DIR"
+    while [ ! -d "$PROJECT/.git" ] && [ "$PROJECT" != "/" ]; do
+        PROJECT="$(dirname "$PROJECT")"
+    done
+    if [ "$PROJECT" = "/" ]; then
+        echo "Error: no git project root found above $DIR" >&2
+        exit 1
+    fi
+
+    DEV_ROOT="$(dirname "$PROJECT")"
+    PLAN_NAME="$(basename "$DIR")"
+
+    SYSTEM_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/system-prompt.md"
+    if [ ! -f "$SYSTEM_PROMPT_FILE" ]; then
+        echo "Error: $SYSTEM_PROMPT_FILE missing" >&2
+        exit 1
+    fi
+    SYSTEM_PROMPT_CONTENT="$(cat "$SYSTEM_PROMPT_FILE")"
+
+    # -------------------------------------------------------------------------
+    # Auto-memory system: compute project memory directory
+    # -------------------------------------------------------------------------
+    MEMORY_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/memory-prompt.md"
+    PROJECT_PATH_ENCODED="$(printf '%s' "$PROJECT" | tr '/' '-')"
+    MEMORY_DIR="$HOME/.claude-pi/projects/$PROJECT_PATH_ENCODED/memory"
+    MEMORY_INDEX="$MEMORY_DIR/MEMORY.md"
+    mkdir -p "$MEMORY_DIR"
+
+    MEMORY_PROMPT_CONTENT=""
+    if [ -f "$MEMORY_PROMPT_FILE" ]; then
+        MEMORY_PROMPT_CONTENT="$(sed "s|{{MEMORY_DIR}}|$MEMORY_DIR|g" "$MEMORY_PROMPT_FILE")"
+    fi
+
+    MEMORY_INDEX_CONTENT=""
+    if [ -f "$MEMORY_INDEX" ]; then
+        MEMORY_INDEX_CONTENT="$(cat "$MEMORY_INDEX")"
+    fi
+
+    while true; do
+        PHASE=$(cat "$DIR/phase.md" 2>/dev/null || echo work)
+        PROMPT="$(compose_prompt "$PHASE")"
+        printf '\n=== %s ===\n' "$PHASE"
+
+        case "$PHASE" in
+            work)    PHASE_MODEL="$WORK_MODEL";    PHASE_THINKING="$WORK_THINKING"    ;;
+            reflect) PHASE_MODEL="$REFLECT_MODEL"; PHASE_THINKING="$REFLECT_THINKING" ;;
+            compact) PHASE_MODEL="$COMPACT_MODEL"; PHASE_THINKING="$COMPACT_THINKING" ;;
+            triage)  PHASE_MODEL="$TRIAGE_MODEL";  PHASE_THINKING="$TRIAGE_THINKING"  ;;
+            *)
+                echo "Error: unknown phase '$PHASE' in $DIR/phase.md" >&2
+                exit 1
+                ;;
+        esac
+
+        PI_ARGS=(--no-session --append-system-prompt "$SYSTEM_PROMPT_CONTENT")
+        if [ -n "$PROVIDER" ]; then
+            PI_ARGS+=(--provider "$PROVIDER")
+        fi
+        if [ -n "$PHASE_MODEL" ]; then
+            PI_ARGS+=(--model "$PHASE_MODEL")
+        fi
+        if [ -n "$PHASE_THINKING" ]; then
+            PI_ARGS+=(--thinking "$PHASE_THINKING")
+        fi
+
+        # Auto-memory injection (phase-dependent):
+        # Work phase: full read+write (instructions + index)
+        # Headless phases: read-only context (index only)
+        if [ "$PHASE" = work ] && [ -n "$MEMORY_PROMPT_CONTENT" ]; then
+            PI_ARGS+=(--append-system-prompt "$MEMORY_PROMPT_CONTENT")
+        fi
+        if [ -n "$MEMORY_INDEX_CONTENT" ]; then
+            PI_ARGS+=(--append-system-prompt "## Current Memory Index
+$MEMORY_INDEX_CONTENT")
+        fi
+
+        # Dry-run escape hatch
+        if [ -n "${LLM_CONTEXT_PI_DRYRUN:-}" ]; then
+            printf '\n--- DRY RUN: would invoke pi with: ---\n'
+            printf '  provider=%s model=%s thinking=%s\n' "$PROVIDER" "$PHASE_MODEL" "$PHASE_THINKING"
+            printf '  prompt length=%d chars\n' "${#PROMPT}"
+            printf '  prompt head:\n'
+            printf '%s' "$PROMPT" | head -5
+            printf '\n'
+            case "$PHASE" in
+                work)    echo reflect > "$DIR/phase.md" ;;
+                reflect) echo compact > "$DIR/phase.md" ;;
+                compact) echo triage  > "$DIR/phase.md" ;;
+                triage)  echo work    > "$DIR/phase.md"
+                         rm -f "$DIR/propagation.out.yaml"
+                         : > "$DIR/_dryrun_triage_done"
+                         ;;
+            esac
+            NEW_PHASE=$(cat "$DIR/phase.md" 2>/dev/null || echo work)
+            if [ -f "$DIR/_dryrun_triage_done" ]; then
+                rm -f "$DIR/_dryrun_triage_done"
+                printf '\n=== dry run complete — all phases cycled ===\n'
+                exit 0
+            fi
+            continue
+        fi
+
+        case "$PHASE" in
+            work)
+                rm -f "$DIR/latest-session.md"
+                if [ -x "$DIR/pre-work.sh" ]; then
+                    printf '\n=== pre-work hook ===\n'
+                    if ! (cd "$PROJECT" && "$DIR/pre-work.sh"); then
+                        echo "Error: $DIR/pre-work.sh failed — aborting cycle" >&2
+                        exit 1
+                    fi
+                fi
+                (cd "$PROJECT" && pi "${PI_ARGS[@]}" "$PROMPT")
+                ;;
+            reflect|compact|triage)
+                (cd "$PROJECT" && pi "${PI_ARGS[@]}" --mode json -p "$PROMPT" \
+                 | format_pi_stream)
+                printf '\n'
+                ;;
+        esac
+
+        NEW_PHASE=$(cat "$DIR/phase.md" 2>/dev/null || echo work)
+
+        if [ "$PHASE" = "$NEW_PHASE" ]; then
+            printf '\n=== %s did not advance phase.md — exiting ===\n' "$PHASE"
+            exit 0
+        fi
+
+        # Session-log append (work only, guarded on advance).
+        if [ "$PHASE" = work ] && [ -s "$DIR/latest-session.md" ]; then
+            printf '\n' >> "$DIR/session-log.md"
+            cat "$DIR/latest-session.md" >> "$DIR/session-log.md"
+        fi
+
+        # Compact-baseline update (compact only, guarded on advance).
+        if [ "$PHASE" = compact ]; then
+            wc -w < "$DIR/memory.md" 2>/dev/null | awk '{print $1}' > "$DIR/compact-baseline"
+        fi
+
+        # Reflect-to-compact relative trigger.
+        if [ "$PHASE" = reflect ]; then
+            BASELINE=$(cat "$DIR/compact-baseline" 2>/dev/null || echo 0)
+            WORDS=$(wc -w < "$DIR/memory.md" 2>/dev/null | awk '{print $1}')
+            WORDS=${WORDS:-0}
+            if [ "$WORDS" -le $((BASELINE + HEADROOM)) ]; then
+                echo triage > "$DIR/phase.md"
+            fi
+        fi
+
+        # After triage: dispatch cross-plan propagations (if any).
+        if [ "$PHASE" = triage ] && [ -f "$DIR/propagation.out.yaml" ]; then
+            propagation_count=0
+            while IFS=$'\t' read -r p_kind p_target p_summary; do
+                if [ -z "${p_target:-}" ]; then
+                    continue
+                fi
+                if [ ! -d "$p_target" ]; then
+                    printf '\n=== propagation skip: %s does not exist ===\n' "$p_target" >&2
+                    continue
+                fi
+                propagation_count=$((propagation_count + 1))
+                printf '\n=== propagation → %s (%s) ===\n' "$p_target" "$p_kind"
+
+                PROPAGATION_PROMPT="You are receiving a cross-plan propagation from the LLM_CONTEXT_PI system.
+
+Source plan: $DIR
+This plan: $p_target
+Relationship: the source is your $p_kind
+
+Learning from the source plan:
+$p_summary
+
+Read this plan's backlog.md and memory.md at $p_target, decide what (if anything) should be added to backlog.md or updated in memory.md as a result of the learning above, apply the changes using the edit and write tools, and return a one-line summary of what you did (or 'no changes needed' if you determined no update was warranted). Do not commit."
+
+                (cd "$PROJECT" && pi --no-session \
+                    --append-system-prompt "$SYSTEM_PROMPT_CONTENT" \
+                    ${PROVIDER:+--provider "$PROVIDER"} \
+                    ${TRIAGE_MODEL:+--model "$TRIAGE_MODEL"} \
+                    --mode json -p "$PROPAGATION_PROMPT" \
+                  | format_pi_stream)
+                printf '\n'
+            done < <(parse_propagation < "$DIR/propagation.out.yaml")
+
+            if [ "$propagation_count" -gt 0 ]; then
+                rm -f "$DIR/propagation.out.yaml"
+            fi
+        fi
+    done
 fi
