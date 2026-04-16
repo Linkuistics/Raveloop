@@ -74,6 +74,65 @@ format_pi_stream() {
 }
 
 # -----------------------------------------------------------------------------
+# parse_propagation — read propagation.out.yaml on stdin, emit one
+# tab-separated line per entry:
+#   <kind>\t<target>\t<summary-joined-to-one-line>
+# -----------------------------------------------------------------------------
+
+parse_propagation() {
+    awk '
+        function flush() {
+            if (have_entry) {
+                gsub(/\t/, " ", summary)
+                gsub(/[[:space:]]+$/, "", summary)
+                printf "%s\t%s\t%s\n", kind, target, summary
+            }
+            target = ""; kind = ""; summary = ""
+            in_summary = 0; summary_indent = -1
+            have_entry = 0
+        }
+        BEGIN { have_entry = 0; in_summary = 0 }
+        /^[[:space:]]*$/ {
+            if (in_summary && summary != "") summary = summary " "
+            next
+        }
+        /^propagations:[[:space:]]*$/ { next }
+        /^[[:space:]]*-[[:space:]]+target:/ {
+            flush()
+            sub(/^[[:space:]]*-[[:space:]]+target:[[:space:]]*/, "")
+            target = $0
+            have_entry = 1
+            next
+        }
+        /^[[:space:]]+kind:/ {
+            sub(/^[[:space:]]+kind:[[:space:]]*/, "")
+            kind = $0
+            next
+        }
+        /^[[:space:]]+summary:[[:space:]]*\|[[:space:]]*$/ {
+            in_summary = 1
+            summary_indent = -1
+            next
+        }
+        {
+            if (in_summary) {
+                line = $0
+                if (summary_indent == -1) {
+                    match(line, /^[[:space:]]*/)
+                    summary_indent = RLENGTH
+                }
+                if (length(line) >= summary_indent) {
+                    line = substr(line, summary_indent + 1)
+                }
+                if (summary == "") summary = line
+                else summary = summary " " line
+            }
+        }
+        END { flush() }
+    '
+}
+
+# -----------------------------------------------------------------------------
 # Main loop placeholder (guarded — only runs when executed directly)
 # -----------------------------------------------------------------------------
 
