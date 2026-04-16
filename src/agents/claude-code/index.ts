@@ -52,7 +52,7 @@ export class ClaudeCodeAgent implements Agent {
       child.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().split('\n')
         for (const line of lines) {
-          const formatted = formatClaudeStreamLine(line)
+          const formatted = formatClaudeStreamLine(line, phase)
           if (formatted) {
             process.stderr.write(formatted + '\n')
             chunks.push(formatted)

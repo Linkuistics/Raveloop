@@ -1,4 +1,7 @@
-export function formatPiStreamLine(line: string): string | null {
+import { type LLMPhase } from '../../types.js'
+import { formatToolCall } from '../../format.js'
+
+export function formatPiStreamLine(line: string, phase?: LLMPhase): string | null {
   if (!line.trim()) return null
 
   let event: Record<string, unknown>
@@ -14,24 +17,24 @@ export function formatPiStreamLine(line: string): string | null {
 
     switch (name) {
       case 'read':
-        return `  ▸ read ${input.file_path ?? input.path ?? ''}`
+        return formatToolCall({ name, path: (input.file_path ?? input.path ?? '') as string }, phase)
       case 'write':
-        return `  ▸ write ${input.file_path ?? input.path ?? ''}`
+        return formatToolCall({ name, path: (input.file_path ?? input.path ?? '') as string }, phase)
       case 'edit':
-        return `  ▸ edit ${input.file_path ?? input.path ?? ''}`
+        return formatToolCall({ name, path: (input.file_path ?? input.path ?? '') as string }, phase)
       case 'grep':
-        return `  ▸ grep "${input.pattern}" in ${input.path ?? '.'}`
+        return formatToolCall({ name, detail: `"${input.pattern}" in ${input.path ?? '.'}` }, phase)
       case 'find':
-        return `  ▸ find ${input.pattern ?? input.glob ?? ''}`
+        return formatToolCall({ name, detail: (input.pattern ?? input.glob ?? '') as string }, phase)
       case 'bash':
-        return `  ▸ bash: ${(input.command as string).slice(0, 120)}`
+        return formatToolCall({ name, detail: (input.command as string).slice(0, 120) }, phase)
       default:
-        return `  ▸ ${name}`
+        return formatToolCall({ name }, phase)
     }
   }
 
   if (event.type === 'tool_execution_end' && event.isError) {
-    return `  ✗ tool error`
+    return `  \x1b[31m✗  tool error\x1b[0m`
   }
 
   if (event.type === 'message_end') {

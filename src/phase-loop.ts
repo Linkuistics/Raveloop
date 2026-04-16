@@ -11,6 +11,7 @@ import {
   isScriptPhase,
 } from './types.js'
 import { composePrompt } from './prompt-composer.js'
+import { PHASE_INFO } from './format.js'
 import { shouldDream, updateDreamBaseline } from './dream.js'
 import { gitCommitPlan, gitSaveWorkBaseline } from './git.js'
 import { dispatchSubagents } from './subagent-dispatch.js'
@@ -23,9 +24,10 @@ const RED = '\x1b[31m'
 const RESET = '\x1b[0m'
 const HR = '────────────────────────────────────────────────────'
 
-function phaseHeader(label: string, plan: string): void {
+function phaseHeader(label: string, description: string, plan: string): void {
   console.log(`\n${DIM}${HR}${RESET}`)
   console.log(`  ${BOLD}${CYAN}◆  ${label}${RESET}${DIM}  ·  ${plan}${RESET}`)
+  console.log(`  ${DIM}${description}${RESET}`)
   console.log(`${DIM}${HR}${RESET}`)
 }
 
@@ -127,14 +129,8 @@ export async function phaseLoop(
     }
 
     // Display phase header
-    const PHASE_LABELS: Record<string, string> = {
-      [LLMPhase.Work]: 'WORK',
-      [LLMPhase.AnalyseWork]: 'ANALYSE',
-      [LLMPhase.Reflect]: 'REFLECT',
-      [LLMPhase.Dream]: 'DREAM',
-      [LLMPhase.Triage]: 'TRIAGE',
-    }
-    phaseHeader(PHASE_LABELS[phase] ?? phase, name)
+    const info = PHASE_INFO[phase]
+    phaseHeader(info?.label ?? phase, info?.description ?? '', name)
 
     // Pre-work: save baseline for analyse-work diff
     if (phase === LLMPhase.Work) {

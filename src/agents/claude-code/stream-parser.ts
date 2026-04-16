@@ -1,4 +1,7 @@
-export function formatClaudeStreamLine(line: string): string | null {
+import { type LLMPhase } from '../../types.js'
+import { formatToolCall } from '../../format.js'
+
+export function formatClaudeStreamLine(line: string, phase?: LLMPhase): string | null {
   if (!line.trim()) return null
 
   let event: Record<string, unknown>
@@ -15,19 +18,19 @@ export function formatClaudeStreamLine(line: string): string | null {
 
     switch (name) {
       case 'Read':
-        return `  ▸ Read ${input.file_path}`
+        return formatToolCall({ name, path: input.file_path as string }, phase)
       case 'Write':
-        return `  ▸ Write ${input.file_path}`
+        return formatToolCall({ name, path: input.file_path as string }, phase)
       case 'Edit':
-        return `  ▸ Edit ${input.file_path}`
+        return formatToolCall({ name, path: input.file_path as string }, phase)
       case 'Grep':
-        return `  ▸ Grep "${input.pattern}" in ${input.path ?? '.'}`
+        return formatToolCall({ name, detail: `"${input.pattern}" in ${input.path ?? '.'}` }, phase)
       case 'Glob':
-        return `  ▸ Glob ${input.pattern}`
+        return formatToolCall({ name, detail: input.pattern as string }, phase)
       case 'Bash':
-        return `  ▸ Bash: ${(input.command as string).slice(0, 120)}`
+        return formatToolCall({ name, detail: (input.command as string).slice(0, 120) }, phase)
       default:
-        return `  ▸ ${name}`
+        return formatToolCall({ name }, phase)
     }
   }
 

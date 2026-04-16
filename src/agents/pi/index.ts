@@ -76,7 +76,7 @@ export class PiAgent implements Agent {
       child.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().split('\n')
         for (const line of lines) {
-          const formatted = formatPiStreamLine(line)
+          const formatted = formatPiStreamLine(line, phase)
           if (formatted) {
             process.stderr.write(formatted + '\n')
             chunks.push(formatted)
