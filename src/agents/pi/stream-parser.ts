@@ -19,7 +19,11 @@ export function formatPiStreamLine(line: string, phase?: LLMPhase): FormattedOut
       case 'read':
         return formatToolCall({ name, path: (input.file_path ?? input.path ?? '') as string }, phase)
       case 'write':
-        return formatToolCall({ name, path: (input.file_path ?? input.path ?? '') as string }, phase)
+        return formatToolCall({
+          name,
+          path: (input.file_path ?? input.path ?? '') as string,
+          editContext: extractEditContext(undefined, (input.content ?? '') as string),
+        }, phase)
       case 'edit':
         return formatToolCall({
           name,

@@ -38,7 +38,11 @@ export function formatClaudeStreamLine(line: string, phase?: LLMPhase): Formatte
           case 'Read':
             return formatToolCall({ name: block.name, path: input.file_path as string }, phase)
           case 'Write':
-            return formatToolCall({ name: block.name, path: input.file_path as string }, phase)
+            return formatToolCall({
+              name: block.name,
+              path: input.file_path as string,
+              editContext: extractEditContext(undefined, input.content as string),
+            }, phase)
           case 'Edit':
             return formatToolCall({
               name: block.name,

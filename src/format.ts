@@ -127,6 +127,10 @@ export function formatResultText(text: string): string {
   let inInsight = false
 
   for (const line of lines) {
+    // Filter out phase.md status lines
+    if (line.match(/^(?:`?phase\.md`?|Phase)\s+(?:set to|written|→)/i)) continue
+    if (line.match(/phase\.md.*`git-commit-/)) continue
+
     // Detect insight block opening: `★ Insight ─...`
     if (line.match(/^`?★\s*Insight\s*─/)) {
       inInsight = true

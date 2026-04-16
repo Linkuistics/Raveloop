@@ -38,9 +38,9 @@ function errorBanner(msg: string): void {
 function showCommit(phaseName: string, plan: string, result: CommitResult): void {
   if (result.committed) {
     const firstLine = result.message.split('\n')[0]
-    console.log(`\n  ${DIM}⚙  COMMIT · ${phaseName}  ·  ${plan}  ·${RESET}  ${firstLine}`)
+    console.log(`\n  ${BOLD}${CYAN}⚙  COMMIT · ${phaseName}${RESET}${DIM}  ·  ${plan}  ·${RESET}  ${firstLine}`)
   } else {
-    console.log(`\n  ${DIM}⚙  COMMIT · ${phaseName}  ·  ${plan}  ·  nothing to commit${RESET}`)
+    console.log(`\n  ${BOLD}${CYAN}⚙  COMMIT · ${phaseName}${RESET}${DIM}  ·  ${plan}  ·  nothing to commit${RESET}`)
   }
 }
 
