@@ -3150,3 +3150,11 @@ git commit -m "fix: adjustments from manual verification"
 | 14 | main.rs | — | CLI wiring |
 | 15 | tests/ | 2 | Integration tests |
 | 16 | — | — | Manual verification |
+
+---
+
+## Continuation Prompt
+
+Copy and paste this to resume work in a new session:
+
+> I'm implementing the Raveloop Rust rewrite. The implementation plan is at `docs/superpowers/plans/2026-04-17-raveloop-rust-rewrite.md` and the design spec is at `docs/superpowers/specs/2026-04-16-rust-ratatui-rewrite-design.md`. The existing TypeScript source in `src/` has the exact logic to port — every function has a direct Rust equivalent. The Rust project should be created as a sibling directory at `../raveloop-cli/`. Please read the plan, check which tasks are already completed (look for checked boxes), and continue from the next incomplete task. Use subagent-driven development.
