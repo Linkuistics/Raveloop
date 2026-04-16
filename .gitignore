@@ -5,3 +5,7 @@
 test/tmp/
 # OS
 .DS_Store
+
+node_modules/
+dist/
+.pi/agents/
