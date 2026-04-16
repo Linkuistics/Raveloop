@@ -2,7 +2,12 @@ import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export function gitCommitPlan(planDir: string, planName: string, phaseName: string): boolean {
+export interface CommitResult {
+  committed: boolean
+  message: string
+}
+
+export function gitCommitPlan(planDir: string, planName: string, phaseName: string): CommitResult {
   const commitMsgPath = path.join(planDir, 'commit-message.md')
   let message: string
 
@@ -17,11 +22,11 @@ export function gitCommitPlan(planDir: string, planName: string, phaseName: stri
 
   try {
     execSync('git diff --cached --quiet', { stdio: 'pipe' })
-    return false // no changes staged
+    return { committed: false, message }
   } catch {
     // git diff --cached --quiet exits non-zero when there are staged changes
     execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { stdio: 'pipe' })
-    return true
+    return { committed: true, message }
   }
 }
 

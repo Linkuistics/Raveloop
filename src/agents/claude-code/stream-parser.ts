@@ -1,7 +1,7 @@
 import { type LLMPhase } from '../../types.js'
-import { formatToolCall } from '../../format.js'
+import { formatToolCall, type FormattedOutput } from '../../format.js'
 
-export function formatClaudeStreamLine(line: string, phase?: LLMPhase): string | null {
+export function formatClaudeStreamLine(line: string, phase?: LLMPhase): FormattedOutput | null {
   if (!line.trim()) return null
 
   let event: Record<string, unknown>
@@ -35,7 +35,7 @@ export function formatClaudeStreamLine(line: string, phase?: LLMPhase): string |
   }
 
   if (event.type === 'assistant' && event.subtype === 'text') {
-    return event.text as string
+    return { text: event.text as string, persist: true }
   }
 
   return null

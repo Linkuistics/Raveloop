@@ -4,6 +4,7 @@ import path from 'node:path'
 import YAML from 'yaml'
 import { type Agent, type PlanContext, type AgentConfig, LLMPhase } from '../../types.js'
 import { formatClaudeStreamLine } from './stream-parser.js'
+import { writeLine, clearProgress } from '../../format.js'
 
 export class ClaudeCodeAgent implements Agent {
   private config: AgentConfig
@@ -54,13 +55,14 @@ export class ClaudeCodeAgent implements Agent {
         for (const line of lines) {
           const formatted = formatClaudeStreamLine(line, phase)
           if (formatted) {
-            process.stderr.write(formatted + '\n')
-            chunks.push(formatted)
+            writeLine(formatted)
+            if (formatted.persist) chunks.push(formatted.text)
           }
         }
       })
 
       child.on('close', code => {
+        clearProgress()
         if (code === 0) resolve(chunks.join('\n'))
         else reject(new Error(`claude exited with code ${code}`))
       })

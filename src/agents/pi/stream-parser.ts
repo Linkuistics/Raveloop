@@ -1,7 +1,7 @@
 import { type LLMPhase } from '../../types.js'
-import { formatToolCall } from '../../format.js'
+import { formatToolCall, type FormattedOutput } from '../../format.js'
 
-export function formatPiStreamLine(line: string, phase?: LLMPhase): string | null {
+export function formatPiStreamLine(line: string, phase?: LLMPhase): FormattedOutput | null {
   if (!line.trim()) return null
 
   let event: Record<string, unknown>
@@ -34,16 +34,17 @@ export function formatPiStreamLine(line: string, phase?: LLMPhase): string | nul
   }
 
   if (event.type === 'tool_execution_end' && event.isError) {
-    return `  \x1b[31m✗  tool error\x1b[0m`
+    return { text: `  \x1b[31m✗  tool error\x1b[0m`, persist: true }
   }
 
   if (event.type === 'message_end') {
     const content = event.content as Array<{ type: string; text?: string }>
     if (Array.isArray(content)) {
-      return content
+      const text = content
         .filter(c => c.type === 'text' && c.text)
         .map(c => c.text)
         .join('\n')
+      if (text) return { text, persist: true }
     }
   }
 

@@ -13,7 +13,7 @@ import {
 import { composePrompt } from './prompt-composer.js'
 import { PHASE_INFO } from './format.js'
 import { shouldDream, updateDreamBaseline } from './dream.js'
-import { gitCommitPlan, gitSaveWorkBaseline } from './git.js'
+import { gitCommitPlan, gitSaveWorkBaseline, type CommitResult } from './git.js'
 import { dispatchSubagents } from './subagent-dispatch.js'
 
 const DIM = '\x1b[2m'
@@ -39,6 +39,15 @@ function scriptHeader(label: string, plan: string): void {
 
 function errorBanner(msg: string): void {
   console.error(`\n  ${RED}✗  ${msg}${RESET}\n`)
+}
+
+function showCommitResult(result: CommitResult): void {
+  if (result.committed) {
+    const firstLine = result.message.split('\n')[0]
+    console.log(`  ${DIM}committed:${RESET} ${firstLine}`)
+  } else {
+    console.log(`  ${DIM}nothing to commit${RESET}`)
+  }
 }
 
 function readPhase(planDir: string): Phase {
@@ -77,29 +86,37 @@ async function handleScriptPhase(
   const name = planName(planDir)
 
   switch (phase) {
-    case ScriptPhase.GitCommitWork:
+    case ScriptPhase.GitCommitWork: {
       scriptHeader('COMMIT · work', name)
-      gitCommitPlan(planDir, name, 'work')
+      const result = gitCommitPlan(planDir, name, 'work')
+      showCommitResult(result)
       writePhase(planDir, LLMPhase.Reflect)
       return askContinue('reflect phase')
+    }
 
-    case ScriptPhase.GitCommitReflect:
+    case ScriptPhase.GitCommitReflect: {
       scriptHeader('COMMIT · reflect', name)
-      gitCommitPlan(planDir, name, 'reflect')
+      const result = gitCommitPlan(planDir, name, 'reflect')
+      showCommitResult(result)
       writePhase(planDir, LLMPhase.Dream)
       return true
+    }
 
-    case ScriptPhase.GitCommitDream:
+    case ScriptPhase.GitCommitDream: {
       scriptHeader('COMMIT · dream', name)
-      gitCommitPlan(planDir, name, 'dream')
+      const result = gitCommitPlan(planDir, name, 'dream')
+      showCommitResult(result)
       writePhase(planDir, LLMPhase.Triage)
       return true
+    }
 
-    case ScriptPhase.GitCommitTriage:
+    case ScriptPhase.GitCommitTriage: {
       scriptHeader('COMMIT · triage', name)
-      gitCommitPlan(planDir, name, 'triage')
+      const result = gitCommitPlan(planDir, name, 'triage')
+      showCommitResult(result)
       writePhase(planDir, LLMPhase.Work)
       return askContinue('next work phase')
+    }
   }
 }
 
