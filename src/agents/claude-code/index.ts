@@ -38,7 +38,7 @@ export class ClaudeCodeAgent implements Agent {
   }
 
   async invokeHeadless(prompt: string, ctx: PlanContext, phase: LLMPhase): Promise<string> {
-    const args = ['--allow-dangerously-skip-permissions', '-p', prompt, '--output-format', 'stream-json']
+    const args = ['--allow-dangerously-skip-permissions', '-p', prompt, '--verbose', '--output-format', 'stream-json']
     const model = this.config.models[phase]
     if (model) args.push('--model', model)
     if (this.dangerous) args.push('--dangerously-skip-permissions')
@@ -47,7 +47,7 @@ export class ClaudeCodeAgent implements Agent {
       const chunks: string[] = []
       const child = spawn('claude', args, {
         cwd: ctx.projectDir,
-        stdio: ['pipe', 'pipe', 'inherit'],
+        stdio: ['ignore', 'pipe', 'inherit'],
       })
 
       child.stdout.on('data', (data: Buffer) => {
