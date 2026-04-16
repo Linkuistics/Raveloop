@@ -195,6 +195,7 @@ Phase files use these placeholders, resolved at prompt composition time:
 - `{{PROJECT}}` — absolute path to project root (.git)
 - `{{PLAN}}` — absolute path to plan directory
 - `{{RELATED_PLANS}}` — synthesized block of related plan paths
+- `{{ORCHESTRATOR}}` — absolute path to this project's root (directory-name-independent)
 
 ### Tool tokens (per-agent via tokens.yaml)
 - `{{TOOL_READ}}` — Read / read

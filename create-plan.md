@@ -85,51 +85,62 @@ Constraints:
 `fixed-memory/coding-style-<lang>.md` just-in-time when it is about
 to write or modify code — there is nothing for the plan to declare.
 
-**prompt-reflect.md, prompt-compact.md, prompt-triage.md** — almost
+**prompt-reflect.md, prompt-dream.md, prompt-triage.md** — almost
 always **absent**. The shared phase files cover everything these phases
 need for most plans. Only create them if the plan has truly unique
-reflect/compact/triage content. Also absent in most plans — LLM_CONTEXT_PI's triage phase emits a propagation yaml rather than dispatching subagents, so there is nothing plan-specific to override.
+reflect/dream/triage content. The triage phase emits a subagent dispatch
+YAML rather than dispatching subagents inline, so there is nothing
+plan-specific to override.
 
 **pre-work.sh** (optional) — only if the plan has an invariant the
-work-phase LLM cannot reliably enforce itself. See README.md §pre-work.sh
+work-phase agent cannot reliably enforce itself. See README.md §pre-work.sh
 for the contract.
 
 ### Driving the cycle
 
-There is no per-plan script. The cycle is driven by the canonical
-`LLM_CONTEXT_PI/run-plan.sh`, invoked with the plan directory as its
-argument:
+The cycle is driven by the TypeScript orchestrator, invoked with an
+agent flag and the plan directory:
 
 ```bash
-~/Development/LLM_CONTEXT_PI/run-plan.sh ~/Development/{project}/LLM_STATE/{plan-name}
+# Claude Code
+./run-claude.sh ~/Development/{project}/LLM_STATE/{plan-name}
+
+# Pi
+./run-pi.sh ~/Development/{project}/LLM_STATE/{plan-name}
+
+# Or directly:
+npx tsx src/index.ts --agent claude-code ~/Development/{project}/LLM_STATE/{plan-name}
+npx tsx src/index.ts --agent pi ~/Development/{project}/LLM_STATE/{plan-name}
 ```
 
-The script self-locates `LLM_CONTEXT_PI` from its own path, walks up from
-the plan directory to find the project root (`.git`), composes each
-phase's prompt from `LLM_CONTEXT_PI/phases/<phase>.md` + the optional
-`<plan>/prompt-<phase>.md`, and runs claude.
+The orchestrator walks up from the plan directory to find the project
+root (`.git`), composes each phase's prompt from `phases/<phase>.md` +
+the optional `<plan>/prompt-<phase>.md`, substitutes tokens, and
+invokes the selected agent.
 
 ### Path placeholders
 
 Prompt files and `related-plans.md` MUST use these placeholders for any
-path reference. `run-plan.sh` substitutes them with absolute paths in
-memory before passing content to `claude`.
+path reference. The orchestrator substitutes them with absolute paths
+before passing content to the agent.
 
 | Placeholder | Substituted with | Example |
 |---|---|---|
 | `{{DEV_ROOT}}` | absolute path to the dev root | `/Users/antony/Development` |
 | `{{PROJECT}}` | absolute path to the project root | `/Users/antony/Development/Project` |
 | `{{PLAN}}` | absolute path to the plan directory | `/Users/antony/Development/Project/LLM_STATE/plan-name` |
-| `{{RELATED_PLANS}}` | synthesized block of sibling/parent/child plan paths (script-computed) | (multi-line block) |
+| `{{ORCHESTRATOR}}` | absolute path to this project's root | `/Users/antony/Development/LLM_CONTEXT_PI` |
+| `{{RELATED_PLANS}}` | synthesized block of sibling/parent/child plan paths (computed) | (multi-line block) |
+| `{{TOOL_READ}}` | agent-specific tool name for reading files | `Read` or `read` |
 
-`{{RELATED_PLANS}}` is substituted only in files read by `run-plan.sh`
+`{{RELATED_PLANS}}` is substituted only in files read by the orchestrator
 via composition (i.e., the shared `phases/*.md` files and any
 `prompt-*.md` overrides). Do NOT use it in `related-plans.md` itself —
 that file is the input to the synthesis.
 
 **Never** use relative paths like `../LLM_CONTEXT_PI/...` in prompts or
 related-plans.md. Relative paths are interpreted differently depending
-on the LLM's cwd resolution and tend to break for nested plans.
+on the agent's cwd resolution and tend to break for nested plans.
 
 ### 3. Review with the user
 
@@ -153,5 +164,5 @@ Commit the new plan directory.
 
 ## Reference
 
-See `LLM_CONTEXT_PI/README.md` for the full plan format specification,
-phase cycle, task format, and related-plans contract.
+See `README.md` for the full plan format specification, phase cycle,
+task format, and related-plans contract.
