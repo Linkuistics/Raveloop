@@ -375,6 +375,14 @@ The script exits cleanly if a phase fails to advance `phase.md` — this
 is both the kill mechanism for the interactive work phase and the error
 detection mechanism for the headless phases.
 
+After each phase completes successfully (phase.md advanced), the script
+auto-commits changes. The work phase commits the entire project
+(`git add -A`); headless phases commit only the plan directory. This
+creates a per-phase audit trail in the git history. Commits are skipped
+when a phase produces no changes. The work phase prompt instructs the
+LLM to review `.gitignore` before finishing, since `git add -A` will
+capture anything not ignored.
+
 ### Phase 1: WORK (interactive)
 
 Read the task backlog, distilled memory, and related-plans block. Pick

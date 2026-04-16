@@ -522,5 +522,16 @@ Read this plan's backlog.md and memory.md at $p_target, decide what (if anything
                 rm -f "$DIR/propagation.out.yaml"
             fi
         fi
+
+        # Post-phase auto-commit. Work phase commits the entire project;
+        # headless phases commit only the plan directory.
+        if [ "$PHASE" = work ]; then
+            (cd "$PROJECT" && git add -A)
+        else
+            (cd "$PROJECT" && git add "$DIR")
+        fi
+        if ! (cd "$PROJECT" && git diff --cached --quiet 2>/dev/null); then
+            (cd "$PROJECT" && git commit -m "run-plan: $PHASE ($PLAN_NAME)")
+        fi
     done
 fi

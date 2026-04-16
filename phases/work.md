@@ -64,10 +64,16 @@ code you are about to change and pick from `fixed-memory/` yourself.
 5. Verify the work: run tests, check outputs, inspect state. Do not
    declare done without evidence.
 
-6. Record results on the task in `{{PLAN}}/backlog.md`: what was done,
+6. Review `.gitignore`. If the work introduced generated files, build
+   artifacts, secrets, or other files that should not be version-
+   controlled, add appropriate patterns to `.gitignore`. The run script
+   auto-commits all project changes after the work phase exits, so
+   anything not ignored will be committed.
+
+7. Record results on the task in `{{PLAN}}/backlog.md`: what was done,
    what worked, what didn't, what this suggests next.
 
-7. Write the session entry to `{{PLAN}}/latest-session.md`, **OVERWRITING
+8. Write the session entry to `{{PLAN}}/latest-session.md`, **OVERWRITING
    any prior content**. Use this format:
 
    ```
@@ -85,8 +91,8 @@ code you are about to change and pick from `fixed-memory/` yourself.
    session-log append post-hoc after you exit, so a write here would be
    duplicated.
 
-8. write `reflect` to `{{PLAN}}/phase.md`.
+9. write `reflect` to `{{PLAN}}/phase.md`.
 
-9. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
+10. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
    task per work phase — fresh context for reflection is more valuable
    than momentum.
