@@ -138,22 +138,24 @@ const YELLOW = '\x1b[33m'
 const MAGENTA = '\x1b[35m'
 const RED = '\x1b[31m'
 
-/** Map structured action tags to display symbols and colours. */
-const ACTION_STYLES: Record<string, { symbol: string; colour: string }> = {
-  ADDED:         { symbol: '+', colour: GREEN },
-  SHARPENED:     { symbol: '~', colour: CYAN },
-  REPLACED:      { symbol: '↻', colour: YELLOW },
-  REMOVED:       { symbol: '−', colour: RED },
-  MERGED:        { symbol: '⊕', colour: CYAN },
-  TIGHTENED:     { symbol: '~', colour: CYAN },
-  REWORDED:      { symbol: '~', colour: DIM },
-  STATS:         { symbol: '▪', colour: DIM },
-  DELETED:       { symbol: '−', colour: RED },
-  PROMOTED:      { symbol: '↑', colour: YELLOW },
-  REPRIORITISED: { symbol: '⇅', colour: YELLOW },
-  DISPATCH:      { symbol: '→', colour: GREEN },
-  'NO DISPATCH': { symbol: '·', colour: DIM },
+/** Map structured action tags to display labels and colours. */
+const ACTION_STYLES: Record<string, { colour: string }> = {
+  ADDED:         { colour: GREEN },
+  SHARPENED:     { colour: CYAN },
+  REPLACED:      { colour: YELLOW },
+  REMOVED:       { colour: RED },
+  MERGED:        { colour: CYAN },
+  TIGHTENED:     { colour: CYAN },
+  REWORDED:      { colour: DIM },
+  STATS:         { colour: DIM },
+  DELETED:       { colour: RED },
+  PROMOTED:      { colour: YELLOW },
+  REPRIORITISED: { colour: YELLOW },
+  DISPATCH:      { colour: GREEN },
+  'NO DISPATCH': { colour: DIM },
 }
+
+const LABEL_WIDTH = Math.max(...Object.keys(ACTION_STYLES).map(k => k.length))
 
 /**
  * Format result text from a headless phase.
@@ -180,7 +182,8 @@ export function formatResultText(text: string): string {
       const detail = actionMatch[2]
       const style = ACTION_STYLES[tag]
       if (style) {
-        formatted.push(`  ${style.colour}${BOLD}${style.symbol}${RESET}  ${style.colour}${detail}${RESET}`)
+        const paddedTag = tag.padEnd(LABEL_WIDTH)
+        formatted.push(`  ${style.colour}${BOLD}${paddedTag}${RESET}  ${style.colour}${detail}${RESET}`)
         continue
       }
     }
