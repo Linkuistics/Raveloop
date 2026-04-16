@@ -59,7 +59,7 @@ async function askContinue(nextLabel: string): Promise<boolean> {
   })
   return new Promise(resolve => {
     console.log(`\n${DIM}${HR}${RESET}`)
-    process.stdout.write(`  ${BOLD}${YELLOW}▶  Continue to ${nextLabel}? [Y/n]${RESET} `)
+    process.stdout.write(`  ${BOLD}${YELLOW}▶  Proceed to ${nextLabel}? [Y/n]${RESET} `)
     rl.question('', answer => {
       rl.close()
       console.log(`${DIM}${HR}${RESET}`)
@@ -79,7 +79,7 @@ async function handleScriptPhase(
       scriptHeader('COMMIT · work', name)
       gitCommitPlan(planDir, name, 'work')
       writePhase(planDir, LLMPhase.Reflect)
-      return askContinue('reflect')
+      return askContinue('reflect phase')
 
     case ScriptPhase.GitCommitReflect:
       scriptHeader('COMMIT · reflect', name)
@@ -97,7 +97,7 @@ async function handleScriptPhase(
       scriptHeader('COMMIT · triage', name)
       gitCommitPlan(planDir, name, 'triage')
       writePhase(planDir, LLMPhase.Work)
-      return askContinue('next work cycle')
+      return askContinue('next work phase')
   }
 }
 
