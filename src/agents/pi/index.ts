@@ -4,6 +4,7 @@ import path from 'node:path'
 import YAML from 'yaml'
 import { type Agent, type PlanContext, type AgentConfig, LLMPhase } from '../../types.js'
 import { formatPiStreamLine } from './stream-parser.js'
+import { setupPi } from './setup.js'
 
 export class PiAgent implements Agent {
   private config: AgentConfig
@@ -98,6 +99,10 @@ export class PiAgent implements Agent {
       relatedPlans: '',
       orchestratorRoot: this.projectRoot,
     }, LLMPhase.Triage)
+  }
+
+  async setup(ctx: PlanContext): Promise<void> {
+    await setupPi(this.projectRoot, ctx)
   }
 
   tokens(): Record<string, string> {
