@@ -347,7 +347,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
     DEV_ROOT="$(dirname "$PROJECT")"
     PLAN_NAME="$(basename "$DIR")"
 
-    SYSTEM_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/system-prompt.md"
+    SYSTEM_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/prompts/system-prompt.md"
     if [ ! -f "$SYSTEM_PROMPT_FILE" ]; then
         echo "Error: $SYSTEM_PROMPT_FILE missing" >&2
         exit 1
@@ -357,7 +357,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
     # -------------------------------------------------------------------------
     # Auto-memory system: compute project memory directory
     # -------------------------------------------------------------------------
-    MEMORY_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/memory-prompt.md"
+    MEMORY_PROMPT_FILE="$LLM_CONTEXT_PI_DIR/prompts/memory-prompt.md"
     PROJECT_PATH_ENCODED="$(printf '%s' "$PROJECT" | tr '/' '-')"
     MEMORY_DIR="$HOME/.claude-pi/projects/$PROJECT_PATH_ENCODED/memory"
     MEMORY_INDEX="$MEMORY_DIR/MEMORY.md"

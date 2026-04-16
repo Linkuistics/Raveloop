@@ -29,8 +29,8 @@ headless editorial phases (reflect, compact, triage).
 **Key pi flags used by `run-plan.sh`:**
 
 - `--no-session` — each phase starts with a completely fresh context window.
-- `--append-system-prompt <text>` — injects `system-prompt.md` (and for
-  the work phase, `memory-prompt.md`) before the phase prompt.
+- `--append-system-prompt <text>` — injects `prompts/system-prompt.md` (and for
+  the work phase, `prompts/memory-prompt.md`) before the phase prompt.
 - `--mode json -p` — runs a phase headlessly; pi emits JSONL piped through
   `format_pi_stream` for a readable trace of tool calls and final output.
 - `--provider <name>` — selects the API provider (from `config.sh`).
@@ -65,7 +65,7 @@ and is the file injected into phase contexts.
 
 ### Phase access model
 
-- **Work phase:** receives full read+write access. `memory-prompt.md`
+- **Work phase:** receives full read+write access. `prompts/memory-prompt.md`
   is appended to the system prompt, instructing the agent to save new
   memories during the session. The current `MEMORY.md` index is also
   injected.
@@ -82,7 +82,7 @@ cp -r ~/.claude/projects/<path>/memory/ \
 Both systems use the same path-encoding convention (`/` replaced by
 `-`), so the directory names match.
 
-See `memory-prompt.md` for the full instructions governing what the
+See `prompts/memory-prompt.md` for the full instructions governing what the
 work-phase agent saves and how.
 
 ## Directory layout
@@ -93,8 +93,9 @@ LLM_CONTEXT_PI/
 ├── create-plan.md             # How to create a new backlog plan
 ├── run-plan.sh                # Driver for the four-phase work cycle
 ├── config.sh                  # Per-phase model/thinking + HEADROOM (sourced by run-plan.sh)
-├── system-prompt.md           # System prompt addendum injected into every phase
-├── memory-prompt.md           # Auto-memory instructions injected into the work phase
+├── prompts/                   # Prompt artifacts injected by run-plan.sh
+│   ├── system-prompt.md       # System prompt addendum injected into every phase
+│   └── memory-prompt.md       # Auto-memory instructions injected into the work phase
 ├── phases/                    # Operational phase prompts (read by run-plan.sh)
 │   ├── work.md
 │   ├── reflect.md
@@ -493,11 +494,11 @@ untouched; the next run retries.
 - **run-plan.sh** — canonical shell driver for the four-phase cycle
 - **config.sh** — per-phase model/thinking selection and HEADROOM
   (sourced by `run-plan.sh`); see "Configuration" above
-- **system-prompt.md** — system prompt addendum injected into every
-  phase via `--append-system-prompt`; covers fresh-context mandate,
-  tool etiquette, path placeholder rules, and tone
-- **memory-prompt.md** — auto-memory instructions injected into the
-  work phase; documents memory types, save/access rules, and the
+- **prompts/system-prompt.md** — system prompt addendum injected into
+  every phase via `--append-system-prompt`; covers fresh-context
+  mandate, tool etiquette, path placeholder rules, and tone
+- **prompts/memory-prompt.md** — auto-memory instructions injected into
+  the work phase; documents memory types, save/access rules, and the
   index format
 - **phases/work.md**, **phases/reflect.md**, **phases/compact.md**,
   **phases/triage.md** — shared operational phase prompts
