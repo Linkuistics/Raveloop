@@ -1,7 +1,7 @@
 # Memory Style Rules
 
 All `memory.md` entries in a backlog plan follow these rules. Both the
-reflect phase (incremental per-session) and the compact phase (periodic
+reflect phase (incremental per-session) and the dream phase (periodic
 global rewrite) produce entries in this style.
 
 ## Three principles
@@ -56,6 +56,6 @@ Same facts, less than half the words.
 
 - **Reflect** may prune aggressively — it is the lossy-pruning phase.
   Remove outdated or redundant facts.
-- **Compact** is **strictly lossless** — preserve every live fact, only
+- **Dream** is **strictly lossless** — preserve every live fact, only
   rewrite prose. Do not delete entries unless they are pure duplicates
   of others.
