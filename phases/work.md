@@ -4,7 +4,7 @@ implement the chosen task, and record results.
 
 ## Required reads
 
-read the following files in order:
+Read the following files in order:
 
 1. `{{PROJECT}}/README.md` — project conventions, architecture, build/test
    commands, and gotchas.
@@ -12,6 +12,11 @@ read the following files in order:
 3. `{{PLAN}}/memory.md` — distilled learnings from prior sessions
 4. `{{PLAN}}/related-plans.md` — declared peer-project relationships
    (only if the file exists)
+
+**Placeholder note:** any file you {{TOOL_READ}} inside this project (READMEs,
+backlog files, etc.) may contain literal `{{PROJECT}}`, `{{DEV_ROOT}}`,
+or `{{PLAN}}` placeholder tokens. Substitute them mentally with the
+absolute paths from this prompt before passing the path to the {{TOOL_READ}} tool.
 
 ## Related plans
 
@@ -23,14 +28,14 @@ is the triage phase's job via dispatched subagents.
 
 ## Coding style
 
-`{{DEV_ROOT}}/LLM_CONTEXT_PI/fixed-memory/` holds universal coding-style
+`{{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/` holds universal coding-style
 reference material. Treat it like this:
 
 - **At the moment you are about to write or modify code**, and not
   before, check `fixed-memory/`:
-  - Always read `{{DEV_ROOT}}/LLM_CONTEXT_PI/fixed-memory/coding-style.md`
+  - Always read `{{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style.md`
     — it contains the universal rules that apply to any language.
-  - Also read `{{DEV_ROOT}}/LLM_CONTEXT_PI/fixed-memory/coding-style-<lang>.md`
+  - Also read `{{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style-<lang>.md`
     for whichever language you are about to touch, if such a file
     exists (e.g. `coding-style-rust.md` for Rust). If no file matches
     the language, there is no language-specific guidance for it —
@@ -73,26 +78,12 @@ code you are about to change and pick from `fixed-memory/` yourself.
 7. Record results on the task in `{{PLAN}}/backlog.md`: what was done,
    what worked, what didn't, what this suggests next.
 
-8. Write the session entry to `{{PLAN}}/latest-session.md`, **OVERWRITING
-   any prior content**. Use this format:
+8. Write `analyse-work` to `{{PLAN}}/phase.md`.
 
-   ```
-   ### Session N (YYYY-MM-DDTHH:MM:SSZ) — brief title
-   - What was attempted
-   - What worked, what didn't
-   - What this suggests trying next
-   - Key learnings or discoveries
-   ```
-
-   The timestamp is ISO 8601 UTC with seconds precision. Obtain with:
-   `date -u '+%Y-%m-%dT%H:%M:%SZ'`
-
-   **Do NOT append to `session-log.md`.** The run script handles the
-   session-log append post-hoc after you exit, so a write here would be
-   duplicated.
-
-9. write `reflect` to `{{PLAN}}/phase.md`.
-
-10. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
+9. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
    task per work phase — fresh context for reflection is more valuable
    than momentum.
+
+   **Do NOT write session log entries.** The analyse-work phase handles
+   session logging by examining the actual git diff — this produces a
+   more accurate record than self-reporting.

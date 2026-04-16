@@ -37,11 +37,11 @@ the Memory style rules.
    true and useful, not a historical record. `session-log.md` is the
    safety net for discarded content.
 
-4. Write `compact` to `{{PLAN}}/phase.md`. Reflect **always** writes
-   `compact` as the nominal next phase. The run script, after reflect
-   exits, decides whether to actually run compact or skip straight to
-   triage based on the compaction trigger (word-count headroom). Your
-   job is simply to always write `compact` — do not try to decide whether
-   compaction is "needed".
+4. Write `git-commit-reflect` to `{{PLAN}}/phase.md`. Reflect
+   **always** writes `git-commit-reflect` as its next phase. The run
+   script, after committing, decides whether to run dream (compaction)
+   or skip straight to triage based on the compaction trigger. Your
+   job is simply to always write `git-commit-reflect` — do not try to
+   decide whether compaction is "needed".
 
 5. Stop.
