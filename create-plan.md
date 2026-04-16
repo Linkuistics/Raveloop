@@ -1,0 +1,157 @@
+# Creating a Multi-Session Plan
+
+Instructions for creating a new backlog plan through conversation with
+the user. The output is a plan directory conforming to the format in
+`README.md`.
+
+## Process
+
+### 1. Clarify the scope
+
+Ask the user:
+- What is this plan for? What's the overall goal?
+- What do you already know needs doing? (Initial tasks)
+- What categories make sense for grouping the tasks?
+- Are there known dependencies or blockers?
+- Does this plan have known peer-project relationships? (Parents —
+  projects it depends on; Children — projects that depend on it.
+  Siblings within the same project are auto-discovered and don't
+  need to be declared.)
+- Any specific instructions for the work phase?
+  (e.g., test commands, key constraints, domain-specific guidance)
+
+This is a conversation — ask follow-up questions until the scope is
+clear. Don't ask all questions at once; one at a time.
+
+### 2. Draft the plan
+
+Produce the following files in a plan directory, per `README.md`:
+
+**backlog.md** — the task backlog:
+- Initial tasks from the conversation, each with:
+  - Title and category tag
+  - Status (usually `not_started`)
+  - Dependencies (if known)
+  - Description (what and why)
+  - Results placeholder (`_pending_`)
+
+**session-log.md** — empty, with a header only:
+
+```markdown
+# Session Log
+```
+
+**memory.md** — empty, with a header only:
+
+```markdown
+# Memory
+```
+
+**phase.md** — plain text file containing just `work` (initial phase)
+
+**related-plans.md** (optional) — only if the user declared peer-project
+relationships:
+
+```markdown
+# Related Plans
+
+## Parents
+Peer projects this plan depends on:
+- {{DEV_ROOT}}/Mnemosyne — orchestrator I integrate with
+
+## Children
+Peer projects that depend on this plan:
+- {{DEV_ROOT}}/SomeApp — downstream consumer
+```
+
+**prompt-work.md** (optional) — only if the plan has work-phase-specific
+content that isn't in the shared `phases/work.md`. Typical contents:
+
+```markdown
+Key commands:
+- cargo test --workspace — run all tests
+- cargo clippy --workspace — lint
+- cargo +nightly fmt — format
+
+Constraints:
+- TDD: write tests first
+- thiserror for library errors, anyhow for CLI
+- No unwrap/expect in production code
+```
+
+**Do NOT list `fixed-memory/coding-style*.md` reads here.** The shared
+`phases/work.md` instructs the work-phase agent to consult
+`fixed-memory/coding-style.md` plus any matching
+`fixed-memory/coding-style-<lang>.md` just-in-time when it is about
+to write or modify code — there is nothing for the plan to declare.
+
+**prompt-reflect.md, prompt-compact.md, prompt-triage.md** — almost
+always **absent**. The shared phase files cover everything these phases
+need for most plans. Only create them if the plan has truly unique
+reflect/compact/triage content. Also absent in most plans — LLM_CONTEXT_PI's triage phase emits a propagation yaml rather than dispatching subagents, so there is nothing plan-specific to override.
+
+**pre-work.sh** (optional) — only if the plan has an invariant the
+work-phase LLM cannot reliably enforce itself. See README.md §pre-work.sh
+for the contract.
+
+### Driving the cycle
+
+There is no per-plan script. The cycle is driven by the canonical
+`LLM_CONTEXT_PI/run-plan.sh`, invoked with the plan directory as its
+argument:
+
+```bash
+~/Development/LLM_CONTEXT_PI/run-plan.sh ~/Development/{project}/LLM_STATE/{plan-name}
+```
+
+The script self-locates `LLM_CONTEXT_PI` from its own path, walks up from
+the plan directory to find the project root (`.git`), composes each
+phase's prompt from `LLM_CONTEXT_PI/phases/<phase>.md` + the optional
+`<plan>/prompt-<phase>.md`, and runs claude.
+
+### Path placeholders
+
+Prompt files and `related-plans.md` MUST use these placeholders for any
+path reference. `run-plan.sh` substitutes them with absolute paths in
+memory before passing content to `claude`.
+
+| Placeholder | Substituted with | Example |
+|---|---|---|
+| `{{DEV_ROOT}}` | absolute path to the dev root | `/Users/antony/Development` |
+| `{{PROJECT}}` | absolute path to the project root | `/Users/antony/Development/Project` |
+| `{{PLAN}}` | absolute path to the plan directory | `/Users/antony/Development/Project/LLM_STATE/plan-name` |
+| `{{RELATED_PLANS}}` | synthesized block of sibling/parent/child plan paths (script-computed) | (multi-line block) |
+
+`{{RELATED_PLANS}}` is substituted only in files read by `run-plan.sh`
+via composition (i.e., the shared `phases/*.md` files and any
+`prompt-*.md` overrides). Do NOT use it in `related-plans.md` itself —
+that file is the input to the synthesis.
+
+**Never** use relative paths like `../LLM_CONTEXT_PI/...` in prompts or
+related-plans.md. Relative paths are interpreted differently depending
+on the LLM's cwd resolution and tend to break for nested plans.
+
+### 3. Review with the user
+
+Show the draft `backlog.md` and any optional files (`related-plans.md`,
+`prompt-work.md`, `pre-work.sh`) and ask if they look right. Adjust as
+needed.
+
+### 4. Write the files
+
+Save to `LLM_STATE/` in a descriptively-named directory. The directory
+name should make the plan's purpose obvious.
+
+Good: `LLM_STATE/core/`, `LLM_STATE/targets/racket-oo/`,
+`LLM_STATE/vision-pipeline/`
+
+Avoid: `LLM_STATE/plan/`, `LLM_STATE/todo/`
+
+### 5. Commit
+
+Commit the new plan directory.
+
+## Reference
+
+See `LLM_CONTEXT_PI/README.md` for the full plan format specification,
+phase cycle, task format, and related-plans contract.
