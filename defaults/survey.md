@@ -15,45 +15,83 @@ project. For each plan you have:
 - backlog (contents of `backlog.md`, or `(missing)` if absent)
 - memory (contents of `memory.md`, or `(missing)` if absent)
 
-Produce Markdown output with these sections in this exact order:
+Your output is plain text intended to be read directly in a terminal.
+Produce these three sections, in this exact order, separated by blank
+lines.
 
-## Per-plan summary
+## Section 1 — Per-plan summary
 
-One line per plan, sorted by project then plan name:
+A **space-padded, monospace-aligned table** (not Markdown pipes). Use
+fixed column widths wide enough to hold the longest value in each
+column plus two spaces of padding. Example:
 
 ```
-- `<project>/<plan>` — phase `<phase>`, <N> unblocked / <M> blocked / <K> done
+PROJECT     PLAN                     PHASE         UNBLOCKED  BLOCKED  DONE  RECEIVED  NOTES
+Mnemosyne   mnemosyne-orchestrator   analyse-work          3        1     2         0
+Mnemosyne   sub-A-global-store       work                  8        0     0         0
+Mnemosyne   sub-C-adapters           work                 26        0     0         2  2 unprocessed dispatches
 ```
 
-If the plan's `backlog.md` contains a `## Received` heading with one
-or more items under it (dispatches from other plans awaiting triage),
-append ` ⚠ <N> unprocessed Received item(s)` to that plan's line.
+Rules for the table:
 
-If `backlog.md` or `memory.md` is missing, note it on the line rather
-than guessing.
+- Header row in ALL CAPS.
+- Sort by PROJECT, then PLAN.
+- `UNBLOCKED` / `BLOCKED` / `DONE` are counts of backlog tasks in each
+  status. Derive from `- **Status:** ...` lines.
+- `RECEIVED` is the number of entries under a `## Received` heading in
+  `backlog.md` that have not been triaged into numbered tasks.
+- `NOTES` is a short free-text cell for anything worth surfacing
+  briefly — "2 unprocessed dispatches", "backlog.md missing",
+  "stale pre-pivot framing". Empty string if nothing to note.
+- If a file is missing, surface that in NOTES; do not guess.
 
+## Section 2 — Cross-project blockers
+
+A heading `## Cross-project blockers`, followed by an indented
+bulleted list. Each entry is **one blocker per bullet**, indented
+two spaces, with the blocker's rationale wrapped at ~78 columns on
+continuation lines indented **four** spaces so the wrapped text aligns
+under the first character of the rationale (not the bullet marker).
+Example:
+
+```
 ## Cross-project blockers
 
-Any plan whose blockers reference work in a **different** project.
-Format:
-
-```
-- `<project>/<plan>` blocked on `<other-project>/<other-plan>`: <one sentence>
+  - `Mnemosyne/sub-G-migration` blocked on `APIAnyware-MacOS/sub-ffi-callbacks`:
+    the GC-protect bug fix in APIAnyware is a prerequisite for migrating the
+    affected plan files, and no alternative path exists in the current design.
 ```
 
-If no cross-project blockers are detected, write `None detected.` and
-move on.
+If no cross-project blockers are detected, write:
 
+```
+## Cross-project blockers
+
+  None detected.
+```
+
+## Section 3 — Recommended invocation order
+
+A heading `## Recommended invocation order`, followed by up to five
+numbered entries. Same indentation and wrapping discipline as
+Section 2: entries indented two spaces, continuation lines wrapped at
+~78 columns indented to align under the first character of the
+rationale. Example:
+
+```
 ## Recommended invocation order
 
-Up to five plans to run through `raveloop-cli run` next, in priority
-order. For each:
+  1. `Mnemosyne/sub-C-adapters` — has 2 unprocessed Received items that gate
+     Sub-F's 28 implementation tasks; running triage promotes them into
+     numbered backlog tasks and unblocks the critical path.
 
-```
-1. `<project>/<plan>` — <one sentence of rationale grounded in the files>
+  2. `Mnemosyne/sub-R-knowledge-ontology` — three literature-survey tasks
+     with no cross-project dependencies; cheapest unblocked work available
+     and can run in parallel with Sub-C.
 ```
 
-Prefer in this order:
+Priority order:
+
 1. Plans with unprocessed `## Received` items whose triage unblocks
    other plans on the critical path.
 2. Plans with `not_started` tasks marked `P1` and no dependencies.
@@ -68,4 +106,7 @@ external input.
 - Do not speculate beyond what the files say.
 - Do not recommend tasks that are already marked `done`.
 - When a file is missing, note it; do not infer its contents.
-- Keep each rationale to one sentence.
+- Keep each rationale to one short sentence in Section 2, one or
+  two sentences in Section 3.
+- Never output Markdown pipe-tables (`|`); the table in Section 1
+  must be space-padded monospace columns.

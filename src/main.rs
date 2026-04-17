@@ -76,22 +76,14 @@ enum Commands {
     /// session. Loads the create-plan prompt template from
     /// <config-dir>/create-plan.md, appends the target path, and
     /// hands off to claude with inherited stdio so the user drives
-    /// the conversation directly.
+    /// the conversation directly. Reuses the configured work-phase
+    /// model; passes `--add-dir <parent>` to scope claude to the
+    /// target parent directory.
     Create {
         /// Path to the config directory. Overrides $RAVELOOP_CONFIG and the
         /// default location at <dirs::config_dir()>/raveloop/.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Override the model used for the create session. Overrides
-        /// `models.create` in agents/claude-code/config.yaml, which in
-        /// turn overrides the DEFAULT_CREATE_MODEL constant.
-        #[arg(long)]
-        model: Option<String>,
-        /// Pass --dangerously-skip-permissions to claude. Useful when
-        /// you want plan creation to proceed without per-tool approval
-        /// click-throughs (claude-code only).
-        #[arg(long)]
-        dangerous: bool,
         /// Path to the new plan directory. Must not already exist; its
         /// parent directory must exist.
         plan_dir: PathBuf,
@@ -129,9 +121,9 @@ async fn main() -> Result<()> {
             let config_root = resolve_config_dir(config)?;
             run_phase_loop(&config_root, &plan_dir, dangerous).await
         }
-        Commands::Create { config, model, dangerous, plan_dir } => {
+        Commands::Create { config, plan_dir } => {
             let config_root = resolve_config_dir(config)?;
-            create::run_create(&config_root, plan_dir, model, dangerous).await
+            create::run_create(&config_root, plan_dir).await
         }
         Commands::Survey { config, root, model } => {
             let config_root = resolve_config_dir(config)?;

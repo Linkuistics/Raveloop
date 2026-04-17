@@ -19,12 +19,6 @@ use anyhow::{Context, Result};
 use tokio::process::Command as TokioCommand;
 
 use crate::config::{load_agent_config, load_shared_config};
-use crate::types::AgentConfig;
-
-/// Fallback model when neither `--model` nor `models.create` is
-/// configured. Plan creation is substantive reasoning; Sonnet is the
-/// sweet spot between cost and capability.
-pub const DEFAULT_CREATE_MODEL: &str = "claude-sonnet-4-6";
 
 /// Relative path to the create-plan prompt template inside a config dir.
 pub const CREATE_PLAN_PROMPT_PATH: &str = "create-plan.md";
@@ -42,16 +36,6 @@ pub fn compose_create_prompt(template: &str, abs_plan_dir: &Path) -> String {
          you created.\n",
         target = abs_plan_dir.display()
     )
-}
-
-/// Pick the model for the create session. Precedence:
-///   1. explicit `--model` flag on the CLI
-///   2. `models.create` in the agent config
-///   3. `DEFAULT_CREATE_MODEL` constant
-fn resolve_model(agent_config: &AgentConfig, flag_override: Option<String>) -> String {
-    flag_override
-        .or_else(|| agent_config.models.get("create").cloned())
-        .unwrap_or_else(|| DEFAULT_CREATE_MODEL.to_string())
 }
 
 /// Validate the target path. Returns the absolute path to the plan
@@ -81,12 +65,7 @@ pub fn validate_target(plan_dir: &Path) -> Result<PathBuf> {
     Ok(abs)
 }
 
-pub async fn run_create(
-    config_root: &Path,
-    plan_dir: PathBuf,
-    model_override: Option<String>,
-    dangerous: bool,
-) -> Result<()> {
+pub async fn run_create(config_root: &Path, plan_dir: PathBuf) -> Result<()> {
     let shared = load_shared_config(config_root)?;
     if shared.agent != "claude-code" {
         anyhow::bail!(
@@ -107,7 +86,11 @@ pub async fn run_create(
     let prompt = compose_create_prompt(&template, &abs_plan_dir);
 
     let agent_config = load_agent_config(config_root, &shared.agent)?;
-    let model = resolve_model(&agent_config, model_override);
+    // Plan creation is work-phase-like reasoning; reuse the configured
+    // work model rather than introducing a separate model axis.
+    let model = agent_config.models.get("work").cloned().ok_or_else(|| {
+        anyhow::anyhow!("Agent config is missing a `models.work` entry; cannot select a model for create.")
+    })?;
 
     eprintln!(
         "Launching interactive claude session (model: {}) to create plan at {}...",
@@ -115,21 +98,15 @@ pub async fn run_create(
         abs_plan_dir.display()
     );
 
-    let mut cmd = TokioCommand::new("claude");
-    cmd.arg(&prompt)
+    let mut child = TokioCommand::new("claude")
+        .arg(&prompt)
         .arg("--model")
         .arg(&model)
         .arg("--add-dir")
         .arg(&parent)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    if dangerous {
-        cmd.arg("--dangerously-skip-permissions");
-    }
-
-    let mut child = cmd
+        .stderr(Stdio::inherit())
         .spawn()
         .context("Failed to spawn claude CLI. Ensure it is installed and on PATH.")?;
 
@@ -157,23 +134,7 @@ pub async fn run_create(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use tempfile::TempDir;
-
-    use crate::types::AgentConfig;
-
-    fn empty_agent_config(models: &[(&str, &str)]) -> AgentConfig {
-        let mut m = HashMap::new();
-        for (k, v) in models {
-            m.insert(k.to_string(), v.to_string());
-        }
-        AgentConfig {
-            models: m,
-            thinking: HashMap::new(),
-            params: HashMap::new(),
-            provider: None,
-        }
-    }
 
     #[test]
     fn compose_prompt_appends_target_path_section() {
@@ -187,24 +148,6 @@ mod tests {
     fn compose_prompt_separates_template_from_instructions_with_hr() {
         let out = compose_create_prompt("TEMPLATE", Path::new("/x"));
         assert!(out.contains("\n\n---\n\n"));
-    }
-
-    #[test]
-    fn resolve_model_prefers_cli_flag() {
-        let cfg = empty_agent_config(&[("create", "configured")]);
-        assert_eq!(resolve_model(&cfg, Some("flag".into())), "flag");
-    }
-
-    #[test]
-    fn resolve_model_falls_back_to_agent_config_create_key() {
-        let cfg = empty_agent_config(&[("create", "configured")]);
-        assert_eq!(resolve_model(&cfg, None), "configured");
-    }
-
-    #[test]
-    fn resolve_model_uses_default_when_nothing_configured() {
-        let cfg = empty_agent_config(&[]);
-        assert_eq!(resolve_model(&cfg, None), DEFAULT_CREATE_MODEL);
     }
 
     #[test]

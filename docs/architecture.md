@@ -490,7 +490,7 @@ that produced it.
 The main phase loop. Takes an optional config root (resolved via the
 discovery chain if omitted) and a plan directory.
 
-### `raveloop-cli create [--config <dir>] [--model <m>] [--dangerous] <plan-dir>`
+### `raveloop-cli create [--config <dir>] <plan-dir>`
 
 Interactively scaffolds a new plan directory. Validates that
 `<plan-dir>` does not already exist and that its parent does, then
@@ -500,10 +500,13 @@ stdio. The user drives the conversation directly; Raveloop's only job
 is path validation, prompt composition, and post-hoc confirmation
 that `phase.md` was created.
 
-Model precedence: `--model` flag → `models.create` in agent config →
-`DEFAULT_CREATE_MODEL` (currently `claude-sonnet-4-6`). `--dangerous`
-passes `--dangerously-skip-permissions` to claude for fewer tool
-approval click-throughs. Supports `claude-code` only in v1.
+The session reuses the configured work-phase model
+(`models.work` in the agent config) — plan creation is work-phase-like
+reasoning and deserves the same budget. Claude is launched with
+`--add-dir <parent>` to scope its tool access to the target parent
+directory; interactive tool-approval prompts still fire as normal,
+which is appropriate for a headful session. Supports `claude-code`
+only in v1.
 
 ### `raveloop-cli survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
 
