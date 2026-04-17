@@ -1,0 +1,13 @@
+provider: anthropic
+models:
+  work: claude-opus-4-6
+  analyse-work: claude-sonnet-4-6
+  reflect: claude-sonnet-4-6
+  dream: claude-sonnet-4-6
+  triage: claude-sonnet-4-6
+thinking:
+  work: medium
+  analyse-work: ""
+  reflect: ""
+  dream: ""
+  triage: ""

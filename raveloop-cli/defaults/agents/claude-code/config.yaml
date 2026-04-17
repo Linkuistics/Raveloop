@@ -1,0 +1,6 @@
+models:
+  work: ""
+  analyse-work: claude-sonnet-4-6
+  reflect: claude-sonnet-4-6
+  dream: claude-sonnet-4-6
+  triage: claude-sonnet-4-6
