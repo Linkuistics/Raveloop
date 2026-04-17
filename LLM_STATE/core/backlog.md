@@ -29,39 +29,6 @@ inverted or replaced.
 
 ---
 
-### Review current state and expand backlog
-
-**Category:** `meta`
-**Status:** `done`
-**Dependencies:** none
-
-**Description:**
-
-This backlog was seeded with a single concrete task. Use a work session
-to audit the codebase (`src/`, `defaults/`, `docs/`, `tests/`) with
-fresh eyes — identify gaps, rough edges, half-finished areas, and
-aspirational features — then append concrete tasks in the standard
-shape (title, category, status, dependencies, description, results) so
-subsequent cycles have real work to pick from. Triage will prune and
-reorder afterwards.
-
-**Results:** Completed 2026-04-17 by dispatching four parallel Explore
-audit agents covering (1) orchestration core, (2) UI/format/types,
-(3) `init`/`create`/`survey` subcommands, and (4) the `defaults/` tree
-plus tests. They returned 24 findings; after dedup (the user's already-
-reported transcript-truncation bug and the existing `create` parent-dir
-task) and consolidation (stderr handling, architecture.md drift), 12
-new tasks were appended below: 7 bugs, 1 docs, 1 refactor, 2 meta
-decisions, 1 feature/test. Pi agent came up repeatedly as under-
-polished — the "pi agent scope" task captures the decision that
-blocks further pi investment. `survey.rs` (1287 LOC) is the obvious
-refactor target. Triage should reorder against current priorities;
-many bug tasks are small enough to bundle into a single work cycle.
-Skipped: vague test-coverage asks, stylistic nits, and anything not
-backed by a specific file:line reference.
-
----
-
 ### Work-phase transcript truncated by incoming phase banner
 
 **Category:** `bug`
@@ -164,7 +131,7 @@ model string in the embedded defaults so this doesn't silently recur.
 
 ---
 
-### Resolve or remove `{{MEMORY_DIR}}` token in pi memory prompt
+### Propagate filesystem errors from `write_phase`
 
 **Category:** `bug`
 **Status:** `not_started`
@@ -172,40 +139,15 @@ model string in the embedded defaults so this doesn't silently recur.
 
 **Description:**
 
-`defaults/agents/pi/prompts/memory-prompt.md` references `{{MEMORY_DIR}}`
-at three sites (lines ~3, 61, 74) but `PiAgent::load_prompt_file`
-(src/agent/pi.rs:~142) only substitutes `{{PROJECT}}`, `{{DEV_ROOT}}`,
-and `{{PLAN}}`. The literal `{{MEMORY_DIR}}` passes through to the LLM
-unchanged, silently corrupting the memory-handling instructions pi
-sees.
+`src/phase_loop.rs:~25` currently swallows the result of the `phase.md`
+write with `let _ = fs::write(...)`. If the write fails (permissions,
+full disk, stale handle) the loop proceeds with stale state and the
+agent is re-invoked on the same phase, wasting compute and hiding the
+real error.
 
-Decide whether memory lives in a distinct directory from the plan (if
-so, thread `MEMORY_DIR` through `PlanContext` and the pi token map) or
-rewrite the prompt to use `{{PLAN}}` and drop the placeholder. Also
-grep the prompt for any other dangling `{{...}}` while you're there.
-
-**Results:** _pending_
-
----
-
-### Capture and surface pi subprocess stderr on non-zero exit
-
-**Category:** `bug`
-**Status:** `not_started`
-**Dependencies:** none
-
-**Description:**
-
-`PiAgent::invoke_headless` (src/agent/pi.rs:~236) uses
-`stderr(Stdio::inherit())`, which lets pi's error output bypass the TUI
-log and bleed into the raw terminal during a headless phase — often
-overwritten immediately by later TUI repaints. `ClaudeCodeAgent`
-(src/agent/claude_code.rs:~199) already pipes stderr, accumulates a
-tail buffer, and includes the tail in its `anyhow::bail!` on failure.
-
-Port the same pattern to `PiAgent`. When touching the code, consider
-extracting `drain_stderr_into_buffer(..)` into a shared helper (e.g.
-`src/agent/common.rs`) so the two copies can't drift.
+Return a `Result` from `write_phase`, propagate up, and render the
+error in the TUI log before exiting. Small change, but the loop's
+invariants depend on it.
 
 **Results:** _pending_
 
@@ -229,6 +171,82 @@ After all substitutions, scan the final string for leftover `{{...}}`
 patterns; either log a warning to the TUI or hard-error depending on
 desired strictness. Add a unit test covering the detection. This
 check would have caught the `{{MEMORY_DIR}}` case in its sibling task.
+
+**Results:** _pending_
+
+---
+
+### Decide pi agent scope: complete the port or mark it aspirational
+
+**Category:** `meta`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+Multiple audit findings point to pi being a visibly less-polished
+sibling to claude-code:
+
+- Unresolved `{{MEMORY_DIR}}` in `memory-prompt.md`.
+- stderr not captured on failure (no tail in error messages).
+- Older default model (`claude-opus-4-6`) in
+  `defaults/agents/pi/config.yaml` vs claude-code's more current
+  `claude-sonnet-4-6` / haiku variants.
+- No integration test exercises the pi agent path.
+
+Pick a direction: either invest in parity (and cover it in tests +
+docs) or mark pi explicitly aspirational in `README.md` /
+`docs/architecture.md` so future readers don't assume drop-in
+equivalence. If we commit to parity, extract the genuinely shared
+spawn/stream/dispatch boilerplate from `claude_code.rs` and `pi.rs`
+into `src/agent/common.rs` as part of that effort.
+
+**Results:** _pending_
+
+---
+
+### Resolve or remove `{{MEMORY_DIR}}` token in pi memory prompt
+
+**Category:** `bug`
+**Status:** `not_started`
+**Dependencies:** Decide pi agent scope
+
+**Description:**
+
+`defaults/agents/pi/prompts/memory-prompt.md` references `{{MEMORY_DIR}}`
+at three sites (lines ~3, 61, 74) but `PiAgent::load_prompt_file`
+(src/agent/pi.rs:~142) only substitutes `{{PROJECT}}`, `{{DEV_ROOT}}`,
+and `{{PLAN}}`. The literal `{{MEMORY_DIR}}` passes through to the LLM
+unchanged, silently corrupting the memory-handling instructions pi
+sees.
+
+Decide whether memory lives in a distinct directory from the plan (if
+so, thread `MEMORY_DIR` through `PlanContext` and the pi token map) or
+rewrite the prompt to use `{{PLAN}}` and drop the placeholder. Also
+grep the prompt for any other dangling `{{...}}` while you're there.
+
+**Results:** _pending_
+
+---
+
+### Capture and surface pi subprocess stderr on non-zero exit
+
+**Category:** `bug`
+**Status:** `not_started`
+**Dependencies:** Decide pi agent scope
+
+**Description:**
+
+`PiAgent::invoke_headless` (src/agent/pi.rs:~236) uses
+`stderr(Stdio::inherit())`, which lets pi's error output bypass the TUI
+log and bleed into the raw terminal during a headless phase — often
+overwritten immediately by later TUI repaints. `ClaudeCodeAgent`
+(src/agent/claude_code.rs:~199) already pipes stderr, accumulates a
+tail buffer, and includes the tail in its `anyhow::bail!` on failure.
+
+Port the same pattern to `PiAgent`. When touching the code, consider
+extracting `drain_stderr_into_buffer(..)` into a shared helper (e.g.
+`src/agent/common.rs`) so the two copies can't drift.
 
 **Results:** _pending_
 
@@ -277,28 +295,6 @@ carrying the first N bytes of the offending text, and annotate the
 stderr-buffer overflow with a single warning the first time it wraps.
 Both should be unobtrusive — the user just needs a reliable signal
 that something was discarded.
-
-**Results:** _pending_
-
----
-
-### Propagate filesystem errors from `write_phase`
-
-**Category:** `bug`
-**Status:** `not_started`
-**Dependencies:** none
-
-**Description:**
-
-`src/phase_loop.rs:~25` currently swallows the result of the `phase.md`
-write with `let _ = fs::write(...)`. If the write fails (permissions,
-full disk, stale handle) the loop proceeds with stale state and the
-agent is re-invoked on the same phase, wasting compute and hiding the
-real error.
-
-Return a `Result` from `write_phase`, propagate up, and render the
-error in the TUI log before exiting. Small change, but the loop's
-invariants depend on it.
 
 **Results:** _pending_
 
@@ -357,35 +353,6 @@ split; any improvements should land in separate, focused tasks.
 
 ---
 
-### Decide pi agent scope: complete the port or mark it aspirational
-
-**Category:** `meta`
-**Status:** `not_started`
-**Dependencies:** Resolve or remove `{{MEMORY_DIR}}`, Capture pi stderr
-
-**Description:**
-
-Multiple audit findings point to pi being a visibly less-polished
-sibling to claude-code:
-
-- Unresolved `{{MEMORY_DIR}}` in `memory-prompt.md`.
-- stderr not captured on failure (no tail in error messages).
-- Older default model (`claude-opus-4-6`) in
-  `defaults/agents/pi/config.yaml` vs claude-code's more current
-  `claude-sonnet-4-6` / haiku variants.
-- No integration test exercises the pi agent path.
-
-Pick a direction: either invest in parity (and cover it in tests +
-docs) or mark pi explicitly aspirational in `README.md` /
-`docs/architecture.md` so future readers don't assume drop-in
-equivalence. If we commit to parity, extract the genuinely shared
-spawn/stream/dispatch boilerplate from `claude_code.rs` and `pi.rs`
-into `src/agent/common.rs` as part of that effort.
-
-**Results:** _pending_
-
----
-
 ### Wire up or remove orphaned `defaults/skills/*` files
 
 **Category:** `meta`
@@ -435,3 +402,5 @@ expected files exist with expected contents. The test doubles as a
 living executable description of the phase contract.
 
 **Results:** _pending_
+
+---
