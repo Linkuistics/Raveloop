@@ -512,18 +512,26 @@ only in v1.
 
 Produces an LLM-driven multi-project plan-status overview. For each
 `--root` (a directory whose immediate subdirectories are plans),
-discovers plans by `phase.md` presence and bundles each plan's
-`phase.md`, `backlog.md`, and `memory.md` into a single fresh-context
-`claude` invocation alongside the prompt template at
-`<config-dir>/survey.md`. The LLM returns a per-plan summary, any
-cross-project blockers, and a recommended invocation order; output is
-streamed to stdout.
+discovers plans by `phase.md` presence and derives each plan's
+project from the nearest ancestor directory containing `.git`. Bundles
+each plan's `phase.md`, `backlog.md`, and `memory.md` into a single
+fresh-context `claude` invocation alongside the prompt template at
+`<config-dir>/survey.md`.
+
+The **LLM emits YAML** matching a fixed schema (per-plan counts,
+cross-project blockers, recommended invocation order); the tool parses
+the response and renders the final output deterministically — aligned
+monospace table for the per-plan summary, indented-and-wrapped bullets
+for the two prose sections. This split means column alignment, blank-
+line spacing, and wrap-width consistency are guaranteed by the tool
+rather than hoped for from the LLM. Raw stdout from claude is
+preserved in the error message when YAML parsing fails, so malformed
+responses surface clearly.
 
 Survey is single-shot and read-only by construction: no tool use, no
-session persistence, no file writes. Model precedence is
-`--model` flag → `models.survey` in the agent config →
-`DEFAULT_SURVEY_MODEL` (currently `claude-haiku-4-5`). Survey supports
-`claude-code` only in v1.
+session persistence, no file writes. Model precedence is `--model`
+flag → `models.survey` in the agent config → `DEFAULT_SURVEY_MODEL`
+(currently `claude-haiku-4-5`). Supports `claude-code` only in v1.
 
 ### Configuration
 

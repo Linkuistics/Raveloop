@@ -99,15 +99,24 @@ fn embedded_defaults_are_valid() {
 
 #[test]
 fn survey_plan_discovery_across_multiple_roots() {
-    // Two independent plan-root directories; each contains plans.
-    // Verifies that discover_plans labels each plan's project by root
-    // basename and render_survey_input produces a single combined
-    // document with every plan's sections intact.
+    // Two independent git projects, each with a plan-root subdirectory:
+    //   tmp/ProjectA/.git
+    //   tmp/ProjectA/LLM_STATE/plan-alpha/phase.md
+    //   tmp/ProjectA/LLM_STATE/plan-beta/phase.md
+    //   tmp/ProjectB/.git
+    //   tmp/ProjectB/LLM_STATE/plan-gamma/phase.md
+    // Project names should come from the git-root basenames
+    // (ProjectA, ProjectB), NOT from the --root basename
+    // (LLM_STATE in both cases).
     let tmp = TempDir::new().unwrap();
-    let root_a = tmp.path().join("ProjectA-LLM_STATE");
-    let root_b = tmp.path().join("ProjectB-LLM_STATE");
+    let project_a = tmp.path().join("ProjectA");
+    let project_b = tmp.path().join("ProjectB");
+    let root_a = project_a.join("LLM_STATE");
+    let root_b = project_b.join("LLM_STATE");
     fs::create_dir_all(&root_a).unwrap();
     fs::create_dir_all(&root_b).unwrap();
+    fs::create_dir_all(project_a.join(".git")).unwrap();
+    fs::create_dir_all(project_b.join(".git")).unwrap();
 
     for (root, plan_name, phase) in [
         (&root_a, "plan-alpha", "work"),
@@ -124,15 +133,17 @@ fn survey_plan_discovery_across_multiple_roots() {
     let plans_b = raveloop_cli::survey::discover_plans(&root_b).unwrap();
     assert_eq!(plans_a.len(), 2);
     assert_eq!(plans_b.len(), 1);
+    assert!(plans_a.iter().all(|p| p.project == "ProjectA"));
+    assert!(plans_b.iter().all(|p| p.project == "ProjectB"));
 
     let mut all = Vec::new();
     all.extend(plans_a);
     all.extend(plans_b);
     let rendered = raveloop_cli::survey::render_survey_input(&all);
 
-    assert!(rendered.contains("## Plan: ProjectA-LLM_STATE/plan-alpha"));
-    assert!(rendered.contains("## Plan: ProjectA-LLM_STATE/plan-beta"));
-    assert!(rendered.contains("## Plan: ProjectB-LLM_STATE/plan-gamma"));
+    assert!(rendered.contains("## Plan: ProjectA/plan-alpha"));
+    assert!(rendered.contains("## Plan: ProjectA/plan-beta"));
+    assert!(rendered.contains("## Plan: ProjectB/plan-gamma"));
     assert!(rendered.contains("# backlog plan-alpha"));
     assert!(rendered.contains("### memory.md\n(missing)"));
 }
