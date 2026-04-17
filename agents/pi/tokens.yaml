@@ -1,7 +1,0 @@
-TOOL_READ: read
-TOOL_WRITE: write
-TOOL_EDIT: edit
-TOOL_GREP: grep
-TOOL_GLOB: find
-TOOL_BASH: bash
-TOOL_LS: ls

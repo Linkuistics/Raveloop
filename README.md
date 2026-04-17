@@ -9,10 +9,13 @@ Multi-agent orchestrator for backlog-driven LLM development. Supports
 agent backends, with shared parameterized phase files and pluggable
 configuration.
 
-**Status:** Currently TypeScript. Being rewritten as a single Rust
-binary (`raveloop-cli`) with a [Ratatui](https://ratatui.rs) TUI.
-See `docs/superpowers/specs/2026-04-16-rust-ratatui-rewrite-design.md`
-for the design spec.
+**Status:** Rust implementation in `raveloop-cli/` — a single Rust
+binary with a [Ratatui](https://ratatui.rs) TUI. The original
+TypeScript implementation has been removed; see
+`docs/superpowers/specs/2026-04-16-rust-ratatui-rewrite-design.md`
+for the design spec and
+`docs/superpowers/plans/2026-04-17-raveloop-rust-rewrite.md` for the
+implementation plan.
 
 ## Phase Cycle
 
@@ -48,8 +51,8 @@ triage → git-commit-triage → [continue?] → work
 Raveloop merges [LLM_CONTEXT](https://github.com/Linkuistics/LLM_CONTEXT)
 (the original bash-script orchestrator for Claude Code) and its
 Pi-harness fork into a single multi-agent orchestrator. The bash
-scripts were rewritten in TypeScript, and are now being rewritten in
-Rust.
+scripts were rewritten in TypeScript, then rewritten in Rust as the
+current implementation.
 
 ## License
 

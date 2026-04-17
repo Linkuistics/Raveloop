@@ -1,11 +1,5 @@
-# Pi session storage (tests may use ephemeral local dirs)
+# Pi session storage (created at runtime by raveloop-cli)
 .pi/
 *.session.jsonl
-# Test tee files
-test/tmp/
 # OS
 .DS_Store
-
-node_modules/
-dist/
-.pi/agents/
