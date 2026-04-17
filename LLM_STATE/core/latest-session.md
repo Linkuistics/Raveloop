@@ -1,37 +1,10 @@
-### Session 1 (2026-04-17T13:36:43Z) — resolve 6 backlog tasks: UI fixes, init wiring, commit guardrail
+### Session 1 (2026-04-17T14:04:12Z) — resolve 4 backlog tasks: prompt strictness, phase IO, stream parse, survey split
 
-- Worked through 6 tasks from the backlog in a single session, all completed successfully.
-
-- **create: auto-create missing parent dirs** (`src/create.rs`): `validate_target` now calls
-  `fs::create_dir_all(parent)` instead of hard-erroring when the parent doesn't exist. Preserved the
-  "parent is a file" error case. Inverted old test, added new coverage; all 7 create-module tests pass.
-
-- **ui: transcript truncation at phase boundary** (`src/ui.rs`): Root cause was ratatui's `Terminal::clear()`
-  using a stale `viewport_area` after the child's output had scrolled the screen. Fix: on `Resume`, write a
-  newline to stderr to fence the child's output, flush, re-enable raw mode, and reconstruct the `Terminal`
-  so the viewport starts on a clean row. Eliminates the stale `clear()` path entirely.
-
-- **phase_loop: project name in phase header banner** (`src/phase_loop.rs`, `docs/architecture.md`):
-  Added `project_name` (basename extractor) and `header_scope` (formats `project / plan`) helpers.
-  Threaded `project_dir` through `phase_loop` and `handle_script_phase`; updated all banner call sites.
-  Added 5 unit tests; banner now renders as `◆  REFLECT  ·  raveloop / core`. Total: 119 unit tests pass.
-
-- **docs: sync architecture.md Message Model** (`docs/architecture.md`): Corrected `UIMessage` variant
-  field shapes (`StyledLine`-based), removed phantom `RegisterAgent.header` field, added `Quit` variant,
-  added Ordering Invariants subsection. Also fixed TUI Layout section (1-row viewport, real `AppState`
-  struct, `Terminal::insert_before` scroll mechanism). Doc-only; no code changes.
-
-- **init: embed 5 new coding-style files** (`src/init.rs`): Added `EmbeddedFile` entries for swift,
-  typescript, python, bash, and elixir coding-style files. Added drift-detection unit test that reads
-  `defaults/fixed-memory/` at test time and asserts every `coding-style-*.md` on disk is registered.
-
-- **phase_loop/git: guard against meta-only work commits** (`src/phase_loop.rs`, `src/git.rs`,
-  `defaults/phases/work.md`): Added `git::working_tree_status` helper and `warn_if_project_tree_dirty`
-  postcondition that fires after `GitCommitWork` and logs a `⚠  WARNING` block to the TUI if the
-  project tree is dirty. Removed the false "auto-commits all project changes" claim from work.md and
-  added an explicit step 8 requiring the agent to stage + commit its own source changes and verify with
-  `git status` before writing `analyse-work` to phase.md.
-
-- All work was verified: 119 unit tests + 5 integration tests pass after each task.
-- What this suggests next: tackle one of the `not_started` bugs — good candidates are
-  `Propagate filesystem errors from write_phase` (small, safe) or the pi agent scope decision.
+- Attempted four tasks from the backlog: (1) fail loudly on unresolved `{{tokens}}` in prompt substitution, (2) propagate filesystem errors from `write_phase`, (3) surface claude stream-JSON parse errors instead of silently skipping, (4) split `src/survey.rs` along natural seams.
+- All four tasks completed successfully with no behavior changes. Full test suite at 128 unit + 5 integration tests passed for each.
+- `src/prompt.rs`: `substitute_tokens` now returns `Result<String>` and uses a cached `regex::Regex` to scan for leftover `{{[A-Za-z0-9_]+}}` after substitution, hard-erroring with a sorted, deduped list of unresolved token names.
+- `src/phase_loop.rs`: `write_phase` promoted from `let _ = fs::write(...)` to `Result<()>` with `anyhow::Context`; all five call sites propagate via `?`.
+- `src/agent/claude_code.rs`: replaced `parse_stream_line` returning `Option<FormattedOutput>` with a `StreamLineOutcome` enum (`Output | Ignored | Malformed { snippet }`). Malformed lines emit a yellow `⚠` `Persist` warning via `tx`. Stderr overflow now also emits a one-shot warning before discarding; `STDERR_BUFFER_CAP` replaces the magic `4096` literal.
+- `src/survey.rs` split into five modules under `src/survey/`: `discover.rs`, `compose.rs`, `schema.rs`, `render.rs`, `invoke.rs`. The root `survey.rs` became a 35-line re-export shim. Tests migrated with their implementations; `#[allow(unused_imports)]` on the bin-unused re-exports with explanatory comment.
+- Key learning: the `StreamLineOutcome` enum pattern is the right fix for "collapsed error states" — the old `Option` made two distinct outcomes (`valid but no display` vs `parse failure`) indistinguishable, which is the structural cause of silent failures.
+- Next priorities: remaining `not_started` tasks include explicit work-phase model default, pi agent scope decision, survey invocation timeout, integration test coverage for phase→file-write round-trip, and orphaned skills files.

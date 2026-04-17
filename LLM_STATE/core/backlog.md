@@ -28,7 +28,7 @@ model string in the embedded defaults so this doesn't silently recur.
 ### Propagate filesystem errors from `write_phase`
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -43,14 +43,24 @@ Return a `Result` from `write_phase`, propagate up, and render the
 error in the TUI log before exiting. Small change, but the loop's
 invariants depend on it.
 
-**Results:** _pending_
+**Results:**
+
+Changed `write_phase` to return `Result<()>` and attach
+`Context("Failed to write phase marker: <path>")`. All five
+callers in `handle_script_phase` (GitCommitWork, GitCommitReflect's
+two arms, GitCommitDream, GitCommitTriage) now propagate via `?`;
+since each already returns `Result<bool>` or `Result<()>`, no call
+site needed structural change. Added two unit tests:
+`write_phase_writes_marker_file` (happy path) and
+`write_phase_errors_when_directory_is_missing` (error surface names
+the target file). Full test suite: 128 passed.
 
 ---
 
 ### Fail loudly on unresolved `{{tokens}}` in prompt substitution
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -66,7 +76,22 @@ patterns; either log a warning to the TUI or hard-error depending on
 desired strictness. Add a unit test covering the detection. This
 check would have caught the `{{MEMORY_DIR}}` case in its sibling task.
 
-**Results:** _pending_
+**Results:**
+
+Chose hard-error over warning: the `{{MEMORY_DIR}}` precedent was
+precisely a silent-drift failure, and `compose_prompt` already returns
+`Result`, so propagation is free. `substitute_tokens` now returns
+`Result<String>` and scans the post-substitution string with a
+cached `regex::Regex` matching `{{[A-Za-z0-9_]+}}` (the punctuation
+restriction prevents false positives on Rust format specifiers like
+`{x}` and hyphenated-non-tokens like `{{not-a-token}}`). Unresolved
+names are collected into a `BTreeSet` so the error message is sorted
+and de-duplicated. Added 4 unit tests covering: happy path, single
+unresolved token, multiple tokens (sorted + deduped), and the
+single-brace / hyphen false-positive avoidance. Updated the two
+existing tests to `.unwrap()` the new Result. Verified all existing
+`{{…}}` in `defaults/` are legitimate tokens — no escaping needed.
+Full test suite: 128 passed.
 
 ---
 
@@ -173,7 +198,7 @@ be too tight.
 ### Surface claude stream-JSON parse errors instead of silently skipping
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -190,14 +215,36 @@ stderr-buffer overflow with a single warning the first time it wraps.
 Both should be unobtrusive — the user just needs a reliable signal
 that something was discarded.
 
-**Results:** _pending_
+**Results:**
+
+Replaced `parse_stream_line` → `Option<FormattedOutput>` with an
+explicit `StreamLineOutcome { Output | Ignored | Malformed { snippet } }`.
+The old `Option` collapsed "parsed JSON, nothing to display" and
+"couldn't parse JSON" into the same `None`, which is exactly how the
+bug was silent. Malformed lines now carry a UTF-8-boundary-safe
+snippet capped at `STREAM_SNIPPET_BYTES = 200` (ellipsis appended on
+truncation). The invoke_headless loop matches the enum and emits a
+`Persist` warning via `tx` on `Malformed`. Stderr overflow: lifted
+the magic 4096 into `STDERR_BUFFER_CAP`, added a `warned` flag inside
+the draining tokio task so the first overflow emits a one-shot
+`Persist` warning via a cloned `tx` before further drops silently
+accumulate. Both warnings use a shared `warning_line(…)` helper
+that builds a `⚠  …` styled line with `Intent::Changed` (yellow,
+matching the existing `warn_if_project_tree_dirty` pattern in
+phase_loop). Added 4 new tests: `parse_unhandled_event_type_is_ignored`
+(guards against false-positives on valid non-tool events),
+`parse_malformed_json_surfaces_snippet`,
+`malformed_snippet_is_bounded_and_utf8_safe` (multibyte `café`
+boundary), `truncate_snippet_passes_short_inputs_unchanged`. Updated
+4 existing tests for the new enum via an `expect_output` helper.
+Full test suite: 128 passed.
 
 ---
 
 ### Split `src/survey.rs` (1287 LOC) along natural seams
 
 **Category:** `refactor`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -217,7 +264,49 @@ split naturally along the same seams.
 Do not change behavior or externally observable output as part of the
 split; any improvements should land in separate, focused tasks.
 
-**Results:** _pending_
+**Results:**
+
+Split into the five suggested modules under `src/survey/`:
+
+- `survey.rs` (35 lines): module root, re-exports the library's
+  public API (`run_survey`, `discover_plans`, `PlanSnapshot`,
+  `load_survey_prompt`, `render_survey_input`).
+- `discover.rs` (216 lines, ~130 of which are tests): `PlanSnapshot`,
+  `project_name_for_plan`, `discover_plans`.
+- `compose.rs` (117 lines): `SURVEY_PROMPT_PATH`, `render_survey_input`,
+  `load_survey_prompt`.
+- `schema.rs` (201 lines): `SurveyResponse`, `PlanRow`, `Blocker`,
+  `ParallelStream`, `Recommendation`, `parse_survey_response`,
+  `strip_code_fence`.
+- `render.rs` (633 lines, ~400 of which are tests): all rendering
+  helpers + `render_survey_output`.
+- `invoke.rs` (157 lines): `DEFAULT_SURVEY_MODEL`, `resolve_model`,
+  `run_survey`.
+
+Tests migrated with their implementations — each module has its
+own `#[cfg(test)] mod tests` with the per-concern helpers it needs
+(`write_plan`/`mark_as_git_project` in discover, `sample_yaml` in
+schema, `row` in render, `empty_agent_config` in invoke). No
+production code changed; all 128 unit tests + 5 integration tests
+pass, same counts as pre-split.
+
+Binary-crate wrinkle: `main.rs` uses `mod survey;` rather than the
+library crate, so the re-exports for `{load_survey_prompt,
+render_survey_input, PlanSnapshot, discover_plans}` appear unused
+when building the bin. Annotated those two re-export lines with
+`#[allow(unused_imports)]` and a comment explaining why. The
+library's `deny(warnings)` gate is satisfied; `run_survey` is used
+directly and needs no annotation.
+
+What this enables: follow-on tasks (timeout wrapping in
+`raveloop survey`, parser strictness, output tweaks) can now touch
+one module instead of navigating a 1287-line monolith. The
+schema/render split in particular makes `parse_survey_response`
+tests runnable without pulling in rendering code paths.
+
+Pre-existing clippy warnings in format.rs and the `row` helper
+were NOT addressed — they predate the split. If desired, a
+follow-up task can batch them together.
 
 ---
 
