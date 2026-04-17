@@ -1,0 +1,7 @@
+### Session 1 (2026-04-17T12:29:01Z) — backlog expansion via parallel audit agents
+
+- Attempted: Complete the "Review current state and expand backlog" meta task by auditing the full codebase for gaps, rough edges, and missing features.
+- What worked: Four parallel Explore agents were dispatched to cover (1) orchestration core (`src/phase_loop.rs`, `src/main.rs`, `src/agent/`), (2) UI/format/types (`src/ui.rs`, `src/types.rs`), (3) `init`/`create`/`survey` subcommands, and (4) `defaults/` tree plus tests. They collectively surfaced 24 findings.
+- After dedup (transcript-truncation bug already reported by user; `create` parent-dir task already seeded) and consolidation (stderr handling, architecture.md drift), 12 new tasks were appended to `backlog.md`: 7 bugs, 1 docs, 1 refactor, 2 meta decisions, 1 feature/test.
+- Key discoveries: `survey.rs` at 1287 LOC is the obvious refactor target. Pi agent is under-polished on multiple axes (unresolved `{{MEMORY_DIR}}` token, stderr not captured, no integration tests, older default model) — a `meta` task blocks further pi investment pending a scope decision. `src/prompt.rs` has no validation for leftover `{{...}}` tokens after substitution, which is how the pi memory bug was silently introduced. `phase_loop.rs` swallows `write_phase` errors with `let _ = ...`.
+- What this suggests next: Triage the new tasks against current priorities. Many bug tasks are small and could be bundled into a single work cycle. The pi scope decision (`meta`) should come before any pi-specific bugs are picked up.
