@@ -82,7 +82,7 @@ pub fn run_init(target_dir: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// After scaffolding, tell the user how to make `raveloop-cli` find this
+/// After scaffolding, tell the user how to make `raveloop` find this
 /// config. Silent when the target is already the XDG default, since the
 /// binary will find it there with no setup.
 fn print_discovery_guidance(target_dir: &Path) {
@@ -92,10 +92,10 @@ fn print_discovery_guidance(target_dir: &Path) {
     println!();
     if is_xdg_default {
         println!(
-            "  Config is at the default location; raveloop-cli will discover it automatically."
+            "  Config is at the default location; raveloop will discover it automatically."
         );
     } else {
-        println!("  To use this config as the default for raveloop-cli, set:");
+        println!("  To use this config as the default for raveloop, set:");
         println!("    export {CONFIG_ENV_VAR}={}", target_dir.display());
         println!("  Or pass --config {} on each invocation.", target_dir.display());
     }

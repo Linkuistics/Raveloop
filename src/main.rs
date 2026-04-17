@@ -44,7 +44,7 @@ fn force_dangerous(config: &mut AgentConfig) {
 }
 
 #[derive(Parser)]
-#[command(name = "raveloop-cli", about = "An orchestration loop for LLM development cycles")]
+#[command(name = "raveloop", about = "An orchestration loop for LLM development cycles")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

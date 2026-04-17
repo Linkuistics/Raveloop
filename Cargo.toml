@@ -1,5 +1,5 @@
 [package]
-name = "raveloop-cli"
+name = "raveloop"
 version = "0.1.0"
 edition = "2021"
 description = "An orchestration loop for LLM development cycles"

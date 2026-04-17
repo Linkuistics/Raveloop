@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn find_project_root_finds_git() {
-        // This test runs inside a git repo (the raveloop-cli project itself)
+        // This test runs inside a git repo (the raveloop project itself)
         let result = find_project_root(Path::new("."));
         assert!(result.is_ok());
     }

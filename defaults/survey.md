@@ -1,7 +1,7 @@
 # Plan status survey
 
 You are producing a multi-project plan status overview for a developer
-who wants to know which plan to run through `raveloop-cli run` next.
+who wants to know which plan to run through `raveloop run` next.
 Plans follow the Raveloop convention: a directory is a plan iff it
 contains `phase.md`; siblings `backlog.md` and `memory.md` hold task
 state and distilled learnings.
@@ -50,7 +50,7 @@ parallel_streams:
       with other streams.
 
 recommended_invocation_order:
-  - plan: <project>/<plan>        # plan to invoke next via raveloop-cli run
+  - plan: <project>/<plan>        # plan to invoke next via raveloop run
     rationale: |                  # one or two sentences of rationale
       Why run this next, grounded in the files above.
 ```

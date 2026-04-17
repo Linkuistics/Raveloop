@@ -1,6 +1,6 @@
 # Architecture
 
-`raveloop-cli` is a single Rust binary with a Ratatui TUI. It orchestrates
+`raveloop` is a single Rust binary with a Ratatui TUI. It orchestrates
 a phase loop for LLM-driven development by spawning a Claude Code or Pi
 subprocess per phase, reading its JSON stream output, and rendering
 progress.
@@ -454,12 +454,12 @@ directory until a `.git` is found.
 
 ## CLI and Invocation
 
-The user interacts with `raveloop-cli` directly once to create a
-config directory, then drives the phase cycle with `raveloop-cli run`.
+The user interacts with `raveloop` directly once to create a
+config directory, then drives the phase cycle with `raveloop run`.
 There is no trampoline — the binary resolves its config directory via
 an explicit precedence chain.
 
-### `raveloop-cli init <dir>`
+### `raveloop init <dir>`
 
 Creates the config directory at `<dir>` with the default structure.
 Default file contents are embedded in the binary at compile time via
@@ -472,25 +472,25 @@ location (`dirs::config_dir()/raveloop/`), no setup is needed.
 
 ### Config discovery
 
-Every `raveloop-cli` subcommand that needs config resolves the config
+Every `raveloop` subcommand that needs config resolves the config
 directory in this order:
 
 1. `--config <path>` CLI flag
 2. `RAVELOOP_CONFIG` environment variable
 3. Default location: `<dirs::config_dir()>/raveloop/`
-4. Hard error with a pointer to `raveloop-cli init`
+4. Hard error with a pointer to `raveloop init`
 
 No walk-up, no registry, no implicit project root. The first source
 that resolves to an existing directory wins; if that directory doesn't
-exist, `raveloop-cli` errors with the candidate path and the source
+exist, `raveloop` errors with the candidate path and the source
 that produced it.
 
-### `raveloop-cli run [--config <dir>] <plan-directory>`
+### `raveloop run [--config <dir>] <plan-directory>`
 
 The main phase loop. Takes an optional config root (resolved via the
 discovery chain if omitted) and a plan directory.
 
-### `raveloop-cli create [--config <dir>] <plan-dir>`
+### `raveloop create [--config <dir>] <plan-dir>`
 
 Interactively scaffolds a new plan directory. Validates that
 `<plan-dir>` does not already exist and that its parent does, then
@@ -508,7 +508,7 @@ directory; interactive tool-approval prompts still fire as normal,
 which is appropriate for a headful session. Supports `claude-code`
 only in v1.
 
-### `raveloop-cli survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
+### `raveloop survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
 
 Produces an LLM-driven multi-project plan-status overview. For each
 `--root` (a directory whose immediate subdirectories are plans),
@@ -567,7 +567,7 @@ Per-phase `params` maps contain agent-specific CLI flags. For
 This keeps the `Agent` trait generic — the orchestrator doesn't need
 to know what flags each agent supports.
 
-`raveloop-cli run --dangerous <plan_dir>` mutates the loaded
+`raveloop run --dangerous <plan_dir>` mutates the loaded
 `AgentConfig` at startup, setting `dangerous: true` for every LLM
 phase before the agent is constructed — so the agent itself still
 reads a single source of truth (`config.params`), and no parallel

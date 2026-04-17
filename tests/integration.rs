@@ -6,29 +6,29 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tempfile::TempDir;
 
-use raveloop_cli::agent::Agent;
-use raveloop_cli::phase_loop::phase_loop;
-use raveloop_cli::types::{LlmPhase, PlanContext, SharedConfig};
-use raveloop_cli::ui::{UI, UIMessage, UISender};
+use raveloop::agent::Agent;
+use raveloop::phase_loop::phase_loop;
+use raveloop::types::{LlmPhase, PlanContext, SharedConfig};
+use raveloop::ui::{UI, UIMessage, UISender};
 
 #[test]
 fn dream_guard_integration() {
     let dir = TempDir::new().unwrap();
     let plan = dir.path();
 
-    assert!(!raveloop_cli::dream::should_dream(plan, 1500));
+    assert!(!raveloop::dream::should_dream(plan, 1500));
 
     fs::write(plan.join("memory.md"), "word ".repeat(100)).unwrap();
-    raveloop_cli::dream::update_dream_baseline(plan);
+    raveloop::dream::update_dream_baseline(plan);
 
     fs::write(plan.join("memory.md"), "word ".repeat(200)).unwrap();
-    assert!(!raveloop_cli::dream::should_dream(plan, 1500));
+    assert!(!raveloop::dream::should_dream(plan, 1500));
 
     fs::write(plan.join("memory.md"), "word ".repeat(2000)).unwrap();
-    assert!(raveloop_cli::dream::should_dream(plan, 1500));
+    assert!(raveloop::dream::should_dream(plan, 1500));
 
-    raveloop_cli::dream::update_dream_baseline(plan);
-    assert!(!raveloop_cli::dream::should_dream(plan, 1500));
+    raveloop::dream::update_dream_baseline(plan);
+    assert!(!raveloop::dream::should_dream(plan, 1500));
 }
 
 #[test]
@@ -47,15 +47,15 @@ fn config_loading_integration() {
         "TOOL_READ: Read\n",
     ).unwrap();
 
-    let shared = raveloop_cli::config::load_shared_config(config_root).unwrap();
+    let shared = raveloop::config::load_shared_config(config_root).unwrap();
     assert_eq!(shared.agent, "claude-code");
     assert_eq!(shared.headroom, 1500);
 
-    let agent = raveloop_cli::config::load_agent_config(config_root, "claude-code").unwrap();
+    let agent = raveloop::config::load_agent_config(config_root, "claude-code").unwrap();
     assert_eq!(agent.models.get("work").unwrap(), "claude-sonnet-4-6");
     assert!(agent.params.get("work").unwrap().get("dangerous").is_some());
 
-    let tokens = raveloop_cli::config::load_tokens(config_root, "claude-code").unwrap();
+    let tokens = raveloop::config::load_tokens(config_root, "claude-code").unwrap();
     assert_eq!(tokens.get("TOOL_READ").unwrap(), "Read");
 }
 
@@ -65,16 +65,16 @@ fn embedded_defaults_are_valid() {
     // Catches regressions where a default file drifts and stops parsing.
     let dir = TempDir::new().unwrap();
     let target = dir.path().join("cfg");
-    raveloop_cli::init::run_init(&target, false).unwrap();
+    raveloop::init::run_init(&target, false).unwrap();
 
-    let shared = raveloop_cli::config::load_shared_config(&target).unwrap();
+    let shared = raveloop::config::load_shared_config(&target).unwrap();
     assert!(!shared.agent.is_empty());
     assert!(shared.headroom > 0);
 
-    let cc = raveloop_cli::config::load_agent_config(&target, "claude-code").unwrap();
+    let cc = raveloop::config::load_agent_config(&target, "claude-code").unwrap();
     assert!(cc.models.contains_key("reflect"));
 
-    let pi = raveloop_cli::config::load_agent_config(&target, "pi").unwrap();
+    let pi = raveloop::config::load_agent_config(&target, "pi").unwrap();
     assert!(pi.models.contains_key("reflect"));
 
     for phase in ["work", "analyse-work", "reflect", "dream", "triage"] {
@@ -88,7 +88,7 @@ fn embedded_defaults_are_valid() {
     assert!(survey.exists(), "missing survey prompt: {}", survey.display());
     let body = fs::read_to_string(&survey).unwrap();
     assert!(!body.trim().is_empty(), "empty survey prompt");
-    let loaded = raveloop_cli::survey::load_survey_prompt(&target).unwrap();
+    let loaded = raveloop::survey::load_survey_prompt(&target).unwrap();
     assert_eq!(loaded, body);
 
     let create_plan = target.join("create-plan.md");
@@ -129,8 +129,8 @@ fn survey_plan_discovery_across_multiple_roots() {
         fs::write(dir.join("backlog.md"), format!("# backlog {plan_name}")).unwrap();
     }
 
-    let plans_a = raveloop_cli::survey::discover_plans(&root_a).unwrap();
-    let plans_b = raveloop_cli::survey::discover_plans(&root_b).unwrap();
+    let plans_a = raveloop::survey::discover_plans(&root_a).unwrap();
+    let plans_b = raveloop::survey::discover_plans(&root_b).unwrap();
     assert_eq!(plans_a.len(), 2);
     assert_eq!(plans_b.len(), 1);
     assert!(plans_a.iter().all(|p| p.project == "ProjectA"));
@@ -139,7 +139,7 @@ fn survey_plan_discovery_across_multiple_roots() {
     let mut all = Vec::new();
     all.extend(plans_a);
     all.extend(plans_b);
-    let rendered = raveloop_cli::survey::render_survey_input(&all);
+    let rendered = raveloop::survey::render_survey_input(&all);
 
     assert!(rendered.contains("## Plan: ProjectA/plan-alpha"));
     assert!(rendered.contains("## Plan: ProjectA/plan-beta"));

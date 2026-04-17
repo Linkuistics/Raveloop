@@ -57,7 +57,7 @@ pub fn validate_target(plan_dir: &Path) -> Result<PathBuf> {
         .with_context(|| format!("Plan path {} has no parent directory", abs.display()))?;
     if !parent.is_dir() {
         anyhow::bail!(
-            "Parent directory {} does not exist. Create it first, then re-run raveloop-cli create.",
+            "Parent directory {} does not exist. Create it first, then re-run raveloop create.",
             parent.display()
         );
     }

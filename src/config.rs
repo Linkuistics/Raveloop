@@ -15,7 +15,7 @@ pub const CONFIG_ENV_VAR: &str = "RAVELOOP_CONFIG";
 ///   4. hard error (no walk-up, no magic, no registry)
 ///
 /// The resolved path must be an existing directory; otherwise an
-/// actionable error pointing at `raveloop-cli init` is returned.
+/// actionable error pointing at `raveloop init` is returned.
 pub fn resolve_config_dir(explicit_flag: Option<PathBuf>) -> Result<PathBuf> {
     let env_var = std::env::var(CONFIG_ENV_VAR).ok().map(PathBuf::from);
     let xdg_default = dirs::config_dir().map(|p| p.join("raveloop"));
@@ -41,14 +41,14 @@ fn select_config_dir(
         anyhow::bail!(
             "Could not resolve Raveloop config directory.\n\
              No --config flag, no RAVELOOP_CONFIG environment variable, and no user config dir available on this platform.\n\
-             Create one with `raveloop-cli init <dir>` and either pass --config <dir> or set RAVELOOP_CONFIG=<dir>."
+             Create one with `raveloop init <dir>` and either pass --config <dir> or set RAVELOOP_CONFIG=<dir>."
         );
     };
 
     if !candidate.is_dir() {
         anyhow::bail!(
             "Raveloop config directory {} (from {}) does not exist or is not a directory.\n\
-             Create it with `raveloop-cli init {}`.",
+             Create it with `raveloop init {}`.",
             candidate.display(),
             source,
             candidate.display()
@@ -184,7 +184,7 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains(&missing.display().to_string()));
         assert!(message.contains("--config flag"));
-        assert!(message.contains("raveloop-cli init"));
+        assert!(message.contains("raveloop init"));
     }
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
     fn all_sources_missing_errors_with_init_guidance() {
         let err = select_config_dir(None, None, None).unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("raveloop-cli init"));
+        assert!(message.contains("raveloop init"));
         assert!(message.contains("RAVELOOP_CONFIG"));
     }
 

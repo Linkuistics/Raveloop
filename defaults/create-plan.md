@@ -98,9 +98,9 @@ for the contract.
 
 ### Driving the cycle
 
-The cycle is driven by the `raveloop-cli` Rust binary. Each
+The cycle is driven by the `raveloop` Rust binary. Each
 user-configured profile lives in its own directory, scaffolded once
-with `raveloop-cli init <config-dir>`. Day-to-day usage points the
+with `raveloop init <config-dir>`. Day-to-day usage points the
 binary at that config directory via the discovery chain (`--config`
 flag, then `RAVELOOP_CONFIG` env var, then the default location at
 `<dirs::config_dir()>/raveloop/`):
@@ -108,10 +108,10 @@ flag, then `RAVELOOP_CONFIG` env var, then the default location at
 ```bash
 # Most common: set once, forget
 export RAVELOOP_CONFIG=<config-dir>
-raveloop-cli run ~/Development/{project}/LLM_STATE/{plan-name}
+raveloop run ~/Development/{project}/LLM_STATE/{plan-name}
 
 # Explicit per-invocation
-raveloop-cli run --config <config-dir> ~/Development/{project}/LLM_STATE/{plan-name}
+raveloop run --config <config-dir> ~/Development/{project}/LLM_STATE/{plan-name}
 ```
 
 The agent (Claude Code or Pi) is selected by the `agent:` key in

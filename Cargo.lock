@@ -1165,7 +1165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "raveloop-cli"
+name = "raveloop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
