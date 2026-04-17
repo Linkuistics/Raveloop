@@ -5,7 +5,6 @@
 - **Import Grouping:** Group imports as StdExternalCrate (stdlib, external crates, then local)
 - **Import Granularity:** Crate level (merge imports from the same crate)
 - **Field Init Shorthand:** Always use field init shorthand when variable name matches field name
-- **Apply formatting:** Run `cargo +nightly fmt` before committing
 
 ### Function Parameters
 - **Maximum arguments:** 20 parameters

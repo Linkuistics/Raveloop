@@ -380,6 +380,40 @@ Pick one:
 
 ---
 
+### Embed new language coding-style files in `init`
+
+**Category:** `feature`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+`defaults/fixed-memory/` now contains coding-style files for every
+language the user works in: `coding-style-swift.md`,
+`coding-style-typescript.md`, `coding-style-python.md`,
+`coding-style-bash.md`, `coding-style-elixir.md` (in addition to the
+existing `coding-style-rust.md`). They are not yet wired into the
+product — `src/init.rs` only embeds the rust file, so `raveloop init`
+does not write the new files into a user's config dir, and the
+work-phase agent therefore cannot find them at runtime.
+
+The work-phase prompt (`defaults/phases/work.md` lines 36–42) already
+does language-based lookup of `coding-style-<lang>.md`, so the only
+change required is registering each new file as an `EmbeddedFile` in
+the `EMBEDDED_FILES` constant in `src/init.rs` (alongside the existing
+`coding-style-rust.md` entry on line 27). After this, `raveloop init`
+(and `raveloop init --force`) will install the new files automatically.
+
+Touch points:
+- `src/init.rs` — five new `EmbeddedFile` entries, one per language
+- Consider whether the embedded-file roster deserves a unit test that
+  asserts every `defaults/fixed-memory/coding-style-*.md` on disk is
+  registered, so future additions can't drift out of sync silently.
+
+**Results:** _pending_
+
+---
+
 ### Add integration coverage for the phase → file-write round-trip
 
 **Category:** `feature`
@@ -400,6 +434,90 @@ tiny mock `Agent` trait impl that writes files matching what a
 well-behaved model *should* do per each phase prompt, and asserts the
 expected files exist with expected contents. The test doubles as a
 living executable description of the phase contract.
+
+**Results:** _pending_
+
+---
+
+### Work-phase commit can land meta-only commits that claim source work
+
+**Category:** `bug`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+A work-phase session can produce a commit whose message narrates
+substantial source changes (specific files, line counts, fixes) while
+the commit itself only touches `LLM_STATE/<plan>/` bookkeeping files
+(`backlog.md`, `phase.md`, `work-baseline`). The described source
+changes remain unstaged in the working tree. Subsequent `reflect` /
+`triage` / `git-commit-triage` phases do not catch this — none of
+them diff the actual commit payload against the claims in the commit
+message, the backlog `Results` block, or the session-log entry.
+
+Observed in a Modaliser-Racket plan run. Commit `06941ab` (message:
+"Fix pipeline teardown: group-kill all subprocess spawn sites;
+eliminate ffi/unsafe") described edits to ~17 source + test files,
+but its staged diff was three files:
+
+```
+LLM_STATE/modaliser/backlog.md    | 58 +++++++++++++++++++++++----
+LLM_STATE/modaliser/phase.md      |  2 +-
+LLM_STATE/modaliser/work-baseline |  2 +-
+```
+
+The real changes (~276 insertions / 623 deletions across `ffi/`,
+`services/`, `tests/`, `ui/`, `main.rkt`) sat in the working tree
+across subsequent reflect/triage/git-commit-triage cycles without
+being noticed, until a fresh-context work session read `git status`
+and recovered them as `ad84de7 Recover missing payload from 06941ab`.
+Between the two commits the plan's backlog was "empty", the phase
+transitions all succeeded, and tests were never re-run against HEAD.
+
+Proximate cause is most likely a narrow `git add <pathspec>` in the
+work phase's commit step that missed the source files. The deeper
+issue is the lack of any postcondition that compares claimed work to
+committed diff.
+
+Candidate guards (not mutually exclusive):
+
+1. **Rust-side postcondition at commit boundaries.** After the
+   work-phase commit, assert that `git diff --name-only
+   <baseline>..HEAD` contains at least one non-`LLM_STATE/` path if
+   the just-completed task's category is anything other than
+   `meta`/`docs` limited to plan state. Likely home:
+   `src/phase_loop.rs` right after the commit phase closes.
+
+2. **Triage-level verification.** In `git-commit-triage` (or
+   whichever phase drives the commit), fail loudly when
+   `git status --porcelain` after the commit still shows unstaged,
+   pre-existing source changes whose paths also appear in the commit
+   message. This would have caught 06941ab on the spot.
+
+3. **Prompt-level guardrail.** Update `defaults/phases/work.md` (and
+   the commit phase prompt) to require the agent, before writing
+   `phase.md`, to run `git diff --stat --staged` and confirm that
+   every file path mentioned in the commit message or the task
+   `Results` block appears in the staged diff.
+
+4. **Work-baseline sanity tick.** When advancing `work-baseline` to
+   HEAD at phase boundaries, diff the new baseline against the
+   previous one: if the delta is `LLM_STATE/**` only but the most
+   recent task claimed non-meta work, surface a warning.
+
+Touch points:
+
+- `src/phase_loop.rs` — phase-boundary postcondition (#1, #4).
+- `defaults/phases/work.md`, `defaults/phases/git-commit-triage.md`
+  — prompt-level guardrails (#2, #3).
+- `tests/integration.rs` — regression test: simulate a work session
+  that edits source files but stages only `LLM_STATE/` before
+  committing, assert the guard triggers.
+
+The failure mode is silent, crosses multiple phase boundaries, and
+masks lost work as "backlog empty" — worth catching at more than one
+seam.
 
 **Results:** _pending_
 
