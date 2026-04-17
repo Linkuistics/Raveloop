@@ -140,7 +140,7 @@ pub fn load_survey_prompt(config_root: &Path) -> Result<String> {
 pub struct SurveyResponse {
     pub plans: Vec<PlanRow>,
     #[serde(default)]
-    pub cross_project_blockers: Vec<Blocker>,
+    pub cross_plan_blockers: Vec<Blocker>,
     #[serde(default)]
     pub parallel_streams: Vec<ParallelStream>,
     #[serde(default)]
@@ -248,8 +248,8 @@ pub fn render_survey_output(response: &SurveyResponse) -> String {
     out.push_str(PLAN_TABLE_LEGEND);
     out.push('\n');
 
-    out.push_str("## Cross-project blockers\n\n");
-    out.push_str(&render_blockers(&response.cross_project_blockers));
+    out.push_str("## Cross-plan blockers\n\n");
+    out.push_str(&render_blockers(&response.cross_plan_blockers));
     out.push('\n');
 
     out.push_str("## Parallel streams\n\n");
@@ -317,7 +317,7 @@ fn append_table_row(out: &mut String, row: &[String; 8], widths: &[usize; 8], la
     out.push('\n');
 }
 
-/// Render the cross-project blockers section. Each entry is a header
+/// Render the cross-plan blockers section. Each entry is a header
 /// line ("  - X blocked on Y") followed by an indented rationale body
 /// that wraps at WRAP_WIDTH. Splitting header from body means the
 /// body's wrap continuations can never be confused with a new logical
@@ -773,7 +773,7 @@ plans:
     received: 0
     notes: Task 0 gate unblocked
 
-cross_project_blockers:
+cross_plan_blockers:
   - blocked: Mnemosyne/sub-F-hierarchy
     blocker: Mnemosyne/sub-B-phase-cycle
     rationale: |
@@ -792,8 +792,8 @@ recommended_invocation_order:
         assert_eq!(resp.plans.len(), 1);
         assert_eq!(resp.plans[0].plan, "sub-A-global-store");
         assert_eq!(resp.plans[0].unblocked, 1);
-        assert_eq!(resp.cross_project_blockers.len(), 1);
-        assert!(resp.cross_project_blockers[0].rationale.contains("readiness gate"));
+        assert_eq!(resp.cross_plan_blockers.len(), 1);
+        assert!(resp.cross_plan_blockers[0].rationale.contains("readiness gate"));
         assert_eq!(resp.recommended_invocation_order.len(), 1);
     }
 
@@ -832,7 +832,7 @@ plans:
     received: 0
 "#;
         let resp = parse_survey_response(minimal).unwrap();
-        assert!(resp.cross_project_blockers.is_empty());
+        assert!(resp.cross_plan_blockers.is_empty());
         assert!(resp.parallel_streams.is_empty());
         assert!(resp.recommended_invocation_order.is_empty());
         assert_eq!(resp.plans[0].notes, "");
@@ -1113,7 +1113,7 @@ parallel_streams:
     fn render_survey_output_contains_all_four_sections_in_order() {
         let response = SurveyResponse {
             plans: vec![row("P", "x", "work", 1, 0, 0, 0, "")],
-            cross_project_blockers: vec![],
+            cross_plan_blockers: vec![],
             parallel_streams: vec![],
             recommended_invocation_order: vec![Recommendation {
                 plan: "P/x".into(),
@@ -1123,7 +1123,7 @@ parallel_streams:
         let out = render_survey_output(&response);
         assert!(out.contains("# Plan Status Survey"));
         let summary = out.find("## Per-plan summary").unwrap();
-        let blockers = out.find("## Cross-project blockers").unwrap();
+        let blockers = out.find("## Cross-plan blockers").unwrap();
         let streams = out.find("## Parallel streams").unwrap();
         let recommendations = out.find("## Recommended invocation order").unwrap();
         assert!(summary < blockers && blockers < streams && streams < recommendations);
@@ -1136,7 +1136,7 @@ parallel_streams:
     fn render_survey_output_includes_legend_under_per_plan_summary() {
         let response = SurveyResponse {
             plans: vec![row("P", "x", "work", 1, 0, 0, 0, "")],
-            cross_project_blockers: vec![],
+            cross_plan_blockers: vec![],
             parallel_streams: vec![],
             recommended_invocation_order: vec![],
         };
@@ -1149,7 +1149,7 @@ parallel_streams:
         assert!(out.contains("Legend"));
         // Legend appears between the table and the first prose section.
         let legend_idx = out.find("Legend").unwrap();
-        let blockers_idx = out.find("## Cross-project blockers").unwrap();
+        let blockers_idx = out.find("## Cross-plan blockers").unwrap();
         assert!(legend_idx < blockers_idx);
     }
 

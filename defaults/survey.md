@@ -32,7 +32,7 @@ plans:
     received: <int>               # count of dispatches under `## Received` NOT yet promoted to numbered tasks
     notes: <string>               # short free-text cell; leave empty if nothing worth noting
 
-cross_project_blockers:
+cross_plan_blockers:
   - blocked: <project>/<plan>     # plan that is blocked
     blocker: <project>/<plan>     # plan whose output unblocks it
     rationale: |                  # one or two sentences; use `|` block scalar for safety
@@ -64,9 +64,12 @@ recommended_invocation_order:
   pre-pivot framing". Leave it as an empty string if there's nothing
   specific to note.
 - A plan with `backlog.md` missing: counts are all 0, `notes: backlog.md missing`.
-- `cross_project_blockers`: only entries where blocker and blocked
-  live in different projects. Same-project blockers belong in the
-  plan's own backlog, not here. Omit the key or return `[]` if none.
+- `cross_plan_blockers`: entries where blocker and blocked are
+  DIFFERENT plans. Include both same-project and cross-project
+  dependencies — the survey is the place to see them all at once.
+  A plan's dependency on itself (or on a task within itself) belongs
+  in that plan's backlog, not here. Omit the key or return `[]` if
+  no cross-plan dependencies exist.
 - `parallel_streams`: group plans into sets whose work can proceed
   concurrently with the other sets. Each stream may itself be a
   sequential chain (e.g. gate-task → implementation), but streams do
