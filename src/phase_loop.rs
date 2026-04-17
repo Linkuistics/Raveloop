@@ -22,8 +22,15 @@ fn read_phase(plan_dir: &Path) -> Result<Phase> {
         .with_context(|| format!("Unknown phase: {}", content.trim()))
 }
 
-fn write_phase(plan_dir: &Path, phase: Phase) {
-    let _ = fs::write(plan_dir.join("phase.md"), phase.to_string());
+/// Writes the next phase marker to `phase.md`. Errors are propagated so
+/// the loop doesn't silently advance past a filesystem failure (permissions,
+/// full disk, stale handle) — the phase file is the single source of truth
+/// for the loop's position, so a dropped write would re-invoke the agent on
+/// the same phase and hide the real error.
+fn write_phase(plan_dir: &Path, phase: Phase) -> Result<()> {
+    let path = plan_dir.join("phase.md");
+    fs::write(&path, phase.to_string())
+        .with_context(|| format!("Failed to write phase marker: {}", path.display()))
 }
 
 fn plan_name(plan_dir: &Path) -> String {
@@ -122,14 +129,14 @@ async fn handle_script_phase(
             let result = git_commit_plan(plan_dir, &name, "work")?;
             log_commit(ui, "work", &scope, &result);
             warn_if_project_tree_dirty(ui, project_dir);
-            write_phase(plan_dir, Phase::Llm(LlmPhase::Reflect));
+            write_phase(plan_dir, Phase::Llm(LlmPhase::Reflect))?;
             Ok(ui.confirm("Proceed to reflect phase?").await)
         }
         ScriptPhase::GitCommitReflect => {
             let result = git_commit_plan(plan_dir, &name, "reflect")?;
             log_commit(ui, "reflect", &scope, &result);
             if should_dream(plan_dir, headroom) {
-                write_phase(plan_dir, Phase::Llm(LlmPhase::Dream));
+                write_phase(plan_dir, Phase::Llm(LlmPhase::Dream))?;
             } else {
                 // Render a full DREAM header with a skip description so the
                 // absence-of-work is as legible as the other phases.
@@ -138,20 +145,20 @@ async fn handle_script_phase(
                 ui.log(&format!("  ◆  {}  ·  {scope}", info.label));
                 ui.log("  Skipped — memory within headroom");
                 ui.log(HR);
-                write_phase(plan_dir, Phase::Llm(LlmPhase::Triage));
+                write_phase(plan_dir, Phase::Llm(LlmPhase::Triage))?;
             }
             Ok(true)
         }
         ScriptPhase::GitCommitDream => {
             let result = git_commit_plan(plan_dir, &name, "dream")?;
             log_commit(ui, "dream", &scope, &result);
-            write_phase(plan_dir, Phase::Llm(LlmPhase::Triage));
+            write_phase(plan_dir, Phase::Llm(LlmPhase::Triage))?;
             Ok(true)
         }
         ScriptPhase::GitCommitTriage => {
             let result = git_commit_plan(plan_dir, &name, "triage")?;
             log_commit(ui, "triage", &scope, &result);
-            write_phase(plan_dir, Phase::Llm(LlmPhase::Work));
+            write_phase(plan_dir, Phase::Llm(LlmPhase::Work))?;
             Ok(ui.confirm("Proceed to next work phase?").await)
         }
     }
@@ -258,5 +265,28 @@ mod tests {
         // Defensive: if project_dir somehow resolves to "" the banner still
         // identifies the plan rather than rendering "  / core" with a dangling slash.
         assert_eq!(header_scope("", "core"), "core");
+    }
+
+    #[test]
+    fn write_phase_writes_marker_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_phase(dir.path(), Phase::Llm(LlmPhase::Reflect)).unwrap();
+        let contents = fs::read_to_string(dir.path().join("phase.md")).unwrap();
+        assert_eq!(contents, "reflect");
+    }
+
+    #[test]
+    fn write_phase_errors_when_directory_is_missing() {
+        // Guard: fs::write previously returned silently via `let _ = ...`, so
+        // a missing plan dir would advance the loop with stale phase state.
+        // The new signature surfaces the error with the target path.
+        let dir = tempfile::TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        let err = write_phase(&missing, Phase::Llm(LlmPhase::Work))
+            .expect_err("write should fail on a missing directory");
+        assert!(
+            err.to_string().contains("phase.md"),
+            "error should name the target file: {err}"
+        );
     }
 }

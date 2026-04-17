@@ -10,11 +10,58 @@ use tokio::process::Command;
 use super::Agent;
 use crate::config::load_tokens;
 use crate::format::{
-    FormattedOutput, ToolCall, clean_tool_name,
+    FormattedOutput, Intent, Span, Style, StyledLine, ToolCall, clean_tool_name,
     extract_tool_detail, format_result_text, format_tool_call,
 };
 use crate::types::{AgentConfig, LlmPhase, PlanContext};
 use crate::ui::{UIMessage, UISender};
+
+/// Maximum bytes of a malformed stream line retained in the per-line
+/// warning. The full line is dropped; the snippet is enough to diagnose
+/// format drift without flooding scrollback when claude produces many
+/// bad lines in a row.
+const STREAM_SNIPPET_BYTES: usize = 200;
+
+/// Rolling cap on the stderr tail buffer. When a run exceeds this, the
+/// oldest bytes are discarded and a one-shot warning is sent so the user
+/// knows the error message they're about to see (on failure) is truncated.
+const STDERR_BUFFER_CAP: usize = 4096;
+
+/// Outcome of trying to interpret one stream-JSON line from claude.
+///
+/// Distinguishes "valid JSON but nothing to display" (Ignored) from
+/// "couldn't parse" (Malformed) so the caller can warn on the latter.
+/// The old `Option<FormattedOutput>` collapsed both into `None`, which
+/// is how claude stream-format drift becomes invisible in the TUI.
+enum StreamLineOutcome {
+    Output(FormattedOutput),
+    Ignored,
+    Malformed { snippet: String },
+}
+
+/// Truncates on a UTF-8 char boundary so a multibyte code point at the
+/// cut point never panics. Appends `…` when the input was trimmed.
+fn truncate_snippet(raw: &str, max_bytes: usize) -> String {
+    if raw.len() <= max_bytes {
+        return raw.to_string();
+    }
+    let mut cut = max_bytes;
+    while cut > 0 && !raw.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}…", &raw[..cut])
+}
+
+/// Builds a yellow `⚠  …` warning line for the TUI scrollback. Matches
+/// the existing warning visual used by `warn_if_project_tree_dirty` in
+/// `phase_loop`, but renders through `Persist` because it's emitted from
+/// an agent rather than the phase-loop thread.
+fn warning_line(body: impl Into<String>) -> StyledLine {
+    StyledLine(vec![Span::styled(
+        format!("  ⚠  {}", body.into()),
+        Style::bold_intent(Intent::Changed),
+    )])
+}
 
 pub struct ClaudeCodeAgent {
     config: AgentConfig,
@@ -63,15 +110,24 @@ fn parse_stream_line(
     line: &str,
     phase: Option<LlmPhase>,
     shown_highlights: &mut HashSet<String>,
-) -> Option<FormattedOutput> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
+) -> StreamLineOutcome {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return StreamLineOutcome::Ignored;
     }
 
-    let event: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event: serde_json::Value = match serde_json::from_str(trimmed) {
+        Ok(v) => v,
+        Err(_) => {
+            return StreamLineOutcome::Malformed {
+                snippet: truncate_snippet(trimmed, STREAM_SNIPPET_BYTES),
+            };
+        }
+    };
 
-    let event_type = event.get("type")?.as_str()?;
+    let Some(event_type) = event.get("type").and_then(|t| t.as_str()) else {
+        return StreamLineOutcome::Ignored;
+    };
 
     if event_type == "assistant" {
         if let Some(content) = event.get("message")
@@ -122,22 +178,22 @@ fn parse_stream_line(
                     },
                 };
 
-                return Some(format_tool_call(&tool, phase, shown_highlights));
+                return StreamLineOutcome::Output(format_tool_call(&tool, phase, shown_highlights));
             }
         }
-        return None;
+        return StreamLineOutcome::Ignored;
     }
 
     if event_type == "result" {
         if let Some(result_text) = event.get("result").and_then(|r| r.as_str()) {
-            return Some(FormattedOutput {
+            return StreamLineOutcome::Output(FormattedOutput {
                 lines: format_result_text(result_text),
                 persist: true,
             });
         }
     }
 
-    None
+    StreamLineOutcome::Ignored
 }
 
 #[async_trait]
@@ -204,16 +260,31 @@ impl Agent for ClaudeCodeAgent {
         let stderr = child.stderr.take().context("No stderr")?;
 
         // Drain stderr concurrently so it never blocks the child;
-        // retain the last ~4KB so failures can be surfaced in the error.
+        // retain the last STDERR_BUFFER_CAP bytes so failures can be
+        // surfaced in the error. On the first overflow, emit a one-shot
+        // Persist warning so the user knows any error tail they later
+        // see is the tail, not the head.
+        let overflow_tx = tx.clone();
+        let overflow_agent_id = agent_id.to_string();
         let stderr_task = tokio::spawn(async move {
             let mut reader = BufReader::new(stderr).lines();
             let mut buf = String::new();
+            let mut overflow_warned = false;
             while let Ok(Some(line)) = reader.next_line().await {
                 buf.push_str(&line);
                 buf.push('\n');
-                if buf.len() > 4096 {
-                    let cut = buf.len() - 4096;
+                if buf.len() > STDERR_BUFFER_CAP {
+                    let cut = buf.len() - STDERR_BUFFER_CAP;
                     buf.drain(..cut);
+                    if !overflow_warned {
+                        overflow_warned = true;
+                        let _ = overflow_tx.send(UIMessage::Persist {
+                            agent_id: overflow_agent_id.clone(),
+                            lines: vec![warning_line(format!(
+                                "claude stderr exceeded {STDERR_BUFFER_CAP}-byte buffer — earlier lines dropped"
+                            ))],
+                        });
+                    }
                 }
             }
             buf
@@ -227,21 +298,32 @@ impl Agent for ClaudeCodeAgent {
         loop {
             match lines.next_line().await {
                 Ok(Some(line)) => {
-                    if let Some(formatted) = parse_stream_line(&line, Some(phase), &mut shown_highlights) {
-                        if formatted.is_empty() {
-                            continue;
+                    match parse_stream_line(&line, Some(phase), &mut shown_highlights) {
+                        StreamLineOutcome::Output(formatted) => {
+                            if formatted.is_empty() {
+                                continue;
+                            }
+                            if formatted.persist {
+                                let _ = tx.send(UIMessage::Persist {
+                                    agent_id: agent_id.to_string(),
+                                    lines: formatted.lines,
+                                });
+                            } else if let Some(line) = formatted.lines.into_iter().next() {
+                                let _ = tx.send(UIMessage::Progress {
+                                    agent_id: agent_id.to_string(),
+                                    line,
+                                });
+                            }
                         }
-                        if formatted.persist {
+                        StreamLineOutcome::Malformed { snippet } => {
                             let _ = tx.send(UIMessage::Persist {
                                 agent_id: agent_id.to_string(),
-                                lines: formatted.lines,
-                            });
-                        } else if let Some(line) = formatted.lines.into_iter().next() {
-                            let _ = tx.send(UIMessage::Progress {
-                                agent_id: agent_id.to_string(),
-                                line,
+                                lines: vec![warning_line(format!(
+                                    "claude stream-JSON parse failed — dropping line: {snippet}"
+                                ))],
                             });
                         }
+                        StreamLineOutcome::Ignored => {}
                     }
                 }
                 Ok(None) => break,
@@ -315,13 +397,21 @@ mod tests {
             .join("\n")
     }
 
+    fn expect_output(outcome: StreamLineOutcome) -> FormattedOutput {
+        match outcome {
+            StreamLineOutcome::Output(f) => f,
+            StreamLineOutcome::Ignored => panic!("expected Output, got Ignored"),
+            StreamLineOutcome::Malformed { snippet } => {
+                panic!("expected Output, got Malformed({snippet})")
+            }
+        }
+    }
+
     #[test]
     fn parse_tool_use_read() {
         let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/foo/bar.md"}}]}}"#;
         let mut shown = HashSet::new();
-        let result = parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown);
-        assert!(result.is_some());
-        let formatted = result.unwrap();
+        let formatted = expect_output(parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown));
         assert!(!formatted.persist);
         let text = flat(&formatted);
         assert!(text.contains("Read"));
@@ -332,9 +422,7 @@ mod tests {
     fn parse_result_event() {
         let line = r#"{"type":"result","result":"[ADDED] New entry — description"}"#;
         let mut shown = HashSet::new();
-        let result = parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown);
-        assert!(result.is_some());
-        let formatted = result.unwrap();
+        let formatted = expect_output(parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown));
         assert!(formatted.persist);
         assert!(flat(&formatted).contains("ADDED"));
     }
@@ -343,15 +431,62 @@ mod tests {
     fn parse_highlight_write_memory() {
         let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/plan/memory.md","content":"stuff"}}]}}"#;
         let mut shown = HashSet::new();
-        let result = parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown);
-        assert!(result.is_some());
-        assert!(result.unwrap().persist);
+        assert!(expect_output(parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown)).persist);
     }
 
     #[test]
     fn parse_ignores_empty_lines() {
         let mut shown = HashSet::new();
-        assert!(parse_stream_line("", None, &mut shown).is_none());
-        assert!(parse_stream_line("   ", None, &mut shown).is_none());
+        assert!(matches!(
+            parse_stream_line("", None, &mut shown),
+            StreamLineOutcome::Ignored
+        ));
+        assert!(matches!(
+            parse_stream_line("   ", None, &mut shown),
+            StreamLineOutcome::Ignored
+        ));
+    }
+
+    #[test]
+    fn parse_unhandled_event_type_is_ignored() {
+        // Valid JSON but nothing we display. Must NOT be classified as Malformed
+        // — otherwise every system event would trigger a warning.
+        let mut shown = HashSet::new();
+        assert!(matches!(
+            parse_stream_line(r#"{"type":"system","subtype":"init"}"#, None, &mut shown),
+            StreamLineOutcome::Ignored
+        ));
+    }
+
+    #[test]
+    fn parse_malformed_json_surfaces_snippet() {
+        // This is the scenario that used to silently disappear. The caller
+        // now gets a snippet of the bad line so it can warn the user.
+        let mut shown = HashSet::new();
+        let outcome = parse_stream_line("this is not json", None, &mut shown);
+        let StreamLineOutcome::Malformed { snippet } = outcome else {
+            panic!("expected Malformed");
+        };
+        assert_eq!(snippet, "this is not json");
+    }
+
+    #[test]
+    fn malformed_snippet_is_bounded_and_utf8_safe() {
+        // Generate a >STREAM_SNIPPET_BYTES string containing multibyte chars
+        // at the cut point to verify we never slice mid-codepoint.
+        let mut s = String::new();
+        for _ in 0..50 {
+            s.push_str("café "); // 5 bytes each (é is 2 bytes)
+        }
+        assert!(s.len() > STREAM_SNIPPET_BYTES);
+        let truncated = truncate_snippet(&s, STREAM_SNIPPET_BYTES);
+        assert!(truncated.ends_with('…'));
+        assert!(truncated.len() <= STREAM_SNIPPET_BYTES + '…'.len_utf8());
+    }
+
+    #[test]
+    fn truncate_snippet_passes_short_inputs_unchanged() {
+        assert_eq!(truncate_snippet("short", STREAM_SNIPPET_BYTES), "short");
+        assert_eq!(truncate_snippet("", STREAM_SNIPPET_BYTES), "");
     }
 }

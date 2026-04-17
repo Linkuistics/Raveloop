@@ -1,18 +1,33 @@
 // src/prompt.rs
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
+use regex::Regex;
 
 use crate::types::{LlmPhase, PlanContext};
 
-/// Replace template tokens like {{PLAN}}, {{PROJECT}}, etc.
+/// Matches leftover `{{NAME}}` placeholders (ASCII letters, digits, `_`).
+/// A failed substitution is almost always a typo in a phase prompt, so we
+/// hard-error with the full set of names rather than log a warning — the
+/// pi `{{MEMORY_DIR}}` bug slipped through precisely because a silent pass
+/// reached the LLM unchanged.
+fn unresolved_token_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\{\{([A-Za-z0-9_]+)\}\}").unwrap())
+}
+
+/// Replace template tokens like {{PLAN}}, {{PROJECT}}, etc., then verify
+/// no `{{NAME}}` placeholders remain. Returns `Err` listing every
+/// unresolved token found, so drift in a phase prompt fails loudly at
+/// compose time instead of silently reaching the LLM.
 pub fn substitute_tokens(
     content: &str,
     ctx: &PlanContext,
     tokens: &HashMap<String, String>,
-) -> String {
+) -> Result<String> {
     let mut result = content.to_string();
     result = result.replace("{{DEV_ROOT}}", &ctx.dev_root);
     result = result.replace("{{PROJECT}}", &ctx.project_dir);
@@ -24,7 +39,25 @@ pub fn substitute_tokens(
         result = result.replace(&format!("{{{{{key}}}}}"), value);
     }
 
-    result
+    let unresolved: BTreeSet<&str> = unresolved_token_regex()
+        .captures_iter(&result)
+        .map(|c| c.get(1).unwrap().as_str())
+        .collect();
+
+    if !unresolved.is_empty() {
+        let names: Vec<String> = unresolved
+            .iter()
+            .map(|n| format!("{{{{{n}}}}}"))
+            .collect();
+        return Err(anyhow!(
+            "Prompt contains unresolved token(s) after substitution: {}. \
+             This usually indicates a typo in a phase prompt or a missing \
+             agent-provided token.",
+            names.join(", ")
+        ));
+    }
+
+    Ok(result)
 }
 
 /// Load the phase prompt file from the config root.
@@ -56,7 +89,7 @@ pub fn compose_prompt(
         prompt.push_str(&ov);
     }
 
-    Ok(substitute_tokens(&prompt, ctx, tokens))
+    substitute_tokens(&prompt, ctx, tokens)
 }
 
 #[cfg(test)]
@@ -80,7 +113,7 @@ mod tests {
             "plan={{PLAN}} project={{PROJECT}}",
             &ctx,
             &HashMap::new(),
-        );
+        ).unwrap();
         assert_eq!(result, "plan=/plans/my-plan project=/project");
     }
 
@@ -89,8 +122,45 @@ mod tests {
         let ctx = test_ctx();
         let mut tokens = HashMap::new();
         tokens.insert("TOOL_READ".to_string(), "Read".to_string());
-        let result = substitute_tokens("Use {{TOOL_READ}}", &ctx, &tokens);
+        let result = substitute_tokens("Use {{TOOL_READ}}", &ctx, &tokens).unwrap();
         assert_eq!(result, "Use Read");
+    }
+
+    #[test]
+    fn fails_on_unresolved_token() {
+        let ctx = test_ctx();
+        let err = substitute_tokens("needs {{MEMORY_DIR}} here", &ctx, &HashMap::new())
+            .expect_err("unresolved token should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("{{MEMORY_DIR}}"), "message was: {msg}");
+    }
+
+    #[test]
+    fn lists_all_unresolved_tokens_sorted_and_deduped() {
+        let ctx = test_ctx();
+        let err = substitute_tokens(
+            "{{UNKNOWN_B}} and {{UNKNOWN_A}} and {{UNKNOWN_A}} again",
+            &ctx,
+            &HashMap::new(),
+        )
+        .expect_err("unresolved tokens should fail");
+        let msg = err.to_string();
+        // BTreeSet ordering: A before B, duplicates collapsed.
+        let a = msg.find("{{UNKNOWN_A}}").expect("missing UNKNOWN_A");
+        let b = msg.find("{{UNKNOWN_B}}").expect("missing UNKNOWN_B");
+        assert!(a < b, "names should be sorted: {msg}");
+        assert_eq!(msg.matches("{{UNKNOWN_A}}").count(), 1, "dedup failed: {msg}");
+    }
+
+    #[test]
+    fn accepts_single_brace_sequences() {
+        // `{foo}` (rust format-style) and `{{foo}}` lowercase with a colon
+        // inside shouldn't false-positive. The regex requires
+        // [A-Za-z0-9_] names so punctuation breaks the match.
+        let ctx = test_ctx();
+        let result = substitute_tokens("keep {x} and {{not-a-token}}", &ctx, &HashMap::new())
+            .unwrap();
+        assert_eq!(result, "keep {x} and {{not-a-token}}");
     }
 
     #[test]
