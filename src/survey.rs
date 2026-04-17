@@ -214,16 +214,15 @@ fn strip_code_fence(s: &str) -> &str {
 /// standard 80-column terminal with a small margin.
 const WRAP_WIDTH: usize = 78;
 
-/// Legend describing the per-plan summary table's numeric columns,
-/// emitted directly under the table. Zeros render as `-` in those
-/// columns so non-zero values stand out visually — the parenthetical
-/// in the header line documents that convention.
-const PLAN_TABLE_LEGEND: &str = "\
-Legend (numeric columns; `-` = zero):
-  UNBLOCKED  not_started tasks with no unmet dependencies
-  BLOCKED    tasks with status=blocked, or not_started with unmet deps
-  DONE       tasks with status=done
-  RECEIVED   items under `## Received` not yet promoted to numbered tasks
+/// Key describing the compact `U/B/D/R` task-counts column used in
+/// the per-plan summary. Emitted at the top of that section so readers
+/// see it before the data.
+const PLAN_SUMMARY_KEY: &str = "\
+Task counts column: U/B/D/R  (`-` = zero)
+  U = unblocked  — not_started tasks with no unmet dependencies
+  B = blocked    — status=blocked or not_started with unmet deps
+  D = done       — status=done
+  R = received   — items under `## Received` not yet triaged
 ";
 
 /// Convert a task-count integer into the cell-rendering form: zeros
@@ -243,9 +242,7 @@ pub fn render_survey_output(response: &SurveyResponse) -> String {
     out.push_str("# Plan Status Survey\n\n");
 
     out.push_str("## Per-plan summary\n\n");
-    out.push_str(&render_plan_table(&response.plans));
-    out.push('\n');
-    out.push_str(PLAN_TABLE_LEGEND);
+    out.push_str(&render_plan_summary(&response.plans));
     out.push('\n');
 
     out.push_str("## Cross-plan blockers\n\n");
@@ -262,59 +259,74 @@ pub fn render_survey_output(response: &SurveyResponse) -> String {
     out
 }
 
-/// Render a space-padded, monospace-aligned table of plans. Each
-/// column is padded to `max(header, longest value) + 2` so values
-/// align regardless of string length. The final NOTES column is not
-/// right-padded — trailing whitespace adds no value.
-fn render_plan_table(plans: &[PlanRow]) -> String {
-    const HEADERS: [&str; 8] = [
-        "PROJECT", "PLAN", "PHASE", "UNBLOCKED", "BLOCKED", "DONE", "RECEIVED", "NOTES",
-    ];
-    const LAST: usize = HEADERS.len() - 1;
-
-    let rows: Vec<[String; 8]> = plans
-        .iter()
-        .map(|p| {
-            [
-                p.project.clone(),
-                p.plan.clone(),
-                p.phase.clone(),
-                format_count(p.unblocked),
-                format_count(p.blocked),
-                format_count(p.done),
-                format_count(p.received),
-                p.notes.clone(),
-            ]
-        })
-        .collect();
-
-    let mut widths = [0usize; 8];
-    for (i, h) in HEADERS.iter().enumerate() {
-        widths[i] = h.len();
+/// Render the per-plan summary grouped by project. Each project gets
+/// a `### <project>` heading; under each heading, one indented line
+/// per plan shows the plan name, phase, and compact `U/B/D/R` counts,
+/// with notes (if any) as a wrapped body line below.
+///
+/// The previous wide monospace table — PROJECT/PLAN/PHASE and four
+/// separate count columns + NOTES — ran well past 100 characters
+/// wide in practice. Collapsing the four counts into a single
+/// slash-separated field, moving project to a heading, and moving
+/// notes to a body line keeps each line around 60 characters while
+/// preserving all the information.
+fn render_plan_summary(plans: &[PlanRow]) -> String {
+    if plans.is_empty() {
+        return "  No plans discovered.\n".to_string();
     }
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.len());
-        }
-    }
+
+    // Column widths are computed globally across all plans so columns
+    // align vertically across project sections — easier to compare at
+    // a glance.
+    let plan_width = plans.iter().map(|p| p.plan.len()).max().unwrap_or(0);
+    let phase_width = plans.iter().map(|p| p.phase.len()).max().unwrap_or(0);
 
     let mut out = String::new();
-    append_table_row(&mut out, &HEADERS.map(String::from), &widths, LAST);
-    for row in &rows {
-        append_table_row(&mut out, row, &widths, LAST);
+    out.push_str(PLAN_SUMMARY_KEY);
+    out.push('\n');
+
+    let mut current_project: Option<&str> = None;
+    for plan in plans {
+        if Some(plan.project.as_str()) != current_project {
+            // Blank line before a new project section (except the
+            // very first — the key above is followed by a blank
+            // already).
+            if current_project.is_some() {
+                out.push('\n');
+            }
+            out.push_str(&format!("### {}\n\n", plan.project));
+            current_project = Some(&plan.project);
+        } else {
+            // Blank line between plans within the same project.
+            out.push('\n');
+        }
+
+        out.push_str(&format!(
+            "  {:<plan_w$}  {:<phase_w$}  {}\n",
+            plan.plan,
+            plan.phase,
+            compact_counts(plan),
+            plan_w = plan_width,
+            phase_w = phase_width,
+        ));
+        if !plan.notes.trim().is_empty() {
+            out.push_str(&render_wrapped_bullet("      ", &plan.notes));
+            out.push('\n');
+        }
     }
     out
 }
 
-fn append_table_row(out: &mut String, row: &[String; 8], widths: &[usize; 8], last: usize) {
-    for (i, cell) in row.iter().enumerate() {
-        if i == last {
-            out.push_str(cell);
-        } else {
-            out.push_str(&format!("{:<width$}  ", cell, width = widths[i]));
-        }
-    }
-    out.push('\n');
+/// Format the four task counts as a compact `U/B/D/R` field with `-`
+/// for zero values.
+fn compact_counts(p: &PlanRow) -> String {
+    format!(
+        "{}/{}/{}/{}",
+        format_count(p.unblocked),
+        format_count(p.blocked),
+        format_count(p.done),
+        format_count(p.received),
+    )
 }
 
 /// Render the cross-plan blockers section. Each entry is a header
@@ -885,70 +897,96 @@ parallel_streams:
     }
 
     #[test]
-    fn render_plan_table_aligns_columns_across_rows() {
+    fn render_plan_summary_groups_plans_under_project_headings() {
         let plans = vec![
-            row("P", "short", "work", 1, 2, 3, 0, "note one"),
-            row("P", "a-much-longer-plan-name", "triage", 10, 20, 30, 4, "note two"),
+            row("ProjectA", "alpha", "work", 1, 0, 0, 0, ""),
+            row("ProjectA", "beta",  "work", 0, 0, 0, 0, ""),
+            row("ProjectB", "gamma", "work", 0, 0, 0, 0, ""),
         ];
-        let table = render_plan_table(&plans);
-        let lines: Vec<&str> = table.lines().collect();
-        // Header + two data rows
-        assert_eq!(lines.len(), 3);
-        // Position of "PLAN" header in first line equals position of
-        // "short" in second line (both columns start at the same index).
-        let plan_header_col = lines[0].find("PLAN").unwrap();
-        let plan_row0_col = lines[1].find("short").unwrap();
-        let plan_row1_col = lines[2].find("a-much-longer-plan-name").unwrap();
-        assert_eq!(plan_header_col, plan_row0_col);
-        assert_eq!(plan_header_col, plan_row1_col);
-        // Every data column start aligns with its header. Use rfind so
-        // "BLOCKED" picks the column header rather than the substring
-        // inside "UNBLOCKED".
-        for header in ["PHASE", "UNBLOCKED", "BLOCKED", "DONE", "RECEIVED"] {
-            let header_col = lines[0].rfind(header).unwrap();
-            assert!(
-                lines[1].chars().nth(header_col).map(|c| c != ' ').unwrap_or(false),
-                "column {header} misaligned on row 0; line: {:?}",
-                lines[1]
-            );
-            assert!(
-                lines[2].chars().nth(header_col).map(|c| c != ' ').unwrap_or(false),
-                "column {header} misaligned on row 1; line: {:?}",
-                lines[2]
-            );
+        let out = render_plan_summary(&plans);
+        // Each project appears as a `### Project` heading exactly once.
+        assert_eq!(out.matches("### ProjectA").count(), 1);
+        assert_eq!(out.matches("### ProjectB").count(), 1);
+        // ProjectA appears before ProjectB (input order is preserved).
+        let a_idx = out.find("### ProjectA").unwrap();
+        let b_idx = out.find("### ProjectB").unwrap();
+        assert!(a_idx < b_idx);
+        // Plans appear under their headings.
+        let alpha_idx = out.find("alpha").unwrap();
+        let gamma_idx = out.find("gamma").unwrap();
+        assert!(a_idx < alpha_idx && alpha_idx < b_idx);
+        assert!(b_idx < gamma_idx);
+    }
+
+    #[test]
+    fn render_plan_summary_aligns_plan_and_phase_columns_globally() {
+        // Two projects with mixed plan-name lengths. The widest plan
+        // name sets the column width for ALL plans, regardless of
+        // project, so columns align across the whole section.
+        let plans = vec![
+            row("P", "short", "work", 1, 0, 0, 0, ""),
+            row("P", "a-much-longer-plan-name", "triage", 2, 0, 0, 0, ""),
+            row("Q", "mid-name", "reflect", 3, 0, 0, 0, ""),
+        ];
+        let out = render_plan_summary(&plans);
+        // Find the plan-line for each (line starting with "  " and
+        // containing the plan name).
+        let line_short = out.lines().find(|l| l.contains("  short ")).unwrap();
+        let line_long = out.lines().find(|l| l.contains("a-much-longer-plan-name")).unwrap();
+        let line_mid = out.lines().find(|l| l.contains("mid-name")).unwrap();
+        // Phase name's column position must be identical across all
+        // three lines — the widest plan name sets it.
+        let phase_col_short = line_short.find("work").unwrap();
+        let phase_col_long = line_long.find("triage").unwrap();
+        let phase_col_mid = line_mid.find("reflect").unwrap();
+        assert_eq!(phase_col_short, phase_col_long);
+        assert_eq!(phase_col_short, phase_col_mid);
+    }
+
+    #[test]
+    fn render_plan_summary_renders_zero_counts_as_dash() {
+        let plans = vec![row("P", "x", "work", 0, 0, 0, 0, "")];
+        let out = render_plan_summary(&plans);
+        // Compact counts column: `-/-/-/-`
+        assert!(out.contains("-/-/-/-"));
+        // No stray "0" digit in any plan-line — zero → dash.
+        for line in out.lines().filter(|l| l.starts_with("  ") && !l.starts_with("   ")) {
+            assert!(!line.contains('0'), "unexpected zero digit: {line:?}");
         }
     }
 
     #[test]
-    fn render_plan_table_renders_zero_counts_as_dash() {
-        let plans = vec![row("P", "x", "work", 0, 0, 0, 0, "")];
-        let table = render_plan_table(&plans);
-        // The data row should contain "-" in the numeric columns and
-        // no "0" digits (the only candidate digit source is counts).
-        let data_row = table.lines().nth(1).unwrap();
-        assert!(data_row.contains('-'));
-        assert!(!data_row.contains('0'), "unexpected zero digit: {data_row}");
+    fn render_plan_summary_renders_nonzero_counts_as_digits() {
+        let plans = vec![row("P", "x", "work", 3, 15, 5, 2, "")];
+        let out = render_plan_summary(&plans);
+        assert!(out.contains("3/15/5/2"));
     }
 
     #[test]
-    fn render_plan_table_preserves_nonzero_counts() {
-        let plans = vec![row("P", "x", "work", 3, 10, 5, 2, "")];
-        let table = render_plan_table(&plans);
-        let data_row = table.lines().nth(1).unwrap();
-        assert!(data_row.contains('3'));
-        assert!(data_row.contains("10"));
-        assert!(data_row.contains('5'));
-        assert!(data_row.contains('2'));
+    fn render_plan_summary_renders_notes_as_indented_body_line() {
+        let plans = vec![row("P", "x", "work", 1, 0, 0, 0, "a non-empty note")];
+        let out = render_plan_summary(&plans);
+        assert!(out.contains("      a non-empty note"));
     }
 
     #[test]
-    fn render_plan_table_has_header_row_in_all_caps() {
-        let plans = vec![row("P", "x", "work", 0, 0, 0, 0, "")];
-        let table = render_plan_table(&plans);
-        let first = table.lines().next().unwrap();
-        assert!(first.contains("PROJECT"));
-        assert!(first.contains("UNBLOCKED"));
-        assert!(first.contains("NOTES"));
+    fn render_plan_summary_omits_body_line_when_notes_empty() {
+        let plans = vec![row("P", "x", "work", 1, 0, 0, 0, "")];
+        let out = render_plan_summary(&plans);
+        // No 6-space-indented non-empty line (beyond the key).
+        let has_body = out
+            .lines()
+            .any(|l| l.starts_with("      ") && !l.trim().is_empty() && !l.contains("="));
+        assert!(!has_body, "unexpected body line when notes are empty:\n{out}");
+    }
+
+    #[test]
+    fn render_plan_summary_emits_key_before_project_headings() {
+        let plans = vec![row("P", "x", "work", 1, 0, 0, 0, "")];
+        let out = render_plan_summary(&plans);
+        let key_idx = out.find("Task counts column").unwrap();
+        let project_idx = out.find("### P").unwrap();
+        assert!(key_idx < project_idx);
     }
 
     #[test]
@@ -1133,7 +1171,7 @@ parallel_streams:
     }
 
     #[test]
-    fn render_survey_output_includes_legend_under_per_plan_summary() {
+    fn render_survey_output_includes_counts_key_in_plan_summary() {
         let response = SurveyResponse {
             plans: vec![row("P", "x", "work", 1, 0, 0, 0, "")],
             cross_plan_blockers: vec![],
@@ -1141,16 +1179,16 @@ parallel_streams:
             recommended_invocation_order: vec![],
         };
         let out = render_survey_output(&response);
-        // Legend labels appear.
-        assert!(out.contains("UNBLOCKED"));
-        assert!(out.contains("BLOCKED"));
-        assert!(out.contains("DONE"));
-        assert!(out.contains("RECEIVED"));
-        assert!(out.contains("Legend"));
-        // Legend appears between the table and the first prose section.
-        let legend_idx = out.find("Legend").unwrap();
+        // The U/B/D/R key sits inside the per-plan summary section,
+        // before the project headings.
+        let summary_idx = out.find("## Per-plan summary").unwrap();
+        let key_idx = out.find("Task counts column").unwrap();
         let blockers_idx = out.find("## Cross-plan blockers").unwrap();
-        assert!(legend_idx < blockers_idx);
+        assert!(summary_idx < key_idx && key_idx < blockers_idx);
+        assert!(out.contains("U = unblocked"));
+        assert!(out.contains("B = blocked"));
+        assert!(out.contains("D = done"));
+        assert!(out.contains("R = received"));
     }
 
     #[test]

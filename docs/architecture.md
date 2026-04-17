@@ -521,12 +521,15 @@ fresh-context `claude` invocation alongside the prompt template at
 The **LLM emits YAML** matching a fixed schema (per-plan counts,
 cross-plan blockers, parallel streams, recommended invocation
 order); the tool parses the response and renders the final output
-deterministically — aligned monospace table for the per-plan summary,
-indented-and-wrapped bullets for the three prose sections. This split means column alignment, blank-
-line spacing, and wrap-width consistency are guaranteed by the tool
-rather than hoped for from the LLM. Raw stdout from claude is
-preserved in the error message when YAML parsing fails, so malformed
-responses surface clearly.
+deterministically. The per-plan summary is grouped by project with a
+compact `U/B/D/R` counts column per plan and notes rendered as a
+wrapped body line below; the three prose sections (blockers, streams,
+recommendations) use a header-then-body shape so wrap continuations
+are never confused with new logical lines. This split means column
+alignment, blank-line spacing, and wrap-width consistency are
+guaranteed by the tool rather than hoped for from the LLM. Raw stdout
+from claude is preserved in the error message when YAML parsing
+fails, so malformed responses surface clearly.
 
 Survey is single-shot and read-only by construction: no tool use, no
 session persistence, no file writes. Model precedence is `--model`
