@@ -75,7 +75,7 @@ raveloop-cli/
 - Create: `raveloop-cli/src/main.rs`
 - Create: `raveloop-cli/src/types.rs`
 
-- [ ] **Step 1: Create the Cargo project**
+- [x] **Step 1: Create the Cargo project**
 
 ```bash
 cd /Users/antony/Development
@@ -83,7 +83,7 @@ cargo init raveloop-cli
 cd raveloop-cli
 ```
 
-- [ ] **Step 2: Write Cargo.toml with all dependencies**
+- [x] **Step 2: Write Cargo.toml with all dependencies**
 
 Replace `Cargo.toml` with:
 
@@ -110,7 +110,7 @@ once_cell = "1"
 dirs = "5"
 ```
 
-- [ ] **Step 3: Write src/types.rs with all core types**
+- [x] **Step 3: Write src/types.rs with all core types**
 
 Port from the TypeScript `src/types.ts`. This is the foundation — every other module depends on it.
 
@@ -267,7 +267,7 @@ pub struct StatusInfo {
 }
 ```
 
-- [ ] **Step 4: Write a minimal main.rs stub**
+- [x] **Step 4: Write a minimal main.rs stub**
 
 ```rust
 // src/main.rs
@@ -278,12 +278,12 @@ fn main() {
 }
 ```
 
-- [ ] **Step 5: Verify it compiles**
+- [x] **Step 5: Verify it compiles**
 
 Run: `cargo build`
 Expected: Compiles successfully
 
-- [ ] **Step 6: Add unit tests for Phase parsing**
+- [x] **Step 6: Add unit tests for Phase parsing**
 
 Add at the bottom of `src/types.rs`:
 
@@ -323,12 +323,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `cargo test`
 Expected: All tests pass
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -345,7 +345,7 @@ git commit -m "feat: project scaffold with types module"
 
 Port from `src/config.ts`. Loads YAML config files from the config root directory.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 // src/config.rs
@@ -434,7 +434,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add tempfile dev-dependency to Cargo.toml**
+- [x] **Step 2: Add tempfile dev-dependency to Cargo.toml**
 
 Add to `Cargo.toml`:
 ```toml
@@ -442,14 +442,14 @@ Add to `Cargo.toml`:
 tempfile = "3"
 ```
 
-- [ ] **Step 3: Add `mod config;` to main.rs**
+- [x] **Step 3: Add `mod config;` to main.rs**
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test config`
 Expected: All 4 tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -466,7 +466,7 @@ git commit -m "feat: config loading from YAML files"
 
 Port from `src/dream.ts`. Pure file I/O — reads memory.md word count and compares to baseline.
 
-- [ ] **Step 1: Write implementation and tests**
+- [x] **Step 1: Write implementation and tests**
 
 ```rust
 // src/dream.rs
@@ -551,14 +551,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod dream;` to main.rs**
+- [x] **Step 2: Add `mod dream;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test dream`
 Expected: All 5 tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -575,7 +575,7 @@ git commit -m "feat: dream guard — should_dream and update_baseline"
 
 Port from `src/git.ts`. Runs git commands via `std::process::Command`.
 
-- [ ] **Step 1: Write implementation**
+- [x] **Step 1: Write implementation**
 
 ```rust
 // src/git.rs
@@ -683,14 +683,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod git;` to main.rs**
+- [x] **Step 2: Add `mod git;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test git`
 Expected: Both tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -707,7 +707,7 @@ git commit -m "feat: git operations — commit, baseline, project root discovery
 
 Port from `src/prompt-composer.ts`. Loads phase prompt files, applies token substitution.
 
-- [ ] **Step 1: Write implementation and tests**
+- [x] **Step 1: Write implementation and tests**
 
 ```rust
 // src/prompt.rs
@@ -835,14 +835,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod prompt;` to main.rs**
+- [x] **Step 2: Add `mod prompt;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test prompt`
 Expected: All 3 tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -859,7 +859,7 @@ git commit -m "feat: prompt composition with token substitution"
 
 Port from `src/format.ts`. The largest pure function module — handles tool call formatting, result text parsing (action markers, insight blocks), phase highlights, and tool name cleaning. All functions are pure with no terminal I/O.
 
-- [ ] **Step 1: Write the formatting module**
+- [x] **Step 1: Write the formatting module**
 
 ```rust
 // src/format.rs
@@ -1207,14 +1207,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod format;` to main.rs**
+- [x] **Step 2: Add `mod format;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test format`
 Expected: All 8 tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -1231,7 +1231,7 @@ git commit -m "feat: formatting module — tool calls, result text, highlights"
 
 The `UI` struct wraps an `mpsc::UnboundedSender<UIMessage>` and provides ergonomic methods. The TUI rendering will be added in Task 12. This task sets up the channel types and the handle.
 
-- [ ] **Step 1: Write the UI handle**
+- [x] **Step 1: Write the UI handle**
 
 ```rust
 // src/ui.rs
@@ -1454,14 +1454,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod ui;` to main.rs**
+- [x] **Step 2: Add `mod ui;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test ui`
 Expected: All 4 tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -1479,7 +1479,7 @@ git commit -m "feat: UI handle and AppState for TUI message routing"
 
 Port from `src/agents/claude-code/index.ts` and `stream-parser.ts`. The agent spawns `claude` as a subprocess and parses its stream-json output.
 
-- [ ] **Step 1: Write the Agent trait**
+- [x] **Step 1: Write the Agent trait**
 
 ```rust
 // src/agent/mod.rs
@@ -1530,7 +1530,7 @@ pub trait Agent: Send + Sync {
 }
 ```
 
-- [ ] **Step 2: Write the Claude Code agent**
+- [x] **Step 2: Write the Claude Code agent**
 
 Port from `src/agents/claude-code/index.ts` and `stream-parser.ts`.
 
@@ -1856,14 +1856,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Create `src/agent/` directory and add `mod agent;` to main.rs**
+- [x] **Step 3: Create `src/agent/` directory and add `mod agent;` to main.rs**
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `cargo test agent::claude_code`
 Expected: All 4 tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -1880,7 +1880,7 @@ git commit -m "feat: Agent trait and Claude Code agent with stream parser"
 
 Port from `src/agents/pi/index.ts`, `stream-parser.ts`, and `setup.ts`. Same pattern as Claude Code but different stream format and includes the pi setup logic.
 
-- [ ] **Step 1: Write the Pi stream parser**
+- [x] **Step 1: Write the Pi stream parser**
 
 The Pi agent uses a different JSON stream format from Claude Code. The parser handles three event types:
 
@@ -1987,7 +1987,7 @@ fn parse_pi_stream_line(
 }
 ```
 
-- [ ] **Step 2: Write the PiAgent struct and Agent implementation**
+- [x] **Step 2: Write the PiAgent struct and Agent implementation**
 
 The struct and CLI arg construction. Key differences from ClaudeCodeAgent:
 - Uses `--no-session`, `--append-system-prompt`, `--provider`, `--mode json`
@@ -2019,7 +2019,7 @@ impl PiAgent {
 
 The `invoke_headless` and `invoke_interactive` methods follow the same spawn+read pattern as ClaudeCodeAgent but with Pi's CLI args and `parse_pi_stream_line`.
 
-- [ ] **Step 3: Write the setup method**
+- [x] **Step 3: Write the setup method**
 
 Ports `src/agents/pi/setup.ts`. Checks pi installation, installs subagent extension, generates agent definitions from skill files:
 
@@ -2076,7 +2076,7 @@ async fn setup(&self, ctx: &PlanContext) -> Result<()> {
 
 Note: Add `dirs = "5"` to Cargo.toml dependencies for home directory lookup.
 
-- [ ] **Step 2: Add tests for Pi stream parsing**
+- [x] **Step 2: Add tests for Pi stream parsing**
 
 Same test structure as claude_code tests but with Pi's JSON event format:
 ```rust
@@ -2087,12 +2087,12 @@ fn parse_pi_tool_start() {
 }
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test agent::pi`
 Expected: All tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -2109,7 +2109,7 @@ git commit -m "feat: Pi agent with stream parser and setup"
 
 Port from `src/phase-loop.ts`. The main state machine that reads `phase.md`, dispatches to LLM or script phases, and drives the cycle.
 
-- [ ] **Step 1: Write the phase loop**
+- [x] **Step 1: Write the phase loop**
 
 ```rust
 // src/phase_loop.rs
@@ -2287,14 +2287,14 @@ pub async fn phase_loop(
 }
 ```
 
-- [ ] **Step 2: Add `mod phase_loop;` to main.rs**
+- [x] **Step 2: Add `mod phase_loop;` to main.rs**
 
-- [ ] **Step 3: Verify it compiles**
+- [x] **Step 3: Verify it compiles**
 
 Run: `cargo build`
 Expected: Compiles (no runtime tests for the phase loop — it requires live agent subprocesses)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -2311,7 +2311,7 @@ git commit -m "feat: phase loop state machine"
 
 Port from `src/subagent-dispatch.ts`. Concurrent dispatch using `JoinSet`.
 
-- [ ] **Step 1: Write the subagent dispatch module**
+- [x] **Step 1: Write the subagent dispatch module**
 
 ```rust
 // src/subagent.rs
@@ -2444,14 +2444,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add `mod subagent;` to main.rs**
+- [x] **Step 2: Add `mod subagent;` to main.rs**
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test subagent`
 Expected: Both tests pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -2467,7 +2467,7 @@ git commit -m "feat: concurrent subagent dispatch with JoinSet"
 
 Add the Ratatui rendering loop to the existing `ui.rs`. This is the most complex task — it manages the terminal, renders the three-zone layout, handles suspend/resume, and processes keyboard input for confirmations.
 
-- [ ] **Step 1: Add the TUI runner function**
+- [x] **Step 1: Add the TUI runner function**
 
 Add to `src/ui.rs`:
 
@@ -2648,12 +2648,12 @@ fn draw_ui(f: &mut Frame, state: &AppState) {
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `cargo build`
 Expected: Compiles successfully
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A
@@ -2671,7 +2671,7 @@ git commit -m "feat: Ratatui TUI with three-zone layout and confirm prompts"
 
 This task creates the `init` subcommand that scaffolds a config directory from embedded defaults.
 
-- [ ] **Step 1: Copy all default files from the existing TypeScript project**
+- [x] **Step 1: Copy all default files from the existing TypeScript project**
 
 Create the `defaults/` directory tree. Copy every file from the existing project that should be a default:
 
@@ -2692,7 +2692,7 @@ Copy files from the existing TypeScript project:
 - `fixed-memory/*.md` → `defaults/fixed-memory/`
 - `skills/*.md` → `defaults/skills/`
 
-- [ ] **Step 2: Create the trampoline template**
+- [x] **Step 2: Create the trampoline template**
 
 Create `defaults/raveloop.sh`:
 
@@ -2703,7 +2703,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 exec raveloop-cli run --config "$SCRIPT_DIR" "$@"
 ```
 
-- [ ] **Step 3: Write the init module**
+- [x] **Step 3: Write the init module**
 
 ```rust
 // src/init.rs
@@ -2817,14 +2817,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Add `mod init;` to main.rs**
+- [x] **Step 4: Add `mod init;` to main.rs**
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `cargo test init`
 Expected: Both tests pass
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -2840,7 +2840,7 @@ git commit -m "feat: init command with embedded defaults and trampoline"
 
 Set up the clap CLI with `init` and `run` subcommands, create the agent, spawn the TUI, and run the phase loop.
 
-- [ ] **Step 1: Write the full main.rs**
+- [x] **Step 1: Write the full main.rs**
 
 ```rust
 // src/main.rs
@@ -2965,12 +2965,12 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path) -> Result<()> {
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `cargo build`
 Expected: Compiles successfully. Fix any type mismatches between modules.
 
-- [ ] **Step 3: Test the init command end-to-end**
+- [x] **Step 3: Test the init command end-to-end**
 
 ```bash
 cargo run -- init /tmp/test-raveloop-config
@@ -2981,7 +2981,7 @@ rm -rf /tmp/test-raveloop-config
 
 Expected: Config directory created with all files and executable trampoline.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -2997,7 +2997,7 @@ git commit -m "feat: wire up main with clap CLI, init and run subcommands"
 
 Test the phase loop with a mock plan directory (no real agent subprocess). Verify phase transitions, dream guard, and commit logic work correctly end-to-end.
 
-- [ ] **Step 1: Write integration tests for phase transitions**
+- [x] **Step 1: Write integration tests for phase transitions**
 
 ```rust
 // tests/integration.rs
@@ -3077,12 +3077,12 @@ pub mod prompt;
 pub mod types;
 ```
 
-- [ ] **Step 2: Run integration tests**
+- [x] **Step 2: Run integration tests**
 
 Run: `cargo test --test integration`
 Expected: All tests pass
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A
