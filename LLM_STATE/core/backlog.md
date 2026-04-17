@@ -5,7 +5,7 @@
 ### Auto-create missing parent directories in `create` subcommand
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -25,14 +25,22 @@ The existing test `validate_target_rejects_when_parent_missing`
 (src/create.rs:170-175) pins the current behavior and will need to be
 inverted or replaced.
 
-**Results:** _pending_
+**Results:** `validate_target` in src/create.rs now calls
+`fs::create_dir_all(parent)` when the parent doesn't exist, while still
+erroring if the parent path resolves to an existing file (not a
+directory). The doc comment was updated to reflect the new
+"validate + prepare" semantics. Inverted the old test
+(`validate_target_rejects_when_parent_missing` →
+`validate_target_creates_missing_parent_directories`) and added a new
+test (`validate_target_rejects_when_parent_is_a_file`) to cover the
+preserved error case. All 7 create-module tests pass.
 
 ---
 
 ### Work-phase transcript truncated by incoming phase banner
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -74,14 +82,32 @@ right at the phase boundary, then inspect the rendered scrollback.
 Fix should guarantee every byte emitted by the work-phase subprocess
 is visible in the final scrollback before the next banner is drawn.
 
-**Results:** _pending_
+**Results:** Root cause was identified by reading ratatui-core 0.1
+source: `Terminal::clear()` in inline mode does
+`set_cursor_position(self.viewport_area.as_position())` then
+`clear_region(ClearType::AfterCursor)`. The `viewport_area` cached at
+suspend time points at the row the inline viewport occupied. After
+the child writes output and the screen scrolls, that row now
+coincides with the child's last visible line — so the resume-time
+`terminal.clear()` jumps the cursor back and wipes the bottom of the
+child's output (the table border in the bug report).
+
+Fix in src/ui.rs: on `Resume`, write a newline to stderr (fences the
+child's last output below the cursor), flush, re-enable raw mode, and
+**reconstruct the Terminal** with `Terminal::with_options(...)` so its
+constructor calls `compute_inline_size` against the new cursor
+position and places a fresh viewport on a clean row. The stale
+`viewport_area` is gone with the old Terminal struct, so no clear()
+can clobber the child's output. All 116 unit tests + 5 integration
+tests pass. Manual visual verification of the transition is left to
+the user since it requires an interactive run.
 
 ---
 
 ### Show project name alongside plan name in phase header banner
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -104,7 +130,19 @@ on the banner text. Related to the transcript-truncation task above —
 both live in the same render seam, so a dev picking up either should
 check the other.
 
-**Results:** _pending_
+**Results:** Banner now renders as `◆  REFLECT  ·  raveloop / core`.
+Added two helpers in src/phase_loop.rs: `project_name(&str) -> String`
+(strips path to basename) and `header_scope(project, plan) -> String`
+(formats `project / plan`, falls back to plan-only when project is
+empty for safety). Threaded `project_dir` through `phase_loop` and
+`handle_script_phase` (replacing the simpler `project: &str` so the
+same parameter doubles as the source for the work-commit guardrail in
+task 17). Updated all phase header and commit log call sites
+(GitCommitWork/Reflect/Dream/Triage and the dream-skip header).
+Updated `docs/architecture.md` TUI Layout example to use the new
+format. Added 5 unit tests covering basename extraction, trailing
+slash handling, empty fallback, and scope formatting. All 119 unit
+tests + 5 integration tests pass.
 
 ---
 
@@ -303,7 +341,7 @@ that something was discarded.
 ### Sync `docs/architecture.md` Message Model with the real `UIMessage` enum
 
 **Category:** `docs`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -322,7 +360,40 @@ ordering invariants (e.g. whether `AgentDone` must fence a later
 doc's richer shape is what we want, adjust the code — but first record
 the decision here.
 
-**Results:** _pending_
+**Results:** Decision: the current enum (typed `StyledLine`,
+`Vec<StyledLine>` for multi-line `Persist`, `RegisterAgent` without a
+header) is the intended design — the typed styling cleanly separates
+format-layer concerns from ratatui's rendering. Doc updated to match.
+
+Changes to `docs/architecture.md` Message Model section:
+- `Progress.text: String` → `Progress.line: StyledLine`
+- `Persist.text: String` → `Persist.lines: Vec<StyledLine>` (with
+  side-effect note about clearing the agent's progress)
+- `RegisterAgent.header` field removed; doc now states the header
+  flows through a `Log` message immediately preceding the
+  `RegisterAgent` (verified at phase_loop.rs:127–137)
+- Added the missing `Quit` variant
+- Added an Ordering Invariants subsection covering: register-before-
+  progress, AgentDone semantics for trailing Persist events, and the
+  fact that `Log` (not `Persist`) is the only message that clears all
+  agents' progress
+
+While in the same render-seam doc, fixed adjacent drift in the TUI
+Layout section that contradicted the code:
+- The layout diagram showed multi-row per-agent groups and a bottom
+  status bar; both were removed in earlier work, but the diagram
+  hadn't been refreshed. Replaced with a 1-row inline-viewport
+  diagram matching `VIEWPORT_HEIGHT = 1`.
+- Removed the false claim that the log is "stored as a `Vec<String>`"
+  (it isn't — `Terminal::insert_before` pushes to OS scrollback).
+- Replaced the stale `AgentProgress { header, progress: Option<String> }`
+  with the real `AgentProgress { progress: Option<StyledLine>,
+  progress_at: Option<Instant> }` and added the `AppState` struct
+  alongside it.
+- Added explicit notes on what the 1-row viewport renders (confirm
+  prompt vs. latest tool call vs. blank).
+
+Doc-only change; build remains clean. No tests to run.
 
 ---
 
@@ -383,7 +454,7 @@ Pick one:
 ### Embed new language coding-style files in `init`
 
 **Category:** `feature`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -410,7 +481,15 @@ Touch points:
   asserts every `defaults/fixed-memory/coding-style-*.md` on disk is
   registered, so future additions can't drift out of sync silently.
 
-**Results:** _pending_
+**Results:** Added 5 `EmbeddedFile` entries to `EMBEDDED_FILES` in
+src/init.rs (swift, typescript, python, bash, elixir). Also added the
+suggested drift-detection unit test
+(`every_default_coding_style_file_is_embedded`) that reads
+`defaults/fixed-memory/` at test time, filters for
+`coding-style-*.md`, and asserts every on-disk file has a matching
+embedded entry — so any future addition to defaults that forgets to
+register in init.rs fails the test loudly. All 5 init-module tests
+pass.
 
 ---
 
@@ -442,7 +521,7 @@ living executable description of the phase contract.
 ### Work-phase commit can land meta-only commits that claim source work
 
 **Category:** `bug`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none
 
 **Description:**
@@ -519,6 +598,36 @@ The failure mode is silent, crosses multiple phase boundaries, and
 masks lost work as "backlog empty" — worth catching at more than one
 seam.
 
-**Results:** _pending_
+**Results:** Implemented two of the four candidate guards.
+
+(1) **Rust postcondition** in src/phase_loop.rs after the
+`GitCommitWork` step: a new `warn_if_project_tree_dirty` helper runs
+`git status --porcelain` from the project root via the new
+`git::working_tree_status` helper. If anything is reported, it logs a
+`⚠  WARNING` block to the TUI naming up to 20 dirty paths and
+suggesting `git status` for the full list. Soft-fails on any git error
+so a transient failure doesn't kill the loop. Two unit tests cover the
+status helper (clean tree → empty, dirty tree → reported).
+
+(2) **Prompt-level guardrail** in defaults/phases/work.md: removed the
+misleading "The run script auto-commits all project changes after the
+work phase exits" sentence (untrue — `git_commit_plan` only commits
+files under `{{PLAN}}/`, which is the actual root cause), and added a
+new step 8 that explicitly tells the agent it must commit its own
+source-file changes and run `git status` from the project root before
+writing `analyse-work` to phase.md. Cross-checks against the
+`Results` block path list.
+
+Skipped the triage-level diff-vs-message verification (option #2) and
+the work-baseline sanity tick (option #4) — both depend on parsing the
+commit message or knowing the task category, which the orchestrator
+doesn't currently surface to Rust. The two guards above (Rust + prompt)
+already cover the failure mode at the moment it happens; the other
+two were defenses-in-depth at later seams that are no longer reached
+once the work commit is clean.
+
+All 119 unit tests + 5 integration tests pass. Pre-existing clippy
+errors in unrelated files (format.rs, types.rs, ui.rs::AppState::new,
+survey.rs) remain — not introduced by this work.
 
 ---

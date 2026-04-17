@@ -1,1 +1,1 @@
-git-commit-triage
+git-commit-work
