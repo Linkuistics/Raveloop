@@ -90,6 +90,11 @@ fn embedded_defaults_are_valid() {
     assert!(!body.trim().is_empty(), "empty survey prompt");
     let loaded = raveloop_cli::survey::load_survey_prompt(&target).unwrap();
     assert_eq!(loaded, body);
+
+    let create_plan = target.join("create-plan.md");
+    assert!(create_plan.exists(), "missing create-plan prompt: {}", create_plan.display());
+    let create_body = fs::read_to_string(&create_plan).unwrap();
+    assert!(!create_body.trim().is_empty(), "empty create-plan prompt");
 }
 
 #[test]

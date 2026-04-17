@@ -390,6 +390,7 @@ raveloop/
     ├── prompt.rs               # Template loading + token substitution
     ├── init.rs                 # `init` command — writes defaults
     ├── survey.rs               # `survey` command — multi-root LLM status
+    ├── create.rs               # `create` command — interactive plan scaffold
     └── ui.rs                   # Ratatui TUI, UI handle, rendering
 ```
 
@@ -424,7 +425,8 @@ Crate dependencies are defined in `Cargo.toml`.
 │   ├── brainstorming.md
 │   ├── tdd.md
 │   └── writing-plans.md
-└── survey.md                   # prompt template for `survey` subcommand
+├── survey.md                   # prompt template for `survey` subcommand
+└── create-plan.md              # prompt template for `create` subcommand
 ```
 
 The config directory can live inside a project repo (versioned with
@@ -487,6 +489,21 @@ that produced it.
 
 The main phase loop. Takes an optional config root (resolved via the
 discovery chain if omitted) and a plan directory.
+
+### `raveloop-cli create [--config <dir>] [--model <m>] [--dangerous] <plan-dir>`
+
+Interactively scaffolds a new plan directory. Validates that
+`<plan-dir>` does not already exist and that its parent does, then
+loads the prompt template at `<config-dir>/create-plan.md`, appends
+the target path, and spawns a headful `claude` session with inherited
+stdio. The user drives the conversation directly; Raveloop's only job
+is path validation, prompt composition, and post-hoc confirmation
+that `phase.md` was created.
+
+Model precedence: `--model` flag → `models.create` in agent config →
+`DEFAULT_CREATE_MODEL` (currently `claude-sonnet-4-6`). `--dangerous`
+passes `--dangerously-skip-permissions` to claude for fewer tool
+approval click-throughs. Supports `claude-code` only in v1.
 
 ### `raveloop-cli survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
 

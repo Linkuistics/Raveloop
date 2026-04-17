@@ -1,5 +1,6 @@
 mod agent;
 mod config;
+mod create;
 mod dream;
 mod format;
 mod git;
@@ -71,6 +72,30 @@ enum Commands {
         /// Path to the plan directory
         plan_dir: PathBuf,
     },
+    /// Create a new plan directory via an interactive headful claude
+    /// session. Loads the create-plan prompt template from
+    /// <config-dir>/create-plan.md, appends the target path, and
+    /// hands off to claude with inherited stdio so the user drives
+    /// the conversation directly.
+    Create {
+        /// Path to the config directory. Overrides $RAVELOOP_CONFIG and the
+        /// default location at <dirs::config_dir()>/raveloop/.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Override the model used for the create session. Overrides
+        /// `models.create` in agents/claude-code/config.yaml, which in
+        /// turn overrides the DEFAULT_CREATE_MODEL constant.
+        #[arg(long)]
+        model: Option<String>,
+        /// Pass --dangerously-skip-permissions to claude. Useful when
+        /// you want plan creation to proceed without per-tool approval
+        /// click-throughs (claude-code only).
+        #[arg(long)]
+        dangerous: bool,
+        /// Path to the new plan directory. Must not already exist; its
+        /// parent directory must exist.
+        plan_dir: PathBuf,
+    },
     /// Produce an LLM-driven plan status overview across one or more
     /// plan-root directories. Reads every plan's phase/backlog/memory
     /// into a single fresh-context claude session that returns a
@@ -103,6 +128,10 @@ async fn main() -> Result<()> {
         Commands::Run { config, dangerous, plan_dir } => {
             let config_root = resolve_config_dir(config)?;
             run_phase_loop(&config_root, &plan_dir, dangerous).await
+        }
+        Commands::Create { config, model, dangerous, plan_dir } => {
+            let config_root = resolve_config_dir(config)?;
+            create::run_create(&config_root, plan_dir, model, dangerous).await
         }
         Commands::Survey { config, root, model } => {
             let config_root = resolve_config_dir(config)?;
