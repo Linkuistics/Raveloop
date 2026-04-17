@@ -206,6 +206,34 @@ impl Agent for MockAgent {
     }
 }
 
+/// Mirrors the analyse-work safety-net: within each `---`-delimited
+/// task block, flip `Status: not_started` or `Status: in_progress`
+/// to `Status: done` when a non-empty `Results:` block is present on
+/// the same task. `_pending_` or an empty `Results:` marker means the
+/// task isn't actually complete and should not be flipped.
+fn flip_stale_task_statuses(backlog: &str) -> String {
+    backlog
+        .split("\n---")
+        .map(|block| {
+            let has_nonempty_results = block.lines().any(|line| {
+                let trimmed = line.trim_start();
+                if !trimmed.starts_with("**Results:**") {
+                    return false;
+                }
+                let after = trimmed.trim_start_matches("**Results:**").trim();
+                !after.is_empty() && after != "_pending_"
+            });
+            if !has_nonempty_results {
+                return block.to_string();
+            }
+            block
+                .replace("**Status:** `not_started`", "**Status:** `done`")
+                .replace("**Status:** `in_progress`", "**Status:** `done`")
+        })
+        .collect::<Vec<_>>()
+        .join("\n---")
+}
+
 fn init_test_repo(root: &std::path::Path) {
     let run = |args: &[&str]| {
         let out = Command::new("git")
@@ -334,6 +362,17 @@ impl Agent for ContractMockAgent {
                      Written by the ContractMockAgent to exercise the\n\
                      phase → file-write contract.\n",
                 )?;
+                // Safety-net simulation: a well-behaved model following
+                // the analyse-work prompt flips stale Status: lines on
+                // tasks whose Results: block is now non-empty. When the
+                // pre-seeded backlog has no such tasks, this is a no-op.
+                let backlog_path = plan.join("backlog.md");
+                if let Ok(backlog) = fs::read_to_string(&backlog_path) {
+                    let flipped = flip_stale_task_statuses(&backlog);
+                    if flipped != backlog {
+                        fs::write(&backlog_path, flipped)?;
+                    }
+                }
                 fs::write(plan.join("phase.md"), "git-commit-work")?;
             }
             LlmPhase::Reflect => {
@@ -520,5 +559,105 @@ async fn phase_contract_round_trip_writes_expected_files() {
     assert!(
         log_str.contains("triage"),
         "expected a triage commit, got log:\n{log_str}"
+    );
+}
+
+/// Pins the analyse-work safety-net: when a task has a non-empty
+/// `Results:` block but its `Status:` line is still `not_started` or
+/// `in_progress`, a well-behaved model (as simulated by
+/// `ContractMockAgent`) flips the status to `done`. Declines the
+/// "Proceed to reflect phase?" confirm to isolate the assertion from
+/// subsequent phases that also rewrite `backlog.md`.
+#[tokio::test]
+async fn analyse_work_flips_stale_task_status_per_safety_net() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    init_test_repo(root);
+
+    let config_root = root.join("config");
+    raveloop::init::run_init(&config_root, false).unwrap();
+
+    let plan_dir = root.join("plans/stale-status-plan");
+    fs::create_dir_all(&plan_dir).unwrap();
+    fs::write(plan_dir.join("phase.md"), "analyse-work").unwrap();
+
+    // A task that the (hypothetical) work phase finished — the Results
+    // block is populated — but whose Status: line was never flipped.
+    // Exactly the drift the safety-net catches.
+    let stale_backlog = "\
+# Backlog
+
+## Tasks
+
+### Example finished task
+
+**Category:** `bug`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+Placeholder for the safety-net test.
+
+**Results:** Implemented the fix and ran the test suite. It passed.
+
+---
+";
+    fs::write(plan_dir.join("backlog.md"), stale_backlog).unwrap();
+    fs::write(plan_dir.join("memory.md"), "# Memory\n").unwrap();
+
+    let head = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    fs::write(plan_dir.join("work-baseline"), &head.stdout).unwrap();
+
+    let agent = Arc::new(ContractMockAgent { plan_dir: plan_dir.clone() });
+
+    let shared = SharedConfig {
+        agent: "mock".into(),
+        headroom: 10_000,
+    };
+
+    let ctx = PlanContext {
+        plan_dir: plan_dir.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    // Decline every confirm so the loop exits after git-commit-work,
+    // before reflect/triage get a chance to rewrite backlog.md.
+    let drain = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = phase_loop(agent, &ctx, &shared, &ui).await;
+    ui.quit();
+    let _ = drain.await;
+
+    assert!(result.is_ok(), "phase_loop returned error: {result:?}");
+
+    let backlog = fs::read_to_string(plan_dir.join("backlog.md")).unwrap();
+    assert!(
+        backlog.contains("**Status:** `done`"),
+        "analyse-work should have flipped the stale Status line to done, got:\n{backlog}"
+    );
+    assert!(
+        !backlog.contains("**Status:** `not_started`"),
+        "analyse-work should have flipped the stale Status line away from not_started, got:\n{backlog}"
     );
 }

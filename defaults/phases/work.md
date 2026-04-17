@@ -73,8 +73,16 @@ code you are about to change and pick from `fixed-memory/` yourself.
    artifacts, secrets, or other files that should not be version-
    controlled, add appropriate patterns to `.gitignore`.
 
-7. Record results on the task in `{{PLAN}}/backlog.md`: what was done,
-   what worked, what didn't, what this suggests next.
+7. Update the task's status and record results in `{{PLAN}}/backlog.md`.
+   This has two required parts — do both, in this order:
+
+   - **First, flip the `Status:` line.** Change the task's `Status:` line
+     from `not_started` or `in_progress` to `done` (or to `blocked` with
+     a brief reason in the status value). This step is required, not
+     optional — a stale `Status:` line misleads triage into treating a
+     finished task as still open, causing duplicate work.
+   - **Then, write a `Results:` block** beneath the task describing what
+     was done, what worked, what didn't, and what this suggests next.
 
 8. **Commit your source-file changes yourself.** The orchestrator's
    `git-commit-work` step only commits the plan-state files inside

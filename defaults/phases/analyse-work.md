@@ -32,10 +32,20 @@ changed.
 4. Read `{{PLAN}}/backlog.md` to understand what task was being worked
    on and what results were recorded.
 
-5. Determine the session number by counting existing `### Session`
+5. **Safety-net: mark completed tasks as `done`.** Scan the backlog for
+   every task whose `Results:` block is non-empty (anything other than
+   `_pending_` or an empty marker) while its `Status:` line is still
+   `not_started` or `in_progress`. For each such task, flip the
+   `Status:` line to `done` and save the file. This is a post-condition
+   check, not a judgement call — the diff is authoritative; if the work
+   phase wrote a results block but forgot to flip the status, this step
+   repairs that drift so triage sees the real state. If the work phase
+   already flipped everything correctly, this step is a no-op.
+
+6. Determine the session number by counting existing `### Session`
    headings in `{{PLAN}}/session-log.md` (if it exists), then add one.
 
-6. Write `{{PLAN}}/latest-session.md`, **OVERWRITING any prior content**.
+7. Write `{{PLAN}}/latest-session.md`, **OVERWRITING any prior content**.
    Use this format:
 
    ```
@@ -52,7 +62,7 @@ changed.
    Base the entry on the actual diff and the backlog results, not
    assumptions. Be specific about what files were changed and why.
 
-7. Write `{{PLAN}}/commit-message.md` with a git commit message:
+8. Write `{{PLAN}}/commit-message.md` with a git commit message:
 
    ```
    <title — imperative mood, max 72 chars, summarises the change>
@@ -64,9 +74,9 @@ changed.
    Do not include plan or phase metadata in the commit message — the
    git history provides that context.
 
-8. Write `git-commit-work` to `{{PLAN}}/phase.md`.
+9. Write `git-commit-work` to `{{PLAN}}/phase.md`.
 
-9. Stop.
+10. Stop.
 
 ## Output format
 
