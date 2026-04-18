@@ -14,7 +14,7 @@ use tokio::process::Command;
 use super::Agent;
 use crate::config::load_tokens;
 use crate::format::{
-    FormattedOutput, ToolCall, clean_tool_name,
+    FormattedOutput, Intent, Span, Style, StyledLine, ToolCall, clean_tool_name,
     extract_tool_detail, format_result_text, format_tool_call,
 };
 use crate::types::{AgentConfig, LlmPhase, PlanContext};
@@ -24,6 +24,22 @@ use crate::ui::{UIMessage, UISender};
 static FRONTMATTER_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?s)^---\n(.*?)\n---\n(.*)$").expect("valid frontmatter regex")
 });
+
+/// Rolling cap on the stderr tail buffer. When a run exceeds this, the
+/// oldest bytes are discarded and a one-shot warning is sent so the user
+/// knows the error message they're about to see (on failure) is truncated.
+/// Duplicated from `claude_code.rs` for now; the refactor task that
+/// extracts shared spawn/stream machinery will unify them.
+const STDERR_BUFFER_CAP: usize = 4096;
+
+/// Builds a yellow `⚠  …` warning line for the TUI scrollback. Duplicated
+/// from `claude_code.rs`; see the constant above for the extraction plan.
+fn warning_line(body: impl Into<String>) -> StyledLine {
+    StyledLine(vec![Span::styled(
+        format!("  ⚠  {}", body.into()),
+        Style::bold_intent(Intent::Changed),
+    )])
+}
 
 // ── Stream parser ─────────────────────────────────────────────────────────────
 
@@ -237,11 +253,47 @@ impl Agent for PiAgent {
             .current_dir(&ctx.project_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .context("Failed to spawn pi")?;
 
         let stdout = child.stdout.take().context("No stdout")?;
+        let stderr = child.stderr.take().context("No stderr")?;
+
+        // Drain stderr concurrently so it never blocks the child; retain
+        // the last STDERR_BUFFER_CAP bytes so failures can be surfaced in
+        // the error. On the first overflow, emit a one-shot Persist
+        // warning so the user knows any error tail they later see is
+        // the tail, not the head. Previously pi used `Stdio::inherit()`,
+        // which let raw stderr bleed into the terminal underneath the
+        // TUI and get overwritten by the next repaint — invisibly
+        // losing the very output the user needed to debug a failure.
+        let overflow_tx = tx.clone();
+        let overflow_agent_id = agent_id.to_string();
+        let stderr_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr).lines();
+            let mut buf = String::new();
+            let mut overflow_warned = false;
+            while let Ok(Some(line)) = reader.next_line().await {
+                buf.push_str(&line);
+                buf.push('\n');
+                if buf.len() > STDERR_BUFFER_CAP {
+                    let cut = buf.len() - STDERR_BUFFER_CAP;
+                    buf.drain(..cut);
+                    if !overflow_warned {
+                        overflow_warned = true;
+                        let _ = overflow_tx.send(UIMessage::Persist {
+                            agent_id: overflow_agent_id.clone(),
+                            lines: vec![warning_line(format!(
+                                "pi stderr exceeded {STDERR_BUFFER_CAP}-byte buffer — earlier lines dropped"
+                            ))],
+                        });
+                    }
+                }
+            }
+            buf
+        });
+
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         let mut shown_highlights = HashSet::new();
@@ -276,6 +328,7 @@ impl Agent for PiAgent {
         }
 
         let status = child.wait().await?;
+        let stderr_tail = stderr_task.await.unwrap_or_default();
         let _ = tx.send(UIMessage::AgentDone {
             agent_id: agent_id.to_string(),
         });
@@ -285,7 +338,14 @@ impl Agent for PiAgent {
         }
 
         if !status.success() {
-            anyhow::bail!("pi exited with code {:?}", status.code());
+            let trimmed = stderr_tail.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("pi exited with code {:?}", status.code());
+            }
+            anyhow::bail!(
+                "pi exited with code {:?}\n--- stderr ---\n{trimmed}",
+                status.code()
+            );
         }
         Ok(())
     }

@@ -93,6 +93,19 @@ fn embedded_defaults_are_valid() {
         }
     }
 
+    // Pi's `build_headless_args` falls back to `"anthropic"` when the
+    // config omits `provider`, which is an implicit drift source — a
+    // future provider change that only edits `PiAgent` will silently
+    // disagree with the shipped config. Require the embedded default to
+    // pin the value explicitly so the fallback only fires for
+    // deliberately-minimal user configs.
+    let pi_provider = pi.provider.as_ref()
+        .expect("pi defaults must declare `provider` explicitly");
+    assert!(
+        !pi_provider.trim().is_empty(),
+        "pi defaults have empty `provider`; pick an explicit default"
+    );
+
     for phase in ["work", "analyse-work", "reflect", "dream", "triage"] {
         let p = target.join("phases").join(format!("{phase}.md"));
         assert!(p.exists(), "missing phase file: {}", p.display());

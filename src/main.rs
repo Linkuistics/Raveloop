@@ -44,7 +44,11 @@ fn force_dangerous(config: &mut AgentConfig) {
 }
 
 #[derive(Parser)]
-#[command(name = "raveloop", about = "An orchestration loop for LLM development cycles")]
+#[command(
+    name = "raveloop",
+    about = "An orchestration loop for LLM development cycles",
+    version,
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -113,6 +117,9 @@ enum Commands {
         #[arg(long)]
         timeout_secs: Option<u64>,
     },
+    /// Print the installed raveloop version. Equivalent to `--version`;
+    /// the subcommand form matches the rest of the CLI surface.
+    Version,
 }
 
 #[tokio::main]
@@ -134,6 +141,10 @@ async fn main() -> Result<()> {
         Commands::Survey { config, root, model, timeout_secs } => {
             let config_root = resolve_config_dir(config)?;
             survey::run_survey(&config_root, &root, model, timeout_secs).await
+        }
+        Commands::Version => {
+            println!("raveloop {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
         }
     }
 }

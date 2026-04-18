@@ -29,15 +29,22 @@ pub fn substitute_tokens(
     tokens: &HashMap<String, String>,
 ) -> Result<String> {
     let mut result = content.to_string();
-    result = result.replace("{{DEV_ROOT}}", &ctx.dev_root);
-    result = result.replace("{{PROJECT}}", &ctx.project_dir);
-    result = result.replace("{{PLAN}}", &ctx.plan_dir);
-    result = result.replace("{{RELATED_PLANS}}", &ctx.related_plans);
-    result = result.replace("{{ORCHESTRATOR}}", &ctx.config_root);
 
+    // Expand content macros first. These may inline authored content
+    // (e.g. `related-plans.md`) that itself references path tokens; if
+    // path tokens were substituted first, those inlined placeholders
+    // would survive into the final output and trip the guard below.
+    result = result.replace("{{RELATED_PLANS}}", &ctx.related_plans);
     for (key, value) in tokens {
         result = result.replace(&format!("{{{{{key}}}}}"), value);
     }
+
+    // Then expand atomic path tokens, so any placeholders surfaced by
+    // the macro expansions above get resolved in the same pass.
+    result = result.replace("{{DEV_ROOT}}", &ctx.dev_root);
+    result = result.replace("{{PROJECT}}", &ctx.project_dir);
+    result = result.replace("{{PLAN}}", &ctx.plan_dir);
+    result = result.replace("{{ORCHESTRATOR}}", &ctx.config_root);
 
     let unresolved: BTreeSet<&str> = unresolved_token_regex()
         .captures_iter(&result)
@@ -150,6 +157,29 @@ mod tests {
         let b = msg.find("{{UNKNOWN_B}}").expect("missing UNKNOWN_B");
         assert!(a < b, "names should be sorted: {msg}");
         assert_eq!(msg.matches("{{UNKNOWN_A}}").count(), 1, "dedup failed: {msg}");
+    }
+
+    #[test]
+    fn substitutes_path_tokens_inside_related_plans() {
+        // Regression: `related-plans.md` is documented (create-plan.md)
+        // to use `{{DEV_ROOT}}` etc. for path references. Those tokens
+        // must still resolve after the file content is inlined via
+        // `{{RELATED_PLANS}}`, or every plan with a related-plans.md
+        // hits a fatal "unresolved token" at prompt-compose time.
+        let ctx = PlanContext {
+            plan_dir: "/plans/my-plan".to_string(),
+            project_dir: "/project".to_string(),
+            dev_root: "/dev".to_string(),
+            related_plans: "- {{DEV_ROOT}}/Peer — sibling project".to_string(),
+            config_root: "/config".to_string(),
+        };
+        let result = substitute_tokens(
+            "Related plans:\n{{RELATED_PLANS}}",
+            &ctx,
+            &HashMap::new(),
+        )
+        .expect("path tokens inside related_plans should resolve");
+        assert_eq!(result, "Related plans:\n- /dev/Peer — sibling project");
     }
 
     #[test]
