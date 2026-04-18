@@ -15,8 +15,8 @@ The test iterates every on-disk pi prompt file and asserts no unresolved tokens 
 ## `init.rs` drift-detection test guards coding-style registration
 The test reads `defaults/fixed-memory/coding-style-*.md` at test time and asserts every file on disk is registered as an `EmbeddedFile`. Adding a new coding-style file without registering it fails the test.
 
-## `embedded_defaults_are_valid` test asserts non-empty model strings
-Every (agent, phase) pair in `defaults/agents/claude-code/config.yaml` must have a non-empty model string. The test catches model omissions that would silently delegate model selection to the spawn context.
+## `embedded_defaults_are_valid` asserts non-empty model and provider
+Every (agent, phase) pair in `defaults/agents/claude-code/config.yaml` must have a non-empty model string and non-empty provider. The test catches omissions that would silently delegate model/provider selection to the spawn context.
 
 ## Work phase must not commit source files
 `work.md` step 8 explicitly tells the work phase to leave non-plan paths dirty; source-commit authority belongs to analyse-work. A session that commits source in work is a contract violation.
@@ -35,3 +35,12 @@ Replacing `Option<FormattedOutput>` with an enum makes `valid but no display` an
 
 ## Phase contract test validates per-phase file writes
 `phase_contract_round_trip_writes_expected_files` runs `phase_loop` from `analyse-work` via `ContractMockAgent`; 6 assertions cover latest-session.md, commit-message.md consumed, memory.md updated, backlog.md updated, phase.md ends at `work`, and git log subjects.
+
+## `substitute_tokens` expands content macros before path tokens
+RELATED_PLANS and custom tokens expand first; atomic path tokens ({{DEV_ROOT}} etc.) expand second. Reversing the order causes fatal errors when RELATED_PLANS content itself contains path tokens.
+
+## Pi stderr captured in 4096-byte rolling buffer
+`PiAgent::invoke_headless` pipes stderr into a fixed-size rolling buffer (`STDERR_BUFFER_CAP = 4096`). Tail surfaces in error messages on failure; eliminates TUI bleed-through during headless invocation.
+
+## `STDERR_BUFFER_CAP` and `warning_line` duplicated across pi.rs and claude_code.rs
+Both constants/helpers carry comments pointing to the unification extraction task. Extraction has not yet occurred.
