@@ -44,3 +44,15 @@ RELATED_PLANS and custom tokens expand first; atomic path tokens ({{DEV_ROOT}} e
 
 ## `STDERR_BUFFER_CAP` and `warning_line` duplicated across pi.rs and claude_code.rs
 Both constants/helpers carry comments pointing to the unification extraction task. Extraction has not yet occurred.
+
+## `write_phase` called before `git_commit_plan` in all `GitCommit*` handlers
+All four `ScriptPhase::GitCommit*` handlers in `phase_loop.rs` call `write_phase(next)` before `git_commit_plan`. Phase.md is captured in the same commit as other plan-state writes; the plan tree is clean at every user-prompt point.
+
+## Work-baseline seeded atomically in the triage commit
+`GitCommitTriage` calls `git_save_work_baseline` before committing. `LlmPhase::Work` seeds work-baseline only when the file is absent (first-run fallback).
+
+## `LlmPhase::Work` does not delete `latest-session.md`
+Analyse-work overwrites `latest-session.md` unconditionally on entry; a deletion in the Work handler is decorative and was removed.
+
+## Plan-tree cleanliness asserted via `git status --porcelain`
+`git_commit_triage_leaves_plan_tree_clean_at_user_prompt` and `git_commit_work_leaves_plan_tree_clean_at_user_prompt` assert `git status --porcelain -- <plan_dir>` is empty after `phase_loop` returns from a user-declined exit.
