@@ -477,7 +477,7 @@ mod tests {
         let streams = vec![ParallelStream {
             name: "Big stream".into(),
             plans: (0..10)
-                .map(|i| format!("Mnemosyne/sub-X-very-long-plan-name-{i}"))
+                .map(|i| format!("Ravel/sub-X-very-long-plan-name-{i}"))
                 .collect(),
             rationale: "fine.".into(),
         }];

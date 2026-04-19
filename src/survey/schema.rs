@@ -93,7 +93,7 @@ mod tests {
     fn sample_yaml() -> &'static str {
         r#"
 plans:
-  - project: Mnemosyne
+  - project: Ravel
     plan: sub-A-global-store
     phase: work
     unblocked: 1
@@ -103,14 +103,14 @@ plans:
     notes: Task 0 gate unblocked
 
 cross_plan_blockers:
-  - blocked: Mnemosyne/sub-F-hierarchy
-    blocker: Mnemosyne/sub-B-phase-cycle
+  - blocked: Ravel/sub-F-hierarchy
+    blocker: Ravel/sub-B-phase-cycle
     rationale: |
       Sub-B's downstream task list must be rewritten before
       Sub-F's Task 0 readiness gate can fire.
 
 recommended_invocation_order:
-  - plan: Mnemosyne/mnemosyne-orchestrator
+  - plan: Ravel/ravel-orchestrator
     order: 1
     rationale: Dispatch Sub-C work-phase cycle.
 "#

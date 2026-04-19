@@ -52,14 +52,14 @@ mod tests {
     #[test]
     fn render_survey_input_includes_project_and_plan_names() {
         let plans = vec![PlanSnapshot {
-            project: "Mnemosyne".into(),
+            project: "Ravel".into(),
             plan: "sub-A".into(),
             phase: "work".into(),
             backlog: Some("# backlog".into()),
             memory: Some("# memory".into()),
         }];
         let out = render_survey_input(&plans);
-        assert!(out.contains("## Plan: Mnemosyne/sub-A"));
+        assert!(out.contains("## Plan: Ravel/sub-A"));
         assert!(out.contains("### phase\nwork"));
         assert!(out.contains("### backlog.md\n# backlog"));
         assert!(out.contains("### memory.md\n# memory"));
