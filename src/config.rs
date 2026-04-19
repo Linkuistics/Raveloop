@@ -6,19 +6,19 @@ use anyhow::{Context, Result};
 use crate::types::{AgentConfig, SharedConfig};
 
 /// Environment variable that overrides the default config-directory location.
-pub const CONFIG_ENV_VAR: &str = "RAVELOOP_CONFIG";
+pub const CONFIG_ENV_VAR: &str = "RAVEL_LITE_CONFIG";
 
-/// Resolve the Raveloop config directory using the precedence chain:
+/// Resolve the Ravel-Lite config directory using the precedence chain:
 ///   1. explicit `--config <path>` flag
-///   2. `RAVELOOP_CONFIG` environment variable
-///   3. XDG default at `<dirs::config_dir()>/raveloop/`
+///   2. `RAVEL_LITE_CONFIG` environment variable
+///   3. XDG default at `<dirs::config_dir()>/ravel-lite/`
 ///   4. hard error (no walk-up, no magic, no registry)
 ///
 /// The resolved path must be an existing directory; otherwise an
-/// actionable error pointing at `raveloop init` is returned.
+/// actionable error pointing at `ravel-lite init` is returned.
 pub fn resolve_config_dir(explicit_flag: Option<PathBuf>) -> Result<PathBuf> {
     let env_var = std::env::var(CONFIG_ENV_VAR).ok().map(PathBuf::from);
-    let xdg_default = dirs::config_dir().map(|p| p.join("raveloop"));
+    let xdg_default = dirs::config_dir().map(|p| p.join("ravel-lite"));
     select_config_dir(explicit_flag, env_var, xdg_default)
 }
 
@@ -36,19 +36,19 @@ fn select_config_dir(
     } else if let Some(path) = env {
         (format!("environment variable {CONFIG_ENV_VAR}"), path)
     } else if let Some(path) = default {
-        ("default location (dirs::config_dir()/raveloop)".to_string(), path)
+        ("default location (dirs::config_dir()/ravel-lite)".to_string(), path)
     } else {
         anyhow::bail!(
-            "Could not resolve Raveloop config directory.\n\
-             No --config flag, no RAVELOOP_CONFIG environment variable, and no user config dir available on this platform.\n\
-             Create one with `raveloop init <dir>` and either pass --config <dir> or set RAVELOOP_CONFIG=<dir>."
+            "Could not resolve Ravel-Lite config directory.\n\
+             No --config flag, no RAVEL_LITE_CONFIG environment variable, and no user config dir available on this platform.\n\
+             Create one with `ravel-lite init <dir>` and either pass --config <dir> or set RAVEL_LITE_CONFIG=<dir>."
         );
     };
 
     if !candidate.is_dir() {
         anyhow::bail!(
-            "Raveloop config directory {} (from {}) does not exist or is not a directory.\n\
-             Create it with `raveloop init {}`.",
+            "Ravel-Lite config directory {} (from {}) does not exist or is not a directory.\n\
+             Create it with `ravel-lite init {}`.",
             candidate.display(),
             source,
             candidate.display()
@@ -240,7 +240,7 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains(&missing.display().to_string()));
         assert!(message.contains("--config flag"));
-        assert!(message.contains("raveloop init"));
+        assert!(message.contains("ravel-lite init"));
     }
 
     #[test]
@@ -248,15 +248,15 @@ mod tests {
         let missing = PathBuf::from("/definitely/not/a/real/path/for/raveloop/test");
         let err = select_config_dir(None, Some(missing), None).unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("RAVELOOP_CONFIG"));
+        assert!(message.contains("RAVEL_LITE_CONFIG"));
     }
 
     #[test]
     fn all_sources_missing_errors_with_init_guidance() {
         let err = select_config_dir(None, None, None).unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("raveloop init"));
-        assert!(message.contains("RAVELOOP_CONFIG"));
+        assert!(message.contains("ravel-lite init"));
+        assert!(message.contains("RAVEL_LITE_CONFIG"));
     }
 
     #[test]

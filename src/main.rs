@@ -66,8 +66,8 @@ enum Commands {
     },
     /// Run the phase loop on a plan directory
     Run {
-        /// Path to the config directory. Overrides $RAVELOOP_CONFIG and the
-        /// default location at <dirs::config_dir()>/raveloop/.
+        /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
+        /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
         /// Skip Claude Code permission prompts for every phase (claude-code only).
@@ -84,8 +84,8 @@ enum Commands {
     /// model; passes `--add-dir <parent>` to scope claude to the
     /// target parent directory.
     Create {
-        /// Path to the config directory. Overrides $RAVELOOP_CONFIG and the
-        /// default location at <dirs::config_dir()>/raveloop/.
+        /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
+        /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
         /// Path to the new plan directory. Must not already exist; its
@@ -97,8 +97,8 @@ enum Commands {
     /// into a single fresh-context claude session that returns a
     /// per-plan summary and a recommended invocation order.
     Survey {
-        /// Path to the config directory. Overrides $RAVELOOP_CONFIG and the
-        /// default location at <dirs::config_dir()>/raveloop/.
+        /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
+        /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
         /// Plan root directory. Each root contributes all plans under it
