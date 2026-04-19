@@ -45,7 +45,7 @@ fn force_dangerous(config: &mut AgentConfig) {
 
 #[derive(Parser)]
 #[command(
-    name = "raveloop",
+    name = "ravel-lite",
     about = "An orchestration loop for LLM development cycles",
     version,
 )]
@@ -117,7 +117,7 @@ enum Commands {
         #[arg(long)]
         timeout_secs: Option<u64>,
     },
-    /// Print the installed raveloop version. Equivalent to `--version`;
+    /// Print the installed ravel-lite version. Equivalent to `--version`;
     /// the subcommand form matches the rest of the CLI surface.
     Version,
 }
@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
             survey::run_survey(&config_root, &root, model, timeout_secs).await
         }
         Commands::Version => {
-            println!("raveloop {}", env!("CARGO_PKG_VERSION"));
+            println!("ravel-lite {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
     }
@@ -208,7 +208,7 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) ->
         // context, then wait for acknowledgement before tearing down.
         ui.log("");
         ui.log(&format!("  ✗  Fatal error: {e:#}"));
-        let _ = ui.confirm("Exit raveloop?").await;
+        let _ = ui.confirm("Exit ravel-lite?").await;
     }
 
     ui.quit();
@@ -217,7 +217,7 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) ->
     // Also emit to stderr so the error is preserved in the terminal
     // scrollback after the alternate screen has been torn down.
     if let Err(ref e) = result {
-        eprintln!("\nraveloop exited with error:\n{e:#}");
+        eprintln!("\nravel-lite exited with error:\n{e:#}");
     }
 
     result

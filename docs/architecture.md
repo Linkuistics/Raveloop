@@ -1,6 +1,6 @@
 # Architecture
 
-`raveloop` is a single Rust binary with a Ratatui TUI. It orchestrates
+`ravel-lite` is a single Rust binary with a Ratatui TUI. It orchestrates
 a phase loop for LLM-driven development by spawning a Claude Code or Pi
 subprocess per phase, reading its JSON stream output, and rendering
 progress.
@@ -214,13 +214,13 @@ is no `Vec<String>` log buffer in the application — `Log` and
 ```
 … native terminal scrollback (unbounded, OS-managed) …
   ────────────────────────────────────────────────────
-    ◆  REFLECT  ·  raveloop / core
+    ◆  REFLECT  ·  ravel-lite / core
     Distil session learnings into durable memory
   ────────────────────────────────────────────────────
     ★  Updating memory
     ADDED      New memory entry — description
     SHARPENED  Existing entry — what changed
-    ⚙  COMMIT · reflect  ·  raveloop / core  ·  run-plan: reflect
+    ⚙  COMMIT · reflect  ·  ravel-lite / core  ·  run-plan: reflect
   ▶ Dispatching 3 subagent(s)...
     ✓ sub-B-phase-cycle
 ─────────────────────────────────────────────────────  ← inline viewport (1 row)
@@ -407,7 +407,7 @@ emitting a `Persist` event.
 ### Source tree
 
 ```
-raveloop/
+ravel-lite/
 ├── Cargo.toml
 ├── defaults/                   # embedded by include_str!, written by init
 │   ├── config.yaml
@@ -497,49 +497,49 @@ directory until a `.git` is found.
 
 ## CLI and Invocation
 
-The user interacts with `raveloop` directly once to create a
-config directory, then drives the phase cycle with `raveloop run`.
+The user interacts with `ravel-lite` directly once to create a
+config directory, then drives the phase cycle with `ravel-lite run`.
 There is no trampoline — the binary resolves its config directory via
 an explicit precedence chain.
 
-### `raveloop init <dir>`
+### `ravel-lite init <dir>`
 
 Creates the config directory at `<dir>` with the default structure.
 Default file contents are embedded in the binary at compile time via
 `include_str!`.
 
 After scaffolding, `init` prints guidance on how to make the binary
-find that directory: either set `RAVELOOP_CONFIG=<dir>` or pass
+find that directory: either set `RAVEL_LITE_CONFIG=<dir>` or pass
 `--config <dir>` on each invocation. When `<dir>` is the default
-location (`dirs::config_dir()/raveloop/`), no setup is needed.
+location (`dirs::config_dir()/ravel-lite/`), no setup is needed.
 
 ### Config discovery
 
-Every `raveloop` subcommand that needs config resolves the config
+Every `ravel-lite` subcommand that needs config resolves the config
 directory in this order:
 
 1. `--config <path>` CLI flag
-2. `RAVELOOP_CONFIG` environment variable
-3. Default location: `<dirs::config_dir()>/raveloop/`
-4. Hard error with a pointer to `raveloop init`
+2. `RAVEL_LITE_CONFIG` environment variable
+3. Default location: `<dirs::config_dir()>/ravel-lite/`
+4. Hard error with a pointer to `ravel-lite init`
 
 No walk-up, no registry, no implicit project root. The first source
 that resolves to an existing directory wins; if that directory doesn't
-exist, `raveloop` errors with the candidate path and the source
+exist, `ravel-lite` errors with the candidate path and the source
 that produced it.
 
-### `raveloop run [--config <dir>] <plan-directory>`
+### `ravel-lite run [--config <dir>] <plan-directory>`
 
 The main phase loop. Takes an optional config root (resolved via the
 discovery chain if omitted) and a plan directory.
 
-### `raveloop create [--config <dir>] <plan-dir>`
+### `ravel-lite create [--config <dir>] <plan-dir>`
 
 Interactively scaffolds a new plan directory. Validates that
 `<plan-dir>` does not already exist and that its parent does, then
 loads the prompt template at `<config-dir>/create-plan.md`, appends
 the target path, and spawns a headful `claude` session with inherited
-stdio. The user drives the conversation directly; Raveloop's only job
+stdio. The user drives the conversation directly; Ravel-Lite's only job
 is path validation, prompt composition, and post-hoc confirmation
 that `phase.md` was created.
 
@@ -551,7 +551,7 @@ directory; interactive tool-approval prompts still fire as normal,
 which is appropriate for a headful session. Supports `claude-code`
 only in v1.
 
-### `raveloop survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
+### `ravel-lite survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
 
 Produces an LLM-driven multi-project plan-status overview. For each
 `--root` (a directory whose immediate subdirectories are plans),
@@ -626,7 +626,7 @@ Per-phase `params` maps contain agent-specific CLI flags. For
 This keeps the `Agent` trait generic — the orchestrator doesn't need
 to know what flags each agent supports.
 
-`raveloop run --dangerous <plan_dir>` mutates the loaded
+`ravel-lite run --dangerous <plan_dir>` mutates the loaded
 `AgentConfig` at startup, setting `dangerous: true` for every LLM
 phase before the agent is constructed — so the agent itself still
 reads a single source of truth (`config.params`), and no parallel

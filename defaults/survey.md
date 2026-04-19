@@ -1,8 +1,8 @@
 # Plan status survey
 
 You are producing a multi-project plan status overview for a developer
-who wants to know which plan to run through `raveloop run` next.
-Plans follow the Raveloop convention: a directory is a plan iff it
+who wants to know which plan to run through `ravel-lite run` next.
+Plans follow the Ravel-Lite convention: a directory is a plan iff it
 contains `phase.md`; siblings `backlog.md` and `memory.md` hold task
 state and distilled learnings.
 
@@ -50,7 +50,7 @@ parallel_streams:
       with other streams.
 
 recommended_invocation_order:
-  - plan: <project>/<plan>        # plan to invoke next via raveloop run
+  - plan: <project>/<plan>        # plan to invoke next via ravel-lite run
     order: <int>                  # rank (1 = highest priority). Entries
                                   # sharing an `order` are mutually
                                   # parallelisable. See rules below.

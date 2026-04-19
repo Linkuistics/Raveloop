@@ -7,7 +7,7 @@
 //
 // Unlike `survey` (read-only one-shot), `create` writes files — so
 // it needs the agent's interactive REPL and tool-approval flow. The
-// Raveloop process is a thin wrapper: path validation, prompt
+// Ravel-Lite process is a thin wrapper: path validation, prompt
 // composition, subprocess spawn with inherited stdio, post-hoc
 // verification.
 

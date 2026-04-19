@@ -1,4 +1,4 @@
-# Raveloop
+# Ravel-Lite
 
 > An orchestration loop for LLM development cycles.
 > Compose. Reflect. Dream. Triage. Repeat.
@@ -9,7 +9,7 @@ Multi-agent orchestrator for backlog-driven LLM development. Supports
 agent backends, with shared parameterized phase files and pluggable
 configuration.
 
-A single Rust binary (`raveloop`) with a
+A single Rust binary (`ravel-lite`) with a
 [Ratatui](https://ratatui.rs) TUI. See
 [docs/architecture.md](docs/architecture.md) for the module layout,
 message model, and agent trait.

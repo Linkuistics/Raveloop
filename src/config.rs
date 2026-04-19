@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn nonexistent_explicit_errors_with_candidate_path() {
-        let missing = PathBuf::from("/definitely/not/a/real/path/for/raveloop/test");
+        let missing = PathBuf::from("/definitely/not/a/real/path/for/ravel-lite/test");
         let err = select_config_dir(Some(missing.clone()), None, None).unwrap_err();
         let message = format!("{err:#}");
         assert!(message.contains(&missing.display().to_string()));
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn nonexistent_env_errors_with_env_var_name() {
-        let missing = PathBuf::from("/definitely/not/a/real/path/for/raveloop/test");
+        let missing = PathBuf::from("/definitely/not/a/real/path/for/ravel-lite/test");
         let err = select_config_dir(None, Some(missing), None).unwrap_err();
         let message = format!("{err:#}");
         assert!(message.contains("RAVEL_LITE_CONFIG"));

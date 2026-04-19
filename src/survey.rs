@@ -24,7 +24,7 @@ mod schema;
 
 // `main.rs` declares `mod survey;` of its own, so the binary crate
 // compiles this file alongside the library crate. These re-exports
-// are the library's public API (reached via `raveloop::survey::*`
+// are the library's public API (reached via `ravel_lite::survey::*`
 // from integration tests); the binary never touches them. Silence
 // the bin-side `unused_imports` warning so `deny(warnings)` doesn't
 // reject the build.

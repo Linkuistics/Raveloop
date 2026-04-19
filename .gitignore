@@ -1,4 +1,4 @@
-# Pi session storage (created at runtime by raveloop-cli)
+# Pi session storage (created at runtime by ravel-lite)
 .pi/
 *.session.jsonl
 # OS

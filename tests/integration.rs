@@ -6,29 +6,29 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tempfile::TempDir;
 
-use raveloop::agent::Agent;
-use raveloop::phase_loop::phase_loop;
-use raveloop::types::{LlmPhase, PlanContext, SharedConfig};
-use raveloop::ui::{UI, UIMessage, UISender};
+use ravel_lite::agent::Agent;
+use ravel_lite::phase_loop::phase_loop;
+use ravel_lite::types::{LlmPhase, PlanContext, SharedConfig};
+use ravel_lite::ui::{UI, UIMessage, UISender};
 
 #[test]
 fn dream_guard_integration() {
     let dir = TempDir::new().unwrap();
     let plan = dir.path();
 
-    assert!(!raveloop::dream::should_dream(plan, 1500));
+    assert!(!ravel_lite::dream::should_dream(plan, 1500));
 
     fs::write(plan.join("memory.md"), "word ".repeat(100)).unwrap();
-    raveloop::dream::update_dream_baseline(plan);
+    ravel_lite::dream::update_dream_baseline(plan);
 
     fs::write(plan.join("memory.md"), "word ".repeat(200)).unwrap();
-    assert!(!raveloop::dream::should_dream(plan, 1500));
+    assert!(!ravel_lite::dream::should_dream(plan, 1500));
 
     fs::write(plan.join("memory.md"), "word ".repeat(2000)).unwrap();
-    assert!(raveloop::dream::should_dream(plan, 1500));
+    assert!(ravel_lite::dream::should_dream(plan, 1500));
 
-    raveloop::dream::update_dream_baseline(plan);
-    assert!(!raveloop::dream::should_dream(plan, 1500));
+    ravel_lite::dream::update_dream_baseline(plan);
+    assert!(!ravel_lite::dream::should_dream(plan, 1500));
 }
 
 #[test]
@@ -47,15 +47,15 @@ fn config_loading_integration() {
         "TOOL_READ: Read\n",
     ).unwrap();
 
-    let shared = raveloop::config::load_shared_config(config_root).unwrap();
+    let shared = ravel_lite::config::load_shared_config(config_root).unwrap();
     assert_eq!(shared.agent, "claude-code");
     assert_eq!(shared.headroom, 1500);
 
-    let agent = raveloop::config::load_agent_config(config_root, "claude-code").unwrap();
+    let agent = ravel_lite::config::load_agent_config(config_root, "claude-code").unwrap();
     assert_eq!(agent.models.get("work").unwrap(), "claude-sonnet-4-6");
     assert!(agent.params.get("work").unwrap().get("dangerous").is_some());
 
-    let tokens = raveloop::config::load_tokens(config_root, "claude-code").unwrap();
+    let tokens = ravel_lite::config::load_tokens(config_root, "claude-code").unwrap();
     assert_eq!(tokens.get("TOOL_READ").unwrap(), "Read");
 }
 
@@ -65,16 +65,16 @@ fn embedded_defaults_are_valid() {
     // Catches regressions where a default file drifts and stops parsing.
     let dir = TempDir::new().unwrap();
     let target = dir.path().join("cfg");
-    raveloop::init::run_init(&target, false).unwrap();
+    ravel_lite::init::run_init(&target, false).unwrap();
 
-    let shared = raveloop::config::load_shared_config(&target).unwrap();
+    let shared = ravel_lite::config::load_shared_config(&target).unwrap();
     assert!(!shared.agent.is_empty());
     assert!(shared.headroom > 0);
 
-    let cc = raveloop::config::load_agent_config(&target, "claude-code").unwrap();
+    let cc = ravel_lite::config::load_agent_config(&target, "claude-code").unwrap();
     assert!(cc.models.contains_key("reflect"));
 
-    let pi = raveloop::config::load_agent_config(&target, "pi").unwrap();
+    let pi = ravel_lite::config::load_agent_config(&target, "pi").unwrap();
     assert!(pi.models.contains_key("reflect"));
 
     // Every LLM phase in every embedded agent config must declare a
@@ -117,7 +117,7 @@ fn embedded_defaults_are_valid() {
     assert!(survey.exists(), "missing survey prompt: {}", survey.display());
     let body = fs::read_to_string(&survey).unwrap();
     assert!(!body.trim().is_empty(), "empty survey prompt");
-    let loaded = raveloop::survey::load_survey_prompt(&target).unwrap();
+    let loaded = ravel_lite::survey::load_survey_prompt(&target).unwrap();
     assert_eq!(loaded, body);
 
     let create_plan = target.join("create-plan.md");
@@ -158,8 +158,8 @@ fn survey_plan_discovery_across_multiple_roots() {
         fs::write(dir.join("backlog.md"), format!("# backlog {plan_name}")).unwrap();
     }
 
-    let plans_a = raveloop::survey::discover_plans(&root_a).unwrap();
-    let plans_b = raveloop::survey::discover_plans(&root_b).unwrap();
+    let plans_a = ravel_lite::survey::discover_plans(&root_a).unwrap();
+    let plans_b = ravel_lite::survey::discover_plans(&root_b).unwrap();
     assert_eq!(plans_a.len(), 2);
     assert_eq!(plans_b.len(), 1);
     assert!(plans_a.iter().all(|p| p.project == "ProjectA"));
@@ -168,7 +168,7 @@ fn survey_plan_discovery_across_multiple_roots() {
     let mut all = Vec::new();
     all.extend(plans_a);
     all.extend(plans_b);
-    let rendered = raveloop::survey::render_survey_input(&all);
+    let rendered = ravel_lite::survey::render_survey_input(&all);
 
     assert!(rendered.contains("## Plan: ProjectA/plan-alpha"));
     assert!(rendered.contains("## Plan: ProjectA/plan-beta"));
@@ -511,7 +511,7 @@ async fn phase_contract_round_trip_writes_expected_files() {
     init_test_repo(root);
 
     let config_root = root.join("config");
-    raveloop::init::run_init(&config_root, false).unwrap();
+    ravel_lite::init::run_init(&config_root, false).unwrap();
 
     let plan_dir = root.join("plans/contract-plan");
     fs::create_dir_all(&plan_dir).unwrap();
@@ -650,7 +650,7 @@ async fn analyse_work_flips_stale_task_status_per_safety_net() {
     init_test_repo(root);
 
     let config_root = root.join("config");
-    raveloop::init::run_init(&config_root, false).unwrap();
+    ravel_lite::init::run_init(&config_root, false).unwrap();
 
     let plan_dir = root.join("plans/stale-status-plan");
     fs::create_dir_all(&plan_dir).unwrap();
@@ -749,7 +749,7 @@ async fn analyse_work_receives_snapshot_and_commits_uncommitted_source() {
     init_test_repo(root);
 
     let config_root = root.join("config");
-    raveloop::init::run_init(&config_root, false).unwrap();
+    ravel_lite::init::run_init(&config_root, false).unwrap();
 
     let plan_dir = root.join("plans/snapshot-plan");
     fs::create_dir_all(&plan_dir).unwrap();
@@ -949,7 +949,7 @@ async fn git_commit_work_leaves_plan_tree_clean_at_user_prompt() {
     init_test_repo(root);
 
     let config_root = root.join("config");
-    raveloop::init::run_init(&config_root, false).unwrap();
+    ravel_lite::init::run_init(&config_root, false).unwrap();
 
     let plan_dir = root.join("plans/clean-work-plan");
     fs::create_dir_all(&plan_dir).unwrap();
@@ -1033,8 +1033,8 @@ mod pi_integration {
     use std::path::Path;
     use std::sync::OnceLock;
 
-    use raveloop::agent::pi::PiAgent;
-    use raveloop::types::AgentConfig;
+    use ravel_lite::agent::pi::PiAgent;
+    use ravel_lite::types::AgentConfig;
 
     /// Process-wide lock around env-var mutation. `cargo test` runs test
     /// functions concurrently within a binary; PATH (and HOME) are
@@ -1172,7 +1172,7 @@ mod pi_integration {
         init_test_repo(root);
 
         let config_root = root.join("config");
-        raveloop::init::run_init(&config_root, false).unwrap();
+        ravel_lite::init::run_init(&config_root, false).unwrap();
 
         let plan_dir = root.join("plans/pi-cycle-plan");
         fs::create_dir_all(&plan_dir).unwrap();
@@ -1218,7 +1218,7 @@ echo '{"type":"message_end","content":[{"type":"text","text":"done"}]}'
             .replace("__PLAN_DIR__", &plan_dir.display().to_string());
         write_fake_pi(bin_dir.path(), &pi_script);
 
-        let agent_config = raveloop::config::load_agent_config(&config_root, "pi").unwrap();
+        let agent_config = ravel_lite::config::load_agent_config(&config_root, "pi").unwrap();
         let agent = Arc::new(PiAgent::new(
             agent_config,
             config_root.to_string_lossy().to_string(),

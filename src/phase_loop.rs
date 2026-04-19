@@ -284,15 +284,15 @@ mod tests {
 
     #[test]
     fn project_name_strips_to_basename() {
-        assert_eq!(project_name("/Users/x/Development/raveloop"), "raveloop");
-        assert_eq!(project_name("raveloop"), "raveloop");
+        assert_eq!(project_name("/Users/x/Development/ravel-lite"), "ravel-lite");
+        assert_eq!(project_name("ravel-lite"), "ravel-lite");
     }
 
     #[test]
     fn project_name_handles_trailing_slash() {
         // Path::file_name returns None for paths ending in `..` but a real
         // trailing slash collapses to the directory basename.
-        assert_eq!(project_name("/Users/x/raveloop/"), "raveloop");
+        assert_eq!(project_name("/Users/x/ravel-lite/"), "ravel-lite");
     }
 
     #[test]
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn header_scope_combines_project_and_plan() {
-        assert_eq!(header_scope("raveloop", "core"), "raveloop / core");
+        assert_eq!(header_scope("ravel-lite", "core"), "ravel-lite / core");
     }
 
     #[test]

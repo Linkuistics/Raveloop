@@ -57,7 +57,7 @@ relationships:
 
 ## Parents
 Peer projects this plan depends on:
-- {{DEV_ROOT}}/Mnemosyne — orchestrator I integrate with
+- {{DEV_ROOT}}/Ravel — orchestrator I integrate with
 
 ## Children
 Peer projects that depend on this plan:
@@ -98,25 +98,25 @@ for the contract.
 
 ### Driving the cycle
 
-The cycle is driven by the `raveloop` Rust binary. Each
+The cycle is driven by the `ravel-lite` Rust binary. Each
 user-configured profile lives in its own directory, scaffolded once
-with `raveloop init <config-dir>`. Day-to-day usage points the
+with `ravel-lite init <config-dir>`. Day-to-day usage points the
 binary at that config directory via the discovery chain (`--config`
-flag, then `RAVELOOP_CONFIG` env var, then the default location at
-`<dirs::config_dir()>/raveloop/`):
+flag, then `RAVEL_LITE_CONFIG` env var, then the default location at
+`<dirs::config_dir()>/ravel-lite/`):
 
 ```bash
 # Most common: set once, forget
-export RAVELOOP_CONFIG=<config-dir>
-raveloop run ~/Development/{project}/LLM_STATE/{plan-name}
+export RAVEL_LITE_CONFIG=<config-dir>
+ravel-lite run ~/Development/{project}/LLM_STATE/{plan-name}
 
 # Explicit per-invocation
-raveloop run --config <config-dir> ~/Development/{project}/LLM_STATE/{plan-name}
+ravel-lite run --config <config-dir> ~/Development/{project}/LLM_STATE/{plan-name}
 ```
 
 The agent (Claude Code or Pi) is selected by the `agent:` key in
 `<config-dir>/config.yaml`, not by a CLI flag. Switching agents means
-either editing that key or pointing `--config` (or `RAVELOOP_CONFIG`)
+either editing that key or pointing `--config` (or `RAVEL_LITE_CONFIG`)
 at a different config directory.
 
 The binary walks up from the plan directory to find the project root

@@ -36,7 +36,7 @@ fn project_name_for_plan(plan_path: &Path) -> Result<String> {
 
 /// Walk `root` looking for plan directories. A directory is a plan iff
 /// it contains a `phase.md` file; this matches the convention used
-/// everywhere else in Raveloop. For each plan, the project name is the
+/// everywhere else in Ravel-Lite. For each plan, the project name is the
 /// basename of the nearest ancestor containing `.git` — not the root
 /// basename — so plans from different repos under the same `--root`
 /// are labelled correctly. Returned plans are sorted by plan name for

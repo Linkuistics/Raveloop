@@ -129,8 +129,8 @@ mod tests {
         run_init(&target, false).unwrap();
 
         assert!(
-            !target.join("raveloop").exists(),
-            "init must not scaffold a raveloop trampoline; discovery uses env var + default location"
+            !target.join("ravel-lite").exists(),
+            "init must not scaffold a ravel-lite trampoline; discovery uses env var + default location"
         );
     }
 
