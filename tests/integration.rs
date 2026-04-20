@@ -135,7 +135,7 @@ fn survey_plan_discovery_across_multiple_roots() {
     //   tmp/ProjectB/.git
     //   tmp/ProjectB/LLM_STATE/plan-gamma/phase.md
     // Project names should come from the git-root basenames
-    // (ProjectA, ProjectB), NOT from the --root basename
+    // (ProjectA, ProjectB), NOT from the plan-root basename
     // (LLM_STATE in both cases).
     let tmp = TempDir::new().unwrap();
     let project_a = tmp.path().join("ProjectA");

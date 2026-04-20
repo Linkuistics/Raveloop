@@ -47,7 +47,7 @@ fn resolve_model(agent_config: &AgentConfig, flag_override: Option<String>) -> S
         .unwrap_or_else(|| DEFAULT_SURVEY_MODEL.to_string())
 }
 
-/// End-to-end survey runner. Gathers plans across every `--root`,
+/// End-to-end survey runner. Gathers plans across every plan root,
 /// composes the prompt, invokes the `claude` CLI headlessly, and
 /// prints the LLM's response to stdout.
 pub async fn run_survey(
@@ -85,7 +85,7 @@ pub async fn run_survey(
         all_plans.extend(plans);
     }
     if all_plans.is_empty() {
-        anyhow::bail!("No plans discovered in any of the supplied --root directories.");
+        anyhow::bail!("No plans discovered in any of the supplied plan-root directories.");
     }
 
     let survey_prompt = load_survey_prompt(config_root)?;

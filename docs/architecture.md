@@ -551,10 +551,10 @@ directory; interactive tool-approval prompts still fire as normal,
 which is appropriate for a headful session. Supports `claude-code`
 only in v1.
 
-### `ravel-lite survey [--config <dir>] --root <path> [--root <path> ...] [--model <m>]`
+### `ravel-lite survey [--config <dir>] [--model <m>] <root> [<root> ...]`
 
 Produces an LLM-driven multi-project plan-status overview. For each
-`--root` (a directory whose immediate subdirectories are plans),
+plan root (a directory whose immediate subdirectories are plans),
 discovers plans by `phase.md` presence and derives each plan's
 project from the nearest ancestor directory containing `.git`. Bundles
 each plan's `phase.md`, `backlog.md`, and `memory.md` into a single

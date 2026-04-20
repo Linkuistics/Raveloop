@@ -101,10 +101,10 @@ enum Commands {
         /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Plan root directory. Each root contributes all plans under it
-        /// (directories containing phase.md). May be repeated.
-        #[arg(long, required = true)]
-        root: Vec<PathBuf>,
+        /// Plan root directories. Each root contributes all plans under
+        /// it (directories containing phase.md). At least one required.
+        #[arg(required = true, num_args = 1..)]
+        roots: Vec<PathBuf>,
         /// Override the model used for the survey call. Overrides
         /// `models.survey` in agents/claude-code/config.yaml, which in
         /// turn overrides the DEFAULT_SURVEY_MODEL constant.
@@ -138,9 +138,9 @@ async fn main() -> Result<()> {
             let config_root = resolve_config_dir(config)?;
             create::run_create(&config_root, plan_dir).await
         }
-        Commands::Survey { config, root, model, timeout_secs } => {
+        Commands::Survey { config, roots, model, timeout_secs } => {
             let config_root = resolve_config_dir(config)?;
-            survey::run_survey(&config_root, &root, model, timeout_secs).await
+            survey::run_survey(&config_root, &roots, model, timeout_secs).await
         }
         Commands::Version => {
             println!("ravel-lite {}", env!("CARGO_PKG_VERSION"));

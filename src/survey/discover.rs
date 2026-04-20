@@ -38,7 +38,7 @@ fn project_name_for_plan(plan_path: &Path) -> Result<String> {
 /// it contains a `phase.md` file; this matches the convention used
 /// everywhere else in Ravel-Lite. For each plan, the project name is the
 /// basename of the nearest ancestor containing `.git` — not the root
-/// basename — so plans from different repos under the same `--root`
+/// basename — so plans from different repos under the same plan root
 /// are labelled correctly. Returned plans are sorted by plan name for
 /// deterministic output.
 pub fn discover_plans(root: &Path) -> Result<Vec<PlanSnapshot>> {
@@ -138,7 +138,7 @@ mod tests {
     fn discover_plans_derives_project_from_ancestor_git_dir() {
         // Project layout:
         //   tmp/my-project/.git          <- project marker
-        //   tmp/my-project/LLM_STATE/    <- the --root argument
+        //   tmp/my-project/LLM_STATE/    <- the plan-root argument
         //   tmp/my-project/LLM_STATE/plan-x/phase.md
         // The project name should be "my-project", NOT "LLM_STATE".
         let tmp = TempDir::new().unwrap();
