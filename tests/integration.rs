@@ -1472,3 +1472,52 @@ fn pivot_stack_roundtrip_full_frame() {
 fn pivot_max_stack_depth_constant() {
     assert_eq!(ravel_lite::pivot::MAX_STACK_DEPTH, 5);
 }
+
+#[test]
+fn pivot_read_stack_missing_returns_none() {
+    use ravel_lite::pivot::read_stack;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("stack.yaml");
+    assert!(read_stack(&path).unwrap().is_none());
+}
+
+#[test]
+fn pivot_read_stack_present_returns_some() {
+    use ravel_lite::pivot::{read_stack, write_stack, Frame, Stack};
+    use std::path::PathBuf;
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("stack.yaml");
+    let s = Stack {
+        frames: vec![Frame {
+            path: PathBuf::from("LLM_STATE/x"),
+            pushed_at: None,
+            reason: None,
+        }],
+    };
+    write_stack(&path, &s).unwrap();
+    let back = read_stack(&path).unwrap().unwrap();
+    assert_eq!(back, s);
+}
+
+#[test]
+fn pivot_read_stack_corrupt_yaml_returns_error_with_context() {
+    use ravel_lite::pivot::read_stack;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("stack.yaml");
+    fs::write(&path, "not: valid: yaml: at: all:\n  - [\n").unwrap();
+
+    let err = read_stack(&path).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("stack.yaml"), "error should mention the file: {msg}");
+}
+
+#[test]
+fn pivot_write_stack_creates_parent_if_needed() {
+    use ravel_lite::pivot::{write_stack, Stack};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("some/nested/stack.yaml");
+    // Parent doesn't exist; write should succeed by creating parents.
+    write_stack(&path, &Stack::default()).unwrap();
+    assert!(path.exists());
+}

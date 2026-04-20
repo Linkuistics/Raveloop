@@ -13,8 +13,11 @@
 //! No tokio, no async. The async driver in `phase_loop.rs` orchestrates.
 //! See docs/superpowers/specs/2026-04-20-hierarchical-pivot-design.md.
 
-use std::path::PathBuf;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// Hard compile-time cap on nesting depth. Prevents runaway recursion
@@ -39,4 +42,32 @@ pub struct Frame {
 pub struct Stack {
     #[serde(default)]
     pub frames: Vec<Frame>,
+}
+
+/// Read `stack.yaml` from `path`. Returns `Ok(None)` if the file is absent
+/// (normal state at depth 1), `Ok(Some(stack))` on successful parse, or an
+/// error that includes the path for diagnosability.
+pub fn read_stack(path: &Path) -> Result<Option<Stack>> {
+    match fs::read_to_string(path) {
+        Ok(s) => {
+            let stack: Stack = serde_yaml::from_str(&s)
+                .with_context(|| format!("Failed to parse stack.yaml at {}", path.display()))?;
+            Ok(Some(stack))
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => {
+            Err(e).with_context(|| format!("Failed to read stack.yaml at {}", path.display()))
+        }
+    }
+}
+
+/// Write `stack` to `path`, creating parent directories as needed.
+pub fn write_stack(path: &Path, stack: &Stack) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create parent for {}", path.display()))?;
+    }
+    let s = serde_yaml::to_string(stack).context("Failed to serialize Stack")?;
+    fs::write(path, s)
+        .with_context(|| format!("Failed to write stack.yaml at {}", path.display()))
 }
