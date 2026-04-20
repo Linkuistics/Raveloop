@@ -113,6 +113,46 @@ pub fn write_stack(path: &Path, stack: &Stack) -> Result<()> {
 
 use crate::types::LlmPhase;
 
+/// What the driver should do after a plan's full cycle ends
+/// (post-git-commit-triage). Called at every cycle boundary; handles
+/// the three terminal cases of a cycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NextAfterCycle {
+    /// Continue the current (root) plan's loop at its next work phase.
+    /// Only valid at depth 1.
+    Continue,
+    /// A new top was added during this cycle — stateful pivot takes
+    /// effect now. Push the frame and enter its plan's cycle.
+    Push(Frame),
+    /// Current plan is nested and had nothing new to push; pop to
+    /// parent and resume its next phase.
+    Pop,
+}
+
+/// Decide what to do after `git-commit-triage` completes for the
+/// currently-executing plan.
+///
+/// - `current_depth`: stack depth *including* the currently-executing plan.
+///   Depth 1 means "root only".
+/// - `stack_grew`: whether a new top was added during this plan's cycle.
+/// - `new_top`: the newly-added frame, if any.
+pub fn decide_after_cycle(
+    current_depth: usize,
+    stack_grew: bool,
+    new_top: Option<Frame>,
+) -> NextAfterCycle {
+    if stack_grew {
+        if let Some(f) = new_top {
+            return NextAfterCycle::Push(f);
+        }
+    }
+    if current_depth > 1 {
+        NextAfterCycle::Pop
+    } else {
+        NextAfterCycle::Continue
+    }
+}
+
 /// What the driver should do after a work phase finishes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextAfterWork {

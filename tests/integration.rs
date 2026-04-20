@@ -1690,3 +1690,56 @@ fn pivot_decide_after_work_no_advance_no_pivot_is_error() {
         _ => panic!("expected Error"),
     }
 }
+
+#[test]
+fn pivot_decide_after_cycle_stateful_pivot_push() {
+    use ravel_lite::pivot::{decide_after_cycle, Frame, NextAfterCycle};
+    use std::path::PathBuf;
+
+    let frame = Frame {
+        path: PathBuf::from("/x"),
+        pushed_at: None,
+        reason: None,
+    };
+    let action = decide_after_cycle(1, true, Some(frame.clone()));
+    match action {
+        NextAfterCycle::Push(f) => assert_eq!(f, frame),
+        _ => panic!("expected Push"),
+    }
+}
+
+#[test]
+fn pivot_decide_after_cycle_pop_when_nested() {
+    use ravel_lite::pivot::{decide_after_cycle, NextAfterCycle};
+
+    let action = decide_after_cycle(2, false, None);
+    assert!(matches!(action, NextAfterCycle::Pop));
+}
+
+#[test]
+fn pivot_decide_after_cycle_continue_at_root() {
+    use ravel_lite::pivot::{decide_after_cycle, NextAfterCycle};
+
+    let action = decide_after_cycle(1, false, None);
+    assert!(matches!(action, NextAfterCycle::Continue));
+}
+
+#[test]
+fn pivot_decide_after_cycle_push_takes_precedence_over_pop() {
+    use ravel_lite::pivot::{decide_after_cycle, Frame, NextAfterCycle};
+    use std::path::PathBuf;
+
+    let frame = Frame {
+        path: PathBuf::from("/deeper"),
+        pushed_at: None,
+        reason: None,
+    };
+    // A nested plan wrote a new top during its own cycle: go deeper,
+    // don't pop. (A plan that both writes a new top AND wants to be
+    // popped is ill-formed; push wins.)
+    let action = decide_after_cycle(2, true, Some(frame.clone()));
+    match action {
+        NextAfterCycle::Push(f) => assert_eq!(f, frame),
+        _ => panic!("expected Push to take precedence"),
+    }
+}
