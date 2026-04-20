@@ -6,6 +6,11 @@ mod format;
 mod git;
 mod init;
 mod phase_loop;
+// `main.rs` re-declares `mod pivot` independently of `lib.rs`, so the binary
+// crate sees all pivot items as dead until Task 10 wires run_stack into the
+// binary entry point. Remove the allow once the call site exists.
+#[allow(dead_code)]
+mod pivot;
 mod prompt;
 mod subagent;
 mod survey;

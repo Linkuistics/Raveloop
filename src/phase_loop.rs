@@ -8,6 +8,7 @@ use crate::agent::Agent;
 use crate::dream::{should_dream, update_dream_baseline};
 use crate::format::phase_info;
 use crate::git::{git_commit_plan, git_save_work_baseline, work_tree_snapshot, working_tree_status};
+use crate::pivot;
 use crate::prompt::compose_prompt;
 use crate::subagent::dispatch_subagents;
 use crate::types::*;
@@ -293,6 +294,46 @@ pub async fn phase_loop(
             }
         }
     }
+}
+
+/// Stack-aware phase loop entry point.
+///
+/// For single-plan invocations (the common case today), this behaves
+/// identically to the pre-pivot `phase_loop` function.
+///
+/// When the running plan's work phase modifies `<root>/stack.yaml` and
+/// leaves `phase.md` at `work`, the driver short-circuits into the child
+/// plan's cycle. See docs/superpowers/specs/2026-04-20-hierarchical-pivot-design.md.
+// `main.rs` re-declares `mod phase_loop` independently of `lib.rs`, so the
+// binary crate sees run_stack as dead until Task 10 migrates the call site.
+// Remove the allow once the call site exists.
+#[allow(dead_code)]
+pub async fn run_stack(
+    agent: Arc<dyn Agent>,
+    root_ctx: PlanContext,
+    config: &SharedConfig,
+    ui: &UI,
+) -> Result<()> {
+    // Initial stack: either resume from <root>/stack.yaml or start at just the root.
+    let root_plan_dir = std::path::PathBuf::from(&root_ctx.plan_dir);
+    let stack_path = root_plan_dir.join("stack.yaml");
+
+    let stack: Vec<PlanContext> = match pivot::read_stack(&stack_path)? {
+        Some(s) if !s.frames.is_empty() => {
+            let config_root = root_ctx.config_root.clone();
+            s.frames
+                .iter()
+                .map(|f| pivot::frame_to_context(f, &config_root))
+                .collect::<Result<Vec<_>>>()?
+        }
+        _ => vec![root_ctx.clone()],
+    };
+
+    // TODO in Task 9: add per-cycle stack-snapshot check + push/pop logic.
+    // For now, just run the existing phase_loop for the top-of-stack plan
+    // exactly once. This proves the single-plan regression suite passes.
+    let top_ctx = stack.last().cloned().expect("stack has at least one frame");
+    phase_loop(agent, &top_ctx, config, ui).await
 }
 
 #[cfg(test)]

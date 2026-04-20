@@ -1816,3 +1816,74 @@ fn pivot_breadcrumb_handles_three_deep() {
     ]);
     assert_eq!(s, "coord → sub-F → sub-F-sub1");
 }
+
+#[tokio::test]
+async fn pivot_run_stack_single_plan_completes_one_cycle() {
+    use ravel_lite::phase_loop::run_stack;
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    Command::new("git").arg("init").current_dir(root).output().unwrap();
+    Command::new("git").args(["config", "user.email", "t@t"]).current_dir(root).output().unwrap();
+    Command::new("git").args(["config", "user.name", "t"]).current_dir(root).output().unwrap();
+
+    let plan = root.join("LLM_STATE").join("solo");
+    fs::create_dir_all(&plan).unwrap();
+    // Start at triage so MockAgent (which uses invoke_headless) can advance the phase.
+    // git-commit-triage advances phase.md to "work" then asks the confirm; drain replies
+    // false so run_stack exits after one triage cycle — no pivot logic triggered.
+    fs::write(plan.join("phase.md"), "triage\n").unwrap();
+
+    let config_root = root.join("config");
+    fs::create_dir_all(config_root.join("phases")).unwrap();
+    fs::write(config_root.join("phases/triage.md"), "triage on {{PLAN}}\n").unwrap();
+
+    Command::new("git").args(["add", "."]).current_dir(root).output().unwrap();
+    Command::new("git").args(["commit", "-m", "init"]).current_dir(root).output().unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let agent = Arc::new(MockAgent {
+        calls: calls.clone(),
+        next_phase_after: HashMap::from([(LlmPhase::Triage, "git-commit-triage")]),
+        plan_dir: plan.clone(),
+    });
+
+    let ctx = ravel_lite::types::PlanContext {
+        plan_dir: plan.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+    let cfg = SharedConfig { agent: "mock".into(), headroom: 1500 };
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    // Drain the UI channel; reply false to confirm so the loop exits after
+    // one triage cycle (run_stack has no pivot logic at this stage).
+    let drainer = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Should complete without attempting any pivot.
+    let result = run_stack(agent.clone(), ctx, &cfg, &ui).await;
+    ui.quit();
+    let _ = drainer.await;
+    assert!(result.is_ok(), "expected clean exit, got: {result:?}");
+
+    // Verify the single plan's phase.md advanced to "work" (git-commit-triage writes it).
+    let phase = fs::read_to_string(plan.join("phase.md")).unwrap();
+    assert_eq!(phase.trim(), "work");
+
+    // No stack.yaml should have been created.
+    assert!(!plan.join("stack.yaml").exists());
+}
