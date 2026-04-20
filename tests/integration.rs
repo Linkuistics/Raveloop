@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use tempfile::TempDir;
@@ -1886,4 +1887,196 @@ async fn pivot_run_stack_single_plan_completes_one_cycle() {
 
     // No stack.yaml should have been created.
     assert!(!plan.join("stack.yaml").exists());
+}
+
+/// Short-circuit pivot: coordinator's work phase writes stack.yaml with a
+/// child frame and leaves phase.md at "work". The driver detects the new
+/// top, pushes child immediately, runs child's cycle, pops back to coord,
+/// then resumes coord's work phase. On exit, stack.yaml must be absent.
+#[tokio::test]
+async fn pivot_run_stack_short_circuit_pivot() {
+    use ravel_lite::phase_loop::run_stack;
+    use ravel_lite::pivot::{Frame, Stack};
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    Command::new("git").arg("init").current_dir(root).output().unwrap();
+    Command::new("git").args(["config", "user.email", "t@t"]).current_dir(root).output().unwrap();
+    Command::new("git").args(["config", "user.name", "t"]).current_dir(root).output().unwrap();
+
+    let coord = root.join("LLM_STATE").join("coord");
+    fs::create_dir_all(&coord).unwrap();
+    fs::write(coord.join("phase.md"), "work\n").unwrap();
+
+    let child = root.join("LLM_STATE").join("child");
+    fs::create_dir_all(&child).unwrap();
+    fs::write(child.join("phase.md"), "work\n").unwrap();
+
+    // Minimal config for prompts — analyse-work needs a phases directory.
+    let config_root = root.join("config");
+    fs::create_dir_all(config_root.join("phases")).unwrap();
+    fs::write(config_root.join("phases/analyse-work.md"), "analyse-work {{PLAN}}\n").unwrap();
+    fs::write(config_root.join("phases/work.md"), "work {{PLAN}}\n").unwrap();
+
+    Command::new("git").args(["add", "."]).current_dir(root).output().unwrap();
+    Command::new("git").args(["commit", "-m", "init"]).current_dir(root).output().unwrap();
+
+    // Canonical paths for assertions — frame_to_context resolves symlinks
+    // (e.g. /tmp → /private/tmp on macOS), so comparisons use canonical forms.
+    let coord_canon = coord.canonicalize().unwrap();
+    let child_canon = child.canonicalize().unwrap();
+
+    let calls: Arc<Mutex<Vec<(std::path::PathBuf, LlmPhase)>>> = Arc::new(Mutex::new(vec![]));
+
+    // Number of times coord's work phase has been invoked.
+    let coord_work_count = Arc::new(AtomicUsize::new(0));
+
+    struct PivotMockAgent {
+        calls: Arc<Mutex<Vec<(std::path::PathBuf, LlmPhase)>>>,
+        /// Raw (non-canonical) coord path, for matching the root_ctx.plan_dir
+        /// which run_stack never canonicalizes.
+        coord_raw: std::path::PathBuf,
+        coord: std::path::PathBuf,
+        child: std::path::PathBuf,
+        coord_work_count: Arc<AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl ravel_lite::agent::Agent for PivotMockAgent {
+        async fn invoke_interactive(&self, _prompt: &str, ctx: &PlanContext) -> anyhow::Result<()> {
+            let plan_dir = std::path::PathBuf::from(&ctx.plan_dir);
+            // Canonicalize for consistent comparison regardless of symlink resolution.
+            let plan_dir_canon = plan_dir.canonicalize().unwrap_or(plan_dir.clone());
+            self.calls.lock().unwrap().push((plan_dir_canon.clone(), LlmPhase::Work));
+
+            if plan_dir_canon == self.coord {
+                let n = self.coord_work_count.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    // First coord work: short-circuit pivot — write stack.yaml,
+                    // leave phase.md at "work" so the driver sees PushImmediately.
+                    let stack = Stack {
+                        frames: vec![
+                            Frame { path: self.coord_raw.clone(), pushed_at: None, reason: None },
+                            Frame { path: self.child.clone(), pushed_at: None, reason: Some("test".into()) },
+                        ],
+                    };
+                    let y = serde_yaml::to_string(&stack).unwrap();
+                    fs::write(self.coord_raw.join("stack.yaml"), y).unwrap();
+                    // Leave phase.md at "work" (short-circuit pivot signal).
+                } else {
+                    // Second coord work (after pop): advance normally so the loop
+                    // can reach git-commit-work whose confirm exits cleanly.
+                    fs::write(plan_dir.join("phase.md"), "analyse-work\n").unwrap();
+                }
+            } else {
+                // Child work: advance phase normally.
+                fs::write(plan_dir.join("phase.md"), "analyse-work\n").unwrap();
+            }
+            Ok(())
+        }
+
+        async fn invoke_headless(
+            &self,
+            _prompt: &str,
+            ctx: &PlanContext,
+            phase: LlmPhase,
+            _agent_id: &str,
+            _tx: UISender,
+        ) -> anyhow::Result<()> {
+            let plan_dir = std::path::PathBuf::from(&ctx.plan_dir);
+            let plan_dir_canon = plan_dir.canonicalize().unwrap_or(plan_dir.clone());
+            self.calls.lock().unwrap().push((plan_dir_canon, phase));
+
+            // Advance to the next script phase so the orchestrator can commit.
+            let next = match phase {
+                LlmPhase::AnalyseWork => "git-commit-work",
+                LlmPhase::Reflect => "git-commit-reflect",
+                LlmPhase::Dream => "git-commit-dream",
+                LlmPhase::Triage => "git-commit-triage",
+                LlmPhase::Work => unreachable!("work is interactive"),
+            };
+            fs::write(plan_dir.join("phase.md"), format!("{next}\n")).unwrap();
+            Ok(())
+        }
+
+        async fn dispatch_subagent(
+            &self,
+            _prompt: &str,
+            _target_plan: &str,
+            _agent_id: &str,
+            _tx: UISender,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn tokens(&self) -> HashMap<String, String> {
+            HashMap::new()
+        }
+    }
+
+    let agent = Arc::new(PivotMockAgent {
+        calls: calls.clone(),
+        coord_raw: coord.clone(),
+        coord: coord_canon.clone(),
+        child: child_canon.clone(),
+        coord_work_count: coord_work_count.clone(),
+    });
+
+    let ctx = PlanContext {
+        plan_dir: coord.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+    let cfg = SharedConfig { agent: "mock".into(), headroom: 1500 };
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    // Explicit-false drainer: reply false to every confirm (all confirms decline).
+    let drainer = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        run_stack(agent.clone(), ctx, &cfg, &ui),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("test hung: run_stack did not complete within 10s"));
+
+    ui.quit();
+    let _ = drainer.await;
+
+    assert!(result.is_ok(), "expected clean exit, got: {result:?}");
+
+    let log = calls.lock().unwrap();
+
+    // Minimum assertions (all comparisons use canonical paths, since
+    // frame_to_context resolves symlinks via canonicalize on macOS):
+    //   1. First call is coord.Work (short-circuit pivot).
+    //   2. Child was invoked at some point.
+    //   3. stack.yaml is absent (deleted after pop to depth 1).
+    assert!(!log.is_empty(), "no calls recorded");
+    assert_eq!(log[0].0, coord_canon, "first call should be coord.work; got {:?}", log[0]);
+    assert_eq!(log[0].1, LlmPhase::Work, "first call should be Work phase");
+    assert!(
+        log.iter().any(|(p, _)| *p == child_canon),
+        "child should have been invoked; call log: {log:?}"
+    );
+
+    // After pop, stack.yaml must have been deleted.
+    assert!(
+        !coord.join("stack.yaml").exists(),
+        "stack.yaml should be deleted after pop to depth 1"
+    );
 }

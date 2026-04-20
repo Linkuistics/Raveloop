@@ -296,6 +296,120 @@ pub async fn phase_loop(
     }
 }
 
+/// Write the in-memory stack to disk, or delete the file if the stack
+/// is at depth 1 (root only).
+fn sync_stack_to_disk(stack_path: &Path, stack: &[PlanContext]) -> Result<()> {
+    if stack.len() <= 1 {
+        if stack_path.exists() {
+            std::fs::remove_file(stack_path)
+                .with_context(|| format!("Failed to remove {}", stack_path.display()))?;
+        }
+        return Ok(());
+    }
+    let frames: Vec<pivot::Frame> = stack
+        .iter()
+        .map(|ctx| pivot::Frame {
+            path: std::path::PathBuf::from(&ctx.plan_dir),
+            pushed_at: Some(chrono_like_timestamp()),
+            reason: None,
+        })
+        .collect();
+    pivot::write_stack(stack_path, &pivot::Stack { frames })
+}
+
+/// RFC3339-ish timestamp without a chrono dep.
+fn chrono_like_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    format!("@{secs}")
+}
+
+/// Read the current on-disk stack frame count. Returns 0 if the file is absent.
+fn on_disk_stack_len(stack_path: &Path) -> usize {
+    match pivot::read_stack(stack_path) {
+        Ok(Some(s)) => s.frames.len(),
+        _ => 0,
+    }
+}
+
+/// Read the new top frame from stack.yaml (the last frame), if the file exists
+/// and has at least `min_len` frames.
+fn on_disk_new_top(stack_path: &Path, min_len: usize) -> Option<pivot::Frame> {
+    match pivot::read_stack(stack_path) {
+        Ok(Some(s)) if s.frames.len() >= min_len => s.frames.into_iter().last(),
+        _ => None,
+    }
+}
+
+/// Build the `pivot::Stack` snapshot of the in-memory driver stack (for
+/// validate_push and decide_after_cycle calls).
+fn stack_snapshot(stack: &[PlanContext]) -> pivot::Stack {
+    pivot::Stack {
+        frames: stack
+            .iter()
+            .map(|ctx| pivot::Frame {
+                path: std::path::PathBuf::from(&ctx.plan_dir),
+                pushed_at: None,
+                reason: None,
+            })
+            .collect(),
+    }
+}
+
+/// Push a new frame onto the in-memory stack after validation, log a
+/// breadcrumb, and sync the stack file to disk. Returns the new context.
+fn do_push(
+    stack: &mut Vec<PlanContext>,
+    pending_push: &mut Vec<Option<pivot::Frame>>,
+    stack_path: &Path,
+    new_frame: pivot::Frame,
+    from_name: &str,
+    ui: &UI,
+) -> Result<()> {
+    pivot::validate_push(&stack_snapshot(stack), &new_frame)?;
+    let new_ctx = pivot::frame_to_context(&new_frame, &stack.last().unwrap().config_root)?;
+    let breadcrumb = format_breadcrumb(
+        &stack
+            .iter()
+            .map(|c| std::path::PathBuf::from(&c.plan_dir))
+            .collect::<Vec<_>>(),
+    );
+    ui.log(&format!("\n  ↓  PIVOT  ·  {breadcrumb}  →  {from_name}"));
+    stack.push(new_ctx);
+    pending_push.push(None);
+    sync_stack_to_disk(stack_path, stack)
+}
+
+/// Compose the LLM prompt for a phase, injecting the work-tree snapshot for
+/// `AnalyseWork`. Mirrors the equivalent logic in the single-plan `phase_loop`.
+fn build_prompt(
+    config_root: &Path,
+    lp: LlmPhase,
+    ctx: &PlanContext,
+    tokens: &std::collections::HashMap<String, String>,
+    plan_dir: &Path,
+    project_dir: &Path,
+) -> Result<String> {
+    if lp == LlmPhase::AnalyseWork {
+        let mut aug = tokens.clone();
+        let sha = fs::read_to_string(plan_dir.join("work-baseline"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        let snap = if sha.is_empty() {
+            "(work-baseline missing; no snapshot available)".to_string()
+        } else {
+            work_tree_snapshot(project_dir, &sha)
+        };
+        aug.insert("WORK_TREE_STATUS".to_string(), snap);
+        compose_prompt(config_root, lp, ctx, &aug)
+    } else {
+        compose_prompt(config_root, lp, ctx, tokens)
+    }
+}
+
 /// Stack-aware phase loop entry point.
 ///
 /// For single-plan invocations (the common case today), this behaves
@@ -314,26 +428,82 @@ pub async fn run_stack(
     config: &SharedConfig,
     ui: &UI,
 ) -> Result<()> {
-    // Initial stack: either resume from <root>/stack.yaml or start at just the root.
-    let root_plan_dir = std::path::PathBuf::from(&root_ctx.plan_dir);
-    let stack_path = root_plan_dir.join("stack.yaml");
-
-    let stack: Vec<PlanContext> = match pivot::read_stack(&stack_path)? {
-        Some(s) if !s.frames.is_empty() => {
-            let config_root = root_ctx.config_root.clone();
-            s.frames
-                .iter()
-                .map(|f| pivot::frame_to_context(f, &config_root))
-                .collect::<Result<Vec<_>>>()?
-        }
+    let stack_path = std::path::PathBuf::from(&root_ctx.plan_dir).join("stack.yaml");
+    let mut stack: Vec<PlanContext> = match pivot::read_stack(&stack_path)? {
+        Some(s) if !s.frames.is_empty() => s.frames.iter()
+            .map(|f| pivot::frame_to_context(f, &root_ctx.config_root))
+            .collect::<Result<Vec<_>>>()?,
         _ => vec![root_ctx.clone()],
     };
+    let mut pending: Vec<Option<pivot::Frame>> = vec![None; stack.len()];
+    if let Err(e) = agent.setup(stack.last().unwrap()).await {
+        ui.log(&format!("  ✗  Setup failed: {e}"));
+    }
 
-    // TODO in Task 9: add per-cycle stack-snapshot check + push/pop logic.
-    // For now, just run the existing phase_loop for the top-of-stack plan
-    // exactly once. This proves the single-plan regression suite passes.
-    let top_ctx = stack.last().cloned().expect("stack has at least one frame");
-    phase_loop(agent, &top_ctx, config, ui).await
+    loop {
+        let top = stack.last().cloned().expect("stack never empty");
+        let plan_dir = std::path::PathBuf::from(&top.plan_dir);
+        let project_dir = std::path::PathBuf::from(&top.project_dir);
+        let config_root = std::path::PathBuf::from(&top.config_root);
+        let name = plan_name(&plan_dir);
+        let depth = stack.len();
+
+        match read_phase(&plan_dir)? {
+            Phase::Script(sp) => {
+                let eoc = sp == ScriptPhase::GitCommitTriage;
+                let ok = handle_script_phase(sp, &plan_dir, &project_dir, config.headroom, ui).await?;
+                if !ok {
+                    if depth > 1 { stack.pop(); pending.pop(); sync_stack_to_disk(&stack_path, &stack)?; continue; }
+                    ui.log("\nExiting.");
+                    return Ok(());
+                }
+                if eoc {
+                    let pp = pending[depth - 1].take();
+                    let grew = pp.is_some();
+                    match pivot::decide_after_cycle(depth, grew, pp) {
+                        pivot::NextAfterCycle::Continue => {}
+                        pivot::NextAfterCycle::Pop => { stack.pop(); pending.pop(); sync_stack_to_disk(&stack_path, &stack)?; }
+                        pivot::NextAfterCycle::Push(f) => { do_push(&mut stack, &mut pending, &stack_path, f, &name, ui)?; }
+                    }
+                }
+            }
+            Phase::Llm(lp) => {
+                log_phase_header(ui, lp, &project_name(&top.project_dir), &name);
+                if lp == LlmPhase::Work && !plan_dir.join("work-baseline").exists() {
+                    git_save_work_baseline(&plan_dir);
+                }
+                let tokens = agent.tokens();
+                let prompt = build_prompt(&config_root, lp, &top, &tokens, &plan_dir, &project_dir)?;
+                ui.register_agent("main");
+
+                if lp == LlmPhase::Work {
+                    let pre_len = on_disk_stack_len(&stack_path);
+                    ui.suspend();
+                    agent.invoke_interactive(&prompt, &top).await?;
+                    ui.resume();
+                    let phase_after = read_phase(&plan_dir)?;
+                    let post_len = on_disk_stack_len(&stack_path);
+                    let grew = post_len > pre_len;
+                    let new_top = grew.then(|| on_disk_new_top(&stack_path, post_len)).flatten();
+                    let lp_after = match phase_after { Phase::Llm(p) => p, Phase::Script(_) => LlmPhase::AnalyseWork };
+                    match pivot::decide_after_work(lp_after, grew, new_top) {
+                        pivot::NextAfterWork::ContinueNormalCycle => {}
+                        pivot::NextAfterWork::PushAfterCycle(f) => { pending[depth - 1] = Some(f); }
+                        pivot::NextAfterWork::PushImmediately(f) => { do_push(&mut stack, &mut pending, &stack_path, f, &name, ui)?; continue; }
+                        pivot::NextAfterWork::Error(msg) => { ui.log(&format!("\n  ✗  {msg}. Stopping.")); return Ok(()); }
+                    }
+                } else {
+                    agent.invoke_headless(&prompt, &top, lp, "main", ui.sender()).await?;
+                    if read_phase(&plan_dir)? == Phase::Llm(lp) {
+                        ui.log(&format!("\n  ✗  Phase did not advance from {lp}. Stopping."));
+                        return Ok(());
+                    }
+                    if lp == LlmPhase::Dream { update_dream_baseline(&plan_dir); }
+                    if lp == LlmPhase::Triage { dispatch_subagents(agent.clone(), &plan_dir, ui).await?; }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
