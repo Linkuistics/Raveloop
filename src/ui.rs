@@ -60,7 +60,12 @@ pub enum UIMessage {
     Log(String),
     RegisterAgent { agent_id: String },
     Confirm { message: String, reply: oneshot::Sender<bool> },
-    Suspend,
+    // `ack` closes to synchronously notify the caller that the TUI has
+    // finished clearing the viewport and disabling raw mode. Required
+    // because `invoke_interactive` spawns a child that inherits stdin —
+    // if raw mode is still on, the child's ctrl-C is swallowed and its
+    // TUI setup races with ratatui.
+    Suspend { ack: oneshot::Sender<()> },
     Resume,
     Quit,
 }
@@ -102,8 +107,10 @@ impl UI {
         reply_rx.await.unwrap_or(false)
     }
 
-    pub fn suspend(&self) {
-        let _ = self.tx.send(UIMessage::Suspend);
+    pub async fn suspend(&self) {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        let _ = self.tx.send(UIMessage::Suspend { ack: ack_tx });
+        let _ = ack_rx.await;
     }
 
     pub fn resume(&self) {
@@ -270,10 +277,11 @@ pub async fn run_tui(mut rx: mpsc::UnboundedReceiver<UIMessage>) -> Result<(), a
             msg = rx.recv() => {
                 match msg {
                     Some(UIMessage::Quit) | None => break,
-                    Some(UIMessage::Suspend) => {
+                    Some(UIMessage::Suspend { ack }) => {
                         terminal.clear()?;
                         terminal::disable_raw_mode()?;
                         suspended = true;
+                        let _ = ack.send(());
                     }
                     Some(UIMessage::Resume) => {
                         // The interactive child may end without a trailing

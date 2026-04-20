@@ -277,7 +277,7 @@ pub async fn phase_loop(
                 ui.register_agent(agent_id);
 
                 if lp == LlmPhase::Work {
-                    ui.suspend();
+                    ui.suspend().await;
                     agent.invoke_interactive(&prompt, ctx).await?;
                     ui.resume();
                 } else {
@@ -501,7 +501,7 @@ pub async fn run_stack(
 
                 if lp == LlmPhase::Work {
                     let pre_len = on_disk_stack_len(&stack_path);
-                    ui.suspend();
+                    ui.suspend().await;
                     agent.invoke_interactive(&prompt, &top).await?;
                     ui.resume();
                     let phase_after = read_phase(&plan_dir)?;
