@@ -89,3 +89,6 @@ Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the 
 
 ## CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
 `tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
+
+## `term_title.rs` sets phase title via OSC escape
+`src/term_title.rs` exposes `set_title(project, plan, phase)` (side-effecting) and `format_title_escape` (testable helper). Writes to stdout; clean side-channel because Ratatui uses stderr backend. Includes tmux passthrough (doubled inner ESCs). Called at `LlmPhase` entry in `phase_loop` and `run_stack`, in `do_push` after `sync_stack_to_disk`, and at both pop sites in `run_stack`. Phase labels uppercased to match the phase-header banner convention.
