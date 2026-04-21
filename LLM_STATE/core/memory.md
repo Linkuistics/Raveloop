@@ -80,3 +80,12 @@ Use `tokio::time::sleep` for tty event polling. A `spawn_blocking` thread is not
 
 ## Claude Code TUI requires `--debug-file` workaround for ≤2.1.116
 `invoke_interactive` in `src/agent/claude_code.rs` passes `--debug-file /tmp/claude-debug.log`; debug mode masks a TUI rendering failure via an unknown upstream mechanism. Root cause not found. Remove both `args.push` lines when claude is updated past 2.1.116.
+
+## Phase prompts invoke `ravel-lite state set-phase`
+All 5 `defaults/phases/*.md` prompts use `ravel-lite state set-phase <plan-dir> <phase>` to transition phase. Direct writes to `phase.md` bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` also refuses to create a plan dir that does not already exist.
+
+## `push_timestamp()` in `pivot.rs` is canonical
+Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the state CLI both call `pivot::push_timestamp()`. Any third call site must use that function rather than inlining the format string.
+
+## CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
+`tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
