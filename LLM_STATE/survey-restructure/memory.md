@@ -33,5 +33,8 @@ All nested structs (`PlanRow`, `SurveyResponse`, and their fields) require `#[de
 ### `run_single_plan` is the seam for 5c multi-plan dispatch
 `run_single_plan` in `src/phase_loop.rs` is a 9-line delegate retained intentionally. Task 5c branches on plan-count in `main::run_phase_loop`: single-plan path calls `run_single_plan` unchanged; multi-plan path adds a survey-routed dispatch loop around it.
 
+### `merge_delta` validation must be surfaced in 5c's run loop
+`merge_delta` refuses deltas that mutate plans outside the declared changed set ("expected keys == returned keys"). Task 5c's run loop should surface this error directly to the user on first occurrence rather than silently retrying — model drift is user-visible information, not a transparent retry case.
+
 ### Six pre-existing clippy doc-formatting errors in `src/survey/schema.rs`
 `cargo clippy` reports 6 doc-formatting warnings in `src/survey/schema.rs`. These predate the survey restructure and are out of scope for this plan.
