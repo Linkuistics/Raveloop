@@ -173,16 +173,16 @@ boilerplate's invariant blocks, but:
 **Results:**
 
 Superseded by the survey-driven multi-plan run design captured in
-`docs/survey-pivot-design.md` and decomposed into items 5a/5b/5c/5d
-in the new `LLM_STATE/survey-restructure/` plan. The LLM-authored
-coordinator concept moves from prompt-space into Rust: routing
-intelligence lives in the runner (item 5c) rather than in a
-specialised coordinator prompt. The infrastructure this task was
-going to build on — `stack.yaml`, `push-plan`, `pivot.rs`,
-`run_stack` — is itself removed in item 5d. No code was written
-for this task before the pivot; the 2026-04-21 rescoping session
-established the new direction before any coordinator-work-boilerplate
-was authored.
+`docs/survey-pivot-design.md` and delivered as four landed commits
+(structured YAML survey, incremental `--prior`, multi-plan `run`
+mode, stack/pivot removal). The LLM-authored coordinator concept
+moved from prompt-space into Rust: routing intelligence lives in
+the runner (`src/multi_plan.rs`) rather than in a specialised
+coordinator prompt. The infrastructure this task was going to
+build on — `stack.yaml`, `push-plan`, `pivot.rs`, `run_stack` — is
+itself removed. No code was written for this task before the
+pivot; the 2026-04-21 rescoping session established the new
+direction before any coordinator-work-boilerplate was authored.
 
 ---
 
@@ -396,7 +396,9 @@ should settle which.
 - Changes to agent-config files (`config.yaml`, `tokens.yaml`) or
   the `survey.md` / `create-plan.md` prompts. Those aren't
   plan-state and aren't part of the hypothesis.
-- `stack.yaml` — already has `push-plan`; sufficient.
+- Any stack-coordinator infrastructure — `stack.yaml`, `push-plan`,
+  `pivot.rs`, `run_stack` have all been removed from the codebase;
+  no longer a consideration.
 - Any file under `fixed-memory/` — those are static documentation,
   not plan state.
 
@@ -408,6 +410,41 @@ should settle which.
   Q6 can rely on the `[HANDOFF]` convention in Results blocks.
   The research question is narrower as a result: the Results block
   authorship path only needs to support the now-stable convention.
+- Once this task settles, it unblocks "Move per-plan task-count extraction
+  from LLM survey prompt into Rust" (see task below).
+
+**Results:** _pending_
+
+---
+
+### Move per-plan task-count extraction from LLM survey prompt into Rust
+
+**Category:** `enhancement`
+**Status:** `not_started`
+**Dependencies:** "Research: expose plan-state markdown as structured data" (task above) — requires a structured backlog parser before task counts can be derived in Rust
+
+**Description:**
+
+The survey LLM currently infers per-plan task counts from the raw markdown in
+`backlog.md`. Once the structured backlog parser from the research task above
+exists, task counts (total, not_started, in_progress, done) can be computed
+directly in Rust and injected as pre-populated tokens into the survey prompt —
+removing an unnecessary inference burden from the LLM.
+
+Identified as a deferred follow-on during the 2026-04-21 survey-pivot
+rescoping session. Do not schedule until the structured-data research
+task resolves; that task's completion is the trigger to revisit scope
+here.
+
+**Deliverables:**
+
+1. Extend the structured backlog parser to expose a `task_counts() -> TaskCounts`
+   method.
+2. In `src/survey/discover.rs`, compute task counts from the parsed backlog
+   and inject them into `PlanRow` (replacing the LLM-inferred field).
+3. Update `defaults/survey.md` to remove the instruction asking the LLM
+   to count tasks; add a note that counts are pre-populated.
+4. Test: assert counts are correct for a plan with tasks in each status.
 
 **Results:** _pending_
 
@@ -501,8 +538,7 @@ merge their results into the prior structured response.
 
 **Results:**
 
-Split into four finer-grained items in the new
-`LLM_STATE/survey-restructure/` plan:
+Split into and delivered as four finer-grained items, all landed:
 
 - **5a:** Structured YAML output for `survey` (canonical
   round-trip, positional plan-dir args, `survey-format` subcommand,
@@ -515,14 +551,48 @@ Split into four finer-grained items in the new
   `run_stack` — cleanup of the now-obsolete coordinator
   infrastructure.
 
-5a → 5b → 5c form a linear dependency chain; 5d is independent.
-Architectural rationale and open decisions per item are captured
-in `docs/survey-pivot-design.md`. The split was driven by two
-realisations during the 2026-04-21 rescoping session: (1) the
-original task's scope was plan-sized rather than cycle-sized;
-(2) "incremental survey" is a precondition for a larger
-architectural shift (multi-plan routing) that this task alone
-did not capture.
+5a → 5b → 5c formed a linear dependency chain; 5d was independent.
+Architectural rationale captured in `docs/survey-pivot-design.md`.
+The split was driven by two realisations during the 2026-04-21
+rescoping session: (1) the original task's scope was plan-sized
+rather than cycle-sized; (2) "incremental survey" is a precondition
+for a larger architectural shift (multi-plan routing) that this
+task alone did not capture. Current multi-plan coordinator lives
+in `src/multi_plan.rs`.
+
+---
+
+### Migrate Ravel orchestrator off removed `push-plan` verb
+
+**Category:** `maintenance`
+**Status:** `not_started`
+**Dependencies:** none — upstream stack/pivot removal has already landed
+on `main` (commit `06ce874`).
+
+**Description:**
+
+The out-of-repo Ravel orchestrator at
+`{{DEV_ROOT}}/Ravel/LLM_STATE/ravel-orchestrator/` contains logic that
+invokes `ravel-lite state push-plan`. That subcommand has been removed
+from this codebase; the orchestrator will break on next invocation.
+
+Assess what the orchestrator currently does with `push-plan` (inline
+`stack.yaml` case-analysis, lines 91-110 of its `prompt-work.md`) and
+determine the replacement approach given the current architecture:
+multi-plan routing now lives in the Rust runner (`src/multi_plan.rs`
+plus `run_single_plan`), not in a specialised coordinator prompt.
+The orchestrator may need to be retired, rewritten as a leaf plan,
+or updated to use the new multi-plan entry points.
+
+**Deliverables:**
+
+1. Inspect `{{DEV_ROOT}}/Ravel/LLM_STATE/ravel-orchestrator/` and
+   document exactly which parts depend on `push-plan` or `stack.yaml`.
+2. Decide: retire / rewrite as leaf / adapt to post-5c API.
+3. Apply the decided migration; verify orchestrator runs without
+   referencing any removed verb.
+
+**Results:** _pending_
 
 ---
 

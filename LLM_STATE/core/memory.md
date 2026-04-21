@@ -69,12 +69,6 @@ Analyse-work overwrites `latest-session.md` unconditionally on entry; a deletion
 ## Plan-tree cleanliness asserted via `git status --porcelain`
 `git_commit_triage_leaves_plan_tree_clean_at_user_prompt` and `git_commit_work_leaves_plan_tree_clean_at_user_prompt` assert `git status --porcelain -- <plan_dir>` is empty after `phase_loop` returns from a user-declined exit.
 
-## `run_stack` replaces `phase_loop` as top-level entry point
-`main.rs` calls `run_stack` in `phase_loop.rs`. `run_stack` owns the `Frame`/`Stack` push/pop/continue logic across nested plan cycles; the original `phase_loop` is an internal helper called per frame.
-
-## Pivot state machines are purely functional
-`decide_after_work` and `decide_after_cycle` in `pivot.rs` take current frame state and return the next action — no I/O, no async, no side effects. The four-case matrix is fully testable in `tests/integration.rs` without a real agent.
-
 ## `spawn_blocking` does not cancel cleanly in `tokio::select!`
 Use `tokio::time::sleep` for tty event polling. A `spawn_blocking` thread is not dropped when the select arm is cancelled; it races the spawned child for the tty. `tokio::time::sleep` is properly cancellable and eliminates the race.
 
@@ -87,9 +81,6 @@ Use `tokio::time::sleep` for tty event polling. A `spawn_blocking` thread is not
 ## Phase prompts invoke `ravel-lite state set-phase`
 All 5 `defaults/phases/*.md` prompts use `ravel-lite state set-phase <plan-dir> <phase>` to transition phase. Direct writes to `phase.md` bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` also refuses to create a plan dir that does not already exist.
 
-## `push_timestamp()` in `pivot.rs` is canonical
-Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the state CLI both call `pivot::push_timestamp()`. Any third call site must use that function rather than inlining the format string.
-
 ## CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
 `tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
 
@@ -100,16 +91,13 @@ Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the 
 `release.toml` sets `publish=false` and `push=false`; `cargo release patch --execute` bumps the version and tags locally without touching crates.io or the remote.
 
 ## `term_title.rs` sets phase title via OSC escape
-`src/term_title.rs` exposes `set_title(project, plan, phase)` (side-effecting) and `format_title_escape` (testable helper). Writes to stdout; clean side-channel because Ratatui uses stderr backend. Includes tmux passthrough (doubled inner ESCs). Called at `LlmPhase` entry in `phase_loop` and `run_stack`, in `do_push` after `sync_stack_to_disk`, and at both pop sites in `run_stack`. Phase labels uppercased to match the phase-header banner convention.
+`src/term_title.rs` exposes `set_title(project, plan, phase)` (side-effecting) and `format_title_escape` (testable helper). Writes to stdout; clean side-channel because Ratatui uses stderr backend. Includes tmux passthrough (doubled inner ESCs). Called at `LlmPhase` entry in `phase_loop` and `run_single_plan`. Phase labels uppercased to match the phase-header banner convention.
 
 ## Reflect phase runs automatically after git-commit-work
 The runner proceeds from `GitCommitWork` to reflect without user confirmation. No pre-reflect gate exists; reflect is unconditional after work commit.
 
 ## Fake-pi script must be phase-aware
 The fake-pi script in `pi_phase_cycle` uses a case statement on the current phase to emit distinct next-phase values. Writing `git-commit-work` unconditionally causes an infinite loop; each phase must map to a different output.
-
-## Pivot tests require all five phase configs seeded
-`pivot_run_stack_short_circuit_pivot` and related pivot tests fail with a missing-config error before pivot logic runs if any of the five phase config files (`work.md`, `analyse-work.md`, `triage.md`, `reflect.md`, `dream.md`) is absent from the fixture.
 
 ## `ContractMockAgent` for Triage appends, not overwrites
 `ContractMockAgent::invoke_headless` uses append mode for `Triage` so the safety-net test can observe analyse-work's status flips written earlier in the same cycle.
@@ -119,3 +107,9 @@ The fake-pi script in `pi_phase_cycle` uses a case statement on the current phas
 
 ## `warn_if_project_tree_dirty` is advisory-only after gate removal
 After the pre-reflect gate was removed (`2026-04-21`), `warn_if_project_tree_dirty` at the top of `GitCommitWork` has no user-facing gate following it where the operator can react. The warning fires but the phase proceeds unconditionally. If this becomes unacceptable, promote the warning to a hard error rather than re-adding a gate.
+
+## `phase_loop` exits after one full cycle; `run_single_plan` holds the inter-cycle prompt
+Post-5c: `phase_loop` is a single-cycle function. The inter-cycle user prompt ("continue / switch plan / exit") lives in `run_single_plan`, which wraps `phase_loop` in a loop. Multi-plan dispatch calls `phase_loop` directly via `dispatch_one_cycle` in `src/multi_plan.rs`.
+
+## `src/multi_plan.rs` owns survey-driven multi-plan routing
+`src/multi_plan.rs` is the multi-plan coordinator. It reads the survey output, routes to the next plan via `dispatch_one_cycle`, and holds the dispatch loop that replaced the former LLM-authored coordinator-plan concept.
