@@ -5,7 +5,7 @@
 ### Extend `create-plan` to produce coordinator plans when decomposition is appropriate
 
 **Category:** `feature`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** `ravel-lite state` subcommand (✓ done — provides `push-plan` CLI verb)
 
 **Description:**
@@ -170,7 +170,19 @@ boilerplate's invariant blocks, but:
 - Modifying Ravel's out-of-repo `ravel-orchestrator/prompt-work.md`.
   That's the reference-example input, not a migration target.
 
-**Results:** _pending_
+**Results:**
+
+Superseded by the survey-driven multi-plan run design captured in
+`docs/survey-pivot-design.md` and decomposed into items 5a/5b/5c/5d
+in the new `LLM_STATE/survey-restructure/` plan. The LLM-authored
+coordinator concept moves from prompt-space into Rust: routing
+intelligence lives in the runner (item 5c) rather than in a
+specialised coordinator prompt. The infrastructure this task was
+going to build on — `stack.yaml`, `push-plan`, `pivot.rs`,
+`run_stack` — is itself removed in item 5d. No code was written
+for this task before the pivot; the 2026-04-21 rescoping session
+established the new direction before any coordinator-work-boilerplate
+was authored.
 
 ---
 
@@ -426,7 +438,7 @@ before closing.
 ### Make `ravel-lite survey` incremental via per-plan input hashes
 
 **Category:** `enhancement`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** none — the survey design already splits structured YAML (`src/survey/schema.rs`) from human rendering (`src/survey/render.rs`), so the two-pass shape is in place.
 
 **Description:**
@@ -487,7 +499,30 @@ merge their results into the prior structured response.
    removed-plan pruning, schema-bump invalidation.
 6. `--force` flag on the CLI to bypass incremental mode when debugging.
 
-**Results:** _pending_
+**Results:**
+
+Split into four finer-grained items in the new
+`LLM_STATE/survey-restructure/` plan:
+
+- **5a:** Structured YAML output for `survey` (canonical
+  round-trip, positional plan-dir args, `survey-format` subcommand,
+  forward-compat `input_hash` field injected in Rust post-parse).
+- **5b:** Incremental survey via `--prior` — the original intent
+  of this task, plus `--force` bypass and a `schema_version` marker.
+- **5c:** Multi-plan `run` mode with survey-driven routing (new
+  scope, replaces former task #1's coordinator-plan concept).
+- **5d:** Remove `stack.yaml`, `push-plan` CLI, `pivot.rs`, and
+  `run_stack` — cleanup of the now-obsolete coordinator
+  infrastructure.
+
+5a → 5b → 5c form a linear dependency chain; 5d is independent.
+Architectural rationale and open decisions per item are captured
+in `docs/survey-pivot-design.md`. The split was driven by two
+realisations during the 2026-04-21 rescoping session: (1) the
+original task's scope was plan-sized rather than cycle-sized;
+(2) "incremental survey" is a precondition for a larger
+architectural shift (multi-plan routing) that this task alone
+did not capture.
 
 ---
 

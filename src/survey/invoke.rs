@@ -1,9 +1,13 @@
 // src/survey/invoke.rs
 //
 // Spawn + read the `claude` CLI for the survey, and the end-to-end
-// orchestrator that ties discovery, composition, invocation, parsing,
-// and rendering together.
+// orchestrator that ties plan loading, composition, invocation,
+// parsing, hash injection, and YAML emission together. Markdown
+// rendering is now a separate concern delegated to the
+// `ravel-lite survey-format` subcommand.
 
+use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -16,9 +20,9 @@ use crate::config::{load_agent_config, load_shared_config};
 use crate::types::AgentConfig;
 
 use super::compose::{load_survey_prompt, render_survey_input};
-use super::discover::discover_plans;
+use super::discover::load_plan;
 use super::render::render_survey_output;
-use super::schema::parse_survey_response;
+use super::schema::{emit_survey_yaml, inject_input_hashes, parse_survey_response, plan_key};
 
 /// Fallback model when neither `--model` nor `models.survey` is
 /// configured. A cheap, fast model is appropriate: survey is a
@@ -47,12 +51,17 @@ fn resolve_model(agent_config: &AgentConfig, flag_override: Option<String>) -> S
         .unwrap_or_else(|| DEFAULT_SURVEY_MODEL.to_string())
 }
 
-/// End-to-end survey runner. Gathers plans across every plan root,
-/// composes the prompt, invokes the `claude` CLI headlessly, and
-/// prints the LLM's response to stdout.
+/// End-to-end survey runner. Loads each named plan directory,
+/// composes the prompt, invokes the `claude` CLI headlessly, parses
+/// the YAML response, injects Rust-computed `input_hash` values into
+/// each row, and writes canonical YAML to stdout.
+///
+/// The plan-root walk is gone: each positional argument on the CLI
+/// names exactly one plan directory (a directory containing
+/// `phase.md`). Routing responsibility stays in the caller.
 pub async fn run_survey(
     config_root: &Path,
-    roots: &[PathBuf],
+    plan_dirs: &[PathBuf],
     model_override: Option<String>,
     timeout_override_secs: Option<u64>,
 ) -> Result<()> {
@@ -67,35 +76,24 @@ pub async fn run_survey(
     let agent_config = load_agent_config(config_root, &shared.agent)?;
     let model = resolve_model(&agent_config, model_override);
 
-    let mut all_plans = Vec::new();
-    for root in roots {
-        if !root.is_dir() {
-            anyhow::bail!(
-                "Plan root {} does not exist or is not a directory.",
-                root.display()
-            );
-        }
-        let plans = discover_plans(root)?;
-        if plans.is_empty() {
-            eprintln!(
-                "warning: plan root {} contained no plan directories (no phase.md found)",
-                root.display()
-            );
-        }
-        all_plans.extend(plans);
+    if plan_dirs.is_empty() {
+        anyhow::bail!("No plan directories supplied.");
     }
-    if all_plans.is_empty() {
-        anyhow::bail!("No plans discovered in any of the supplied plan-root directories.");
+    let mut all_plans = Vec::with_capacity(plan_dirs.len());
+    for plan_dir in plan_dirs {
+        let snapshot = load_plan(plan_dir)
+            .with_context(|| format!("Failed to load plan at {}", plan_dir.display()))?;
+        all_plans.push(snapshot);
     }
+    all_plans.sort_by(|a, b| (&a.project, &a.plan).cmp(&(&b.project, &b.plan)));
 
     let survey_prompt = load_survey_prompt(config_root)?;
     let plan_input = render_survey_input(&all_plans);
     let full_prompt = format!("{survey_prompt}\n\n---\n{plan_input}");
 
     eprintln!(
-        "Surveying {} plan(s) across {} root(s) using model {}...",
+        "Surveying {} plan(s) using model {}...",
         all_plans.len(),
-        roots.len(),
         model
     );
 
@@ -151,7 +149,25 @@ pub async fn run_survey(
         anyhow::bail!("claude CLI exited with status {status}");
     }
 
-    let response = parse_survey_response(&output)?;
+    let mut response = parse_survey_response(&output)?;
+    let hashes: HashMap<String, String> = all_plans
+        .iter()
+        .map(|p| (plan_key(&p.project, &p.plan), p.input_hash.clone()))
+        .collect();
+    inject_input_hashes(&mut response, &hashes)?;
+    print!("{}", emit_survey_yaml(&response)?);
+    Ok(())
+}
+
+/// Render a saved YAML survey file as human-readable markdown on
+/// stdout. Parsing goes through the same schema + `parse_survey_response`
+/// path as `run_survey`, then delegates to `render_survey_output` —
+/// separates presentation from the (possibly expensive) LLM call and
+/// lets the user re-render a stored survey cheaply.
+pub fn run_survey_format(path: &Path) -> Result<()> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read survey file at {}", path.display()))?;
+    let response = parse_survey_response(&content)?;
     print!("{}", render_survey_output(&response));
     Ok(())
 }
@@ -203,5 +219,37 @@ mod tests {
     #[test]
     fn resolve_timeout_honours_override() {
         assert_eq!(resolve_timeout(Some(42)), Duration::from_secs(42));
+    }
+
+    #[test]
+    fn run_survey_format_renders_markdown_from_yaml_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("survey.yaml");
+        std::fs::write(
+            &path,
+            "plans:\n  - project: P\n    plan: x\n    phase: work\n    unblocked: 1\n\
+             \n    blocked: 0\n    done: 0\n    received: 0\n    notes: ''\n",
+        )
+        .unwrap();
+        // run_survey_format writes to stdout, so this test only checks
+        // the happy path doesn't error. Content-level golden rendering
+        // is covered by render_survey_output's own tests.
+        run_survey_format(&path).unwrap();
+    }
+
+    #[test]
+    fn run_survey_format_errors_on_missing_file() {
+        let missing = std::path::PathBuf::from("/definitely/not/a/survey/file.yaml");
+        let err = run_survey_format(&missing).unwrap_err();
+        assert!(format!("{err:#}").contains("Failed to read survey file"));
+    }
+
+    #[test]
+    fn run_survey_format_errors_on_malformed_yaml() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("bad.yaml");
+        std::fs::write(&path, "not: valid: yaml: at: all:\n  - [").unwrap();
+        let err = run_survey_format(&path).unwrap_err();
+        assert!(format!("{err:#}").contains("Failed to parse survey response"));
     }
 }

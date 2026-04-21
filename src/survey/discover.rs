@@ -1,17 +1,24 @@
 // src/survey/discover.rs
 //
-// Plan discovery: walk a root directory, find plan directories
-// (identified by a `phase.md` file), and classify each by project
-// (the basename of the nearest ancestor containing `.git`).
+// Plan loading: read a single plan directory's state files and
+// classify by project (the basename of the nearest ancestor
+// containing `.git`). Used by `run_survey` to bundle plans
+// individually named on the CLI rather than walking a plan root.
 
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 
 use crate::git::find_project_root;
 
 /// A single plan's state, bundled for inclusion in the survey prompt.
+/// `input_hash` is a SHA-256 over the four state files
+/// (`phase.md` + `backlog.md` + `memory.md` + `related-plans.md`),
+/// computed at load time and injected into the survey response's
+/// `PlanRow` post-parse. `session-log.md` is deliberately excluded:
+/// it's append-only and would defeat change detection.
 #[derive(Debug)]
 pub struct PlanSnapshot {
     pub project: String,
@@ -19,6 +26,7 @@ pub struct PlanSnapshot {
     pub phase: String,
     pub backlog: Option<String>,
     pub memory: Option<String>,
+    pub input_hash: String,
 }
 
 /// Derive the project name for a plan by walking up from the plan's
@@ -34,54 +42,94 @@ fn project_name_for_plan(plan_path: &Path) -> Result<String> {
         .with_context(|| format!("Could not derive project name from git root {git_root}"))
 }
 
-/// Walk `root` looking for plan directories. A directory is a plan iff
-/// it contains a `phase.md` file; this matches the convention used
-/// everywhere else in Ravel-Lite. For each plan, the project name is the
-/// basename of the nearest ancestor containing `.git` — not the root
-/// basename — so plans from different repos under the same plan root
-/// are labelled correctly. Returned plans are sorted by plan name for
-/// deterministic output.
-pub fn discover_plans(root: &Path) -> Result<Vec<PlanSnapshot>> {
-    let mut plans = Vec::new();
-
-    let entries = fs::read_dir(root)
-        .with_context(|| format!("Failed to read plan root {}", root.display()))?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let phase_file = path.join("phase.md");
-        if !phase_file.exists() {
-            continue;
-        }
-
-        let plan = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("(unnamed)")
-            .to_string();
-        let project = project_name_for_plan(&path)?;
-        let phase = fs::read_to_string(&phase_file)
-            .with_context(|| format!("Failed to read {}", phase_file.display()))?
-            .trim()
-            .to_string();
-        let backlog = fs::read_to_string(path.join("backlog.md")).ok();
-        let memory = fs::read_to_string(path.join("memory.md")).ok();
-
-        plans.push(PlanSnapshot {
-            project,
-            plan,
-            phase,
-            backlog,
-            memory,
-        });
+/// Load a single plan directory's state into a `PlanSnapshot`. A
+/// directory is a plan iff it contains a `phase.md` file; this matches
+/// the convention used everywhere else in Ravel-Lite. The project
+/// name is the basename of the nearest ancestor containing `.git`, so
+/// plans from different repos are labelled correctly even when
+/// co-located on the CLI.
+pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
+    let phase_file = plan_dir.join("phase.md");
+    if !phase_file.exists() {
+        anyhow::bail!(
+            "{} is not a plan directory (no phase.md found)",
+            plan_dir.display()
+        );
     }
 
-    plans.sort_by(|a, b| a.plan.cmp(&b.plan));
-    Ok(plans)
+    let plan = plan_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("(unnamed)")
+        .to_string();
+    let project = project_name_for_plan(plan_dir)?;
+    let phase_raw = fs::read_to_string(&phase_file)
+        .with_context(|| format!("Failed to read {}", phase_file.display()))?;
+    let phase = phase_raw.trim().to_string();
+    let backlog = fs::read_to_string(plan_dir.join("backlog.md")).ok();
+    let memory = fs::read_to_string(plan_dir.join("memory.md")).ok();
+    let related_plans = fs::read_to_string(plan_dir.join("related-plans.md")).ok();
+
+    let input_hash = compute_input_hash(
+        &phase_raw,
+        backlog.as_deref(),
+        memory.as_deref(),
+        related_plans.as_deref(),
+    );
+
+    Ok(PlanSnapshot {
+        project,
+        plan,
+        phase,
+        backlog,
+        memory,
+        input_hash,
+    })
+}
+
+/// SHA-256 hex digest over the four plan-state files whose contents
+/// define the survey input. The hash uses length-prefixed sections so
+/// that a byte swap between two files cannot produce a hash collision
+/// with a different file layout. `None` is encoded as a distinct
+/// length prefix (the literal string `absent`) so "empty file present"
+/// and "file absent" hash differently — that distinction matters
+/// because it's user-visible in the survey's `(missing)` marker.
+fn compute_input_hash(
+    phase: &str,
+    backlog: Option<&str>,
+    memory: Option<&str>,
+    related_plans: Option<&str>,
+) -> String {
+    let mut hasher = Sha256::new();
+    hash_section(&mut hasher, "phase", Some(phase));
+    hash_section(&mut hasher, "backlog", backlog);
+    hash_section(&mut hasher, "memory", memory);
+    hash_section(&mut hasher, "related-plans", related_plans);
+    hex_encode(&hasher.finalize())
+}
+
+fn hash_section(hasher: &mut Sha256, label: &str, content: Option<&str>) {
+    hasher.update(label.as_bytes());
+    hasher.update(b"\0");
+    match content {
+        Some(s) => {
+            hasher.update(b"present\0");
+            hasher.update((s.len() as u64).to_le_bytes());
+            hasher.update(s.as_bytes());
+        }
+        None => {
+            hasher.update(b"absent\0");
+        }
+    }
+    hasher.update(b"\0");
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -90,24 +138,6 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn write_plan(
-        root: &Path,
-        name: &str,
-        phase: &str,
-        backlog: Option<&str>,
-        memory: Option<&str>,
-    ) {
-        let dir = root.join(name);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("phase.md"), phase).unwrap();
-        if let Some(b) = backlog {
-            fs::write(dir.join("backlog.md"), b).unwrap();
-        }
-        if let Some(m) = memory {
-            fs::write(dir.join("memory.md"), m).unwrap();
-        }
-    }
-
     /// Create a fake git project at `project_dir` with an empty `.git`
     /// directory — `find_project_root` only checks for `.git`'s
     /// existence, not its validity, so this is sufficient for tests.
@@ -115,102 +145,187 @@ mod tests {
         fs::create_dir_all(project_dir.join(".git")).unwrap();
     }
 
-    #[test]
-    fn discover_plans_finds_directories_with_phase_md() {
-        let tmp = TempDir::new().unwrap();
-        let project = tmp.path().join("my-project");
-        let root = project.join("LLM_STATE");
-        fs::create_dir_all(&root).unwrap();
-        mark_as_git_project(&project);
-        write_plan(&root, "plan-a", "work\n", Some("# backlog a\n"), Some("# memory a\n"));
-        write_plan(&root, "plan-b", "triage\n", Some("# backlog b\n"), None);
-        // A directory WITHOUT phase.md is ignored.
-        fs::create_dir_all(root.join("not-a-plan")).unwrap();
-        fs::write(root.join("not-a-plan").join("backlog.md"), "noise").unwrap();
-
-        let plans = discover_plans(&root).unwrap();
-        assert_eq!(plans.len(), 2);
-        assert_eq!(plans[0].plan, "plan-a");
-        assert_eq!(plans[1].plan, "plan-b");
+    fn write_plan_files(
+        plan_dir: &Path,
+        phase: &str,
+        backlog: Option<&str>,
+        memory: Option<&str>,
+        related_plans: Option<&str>,
+    ) {
+        fs::create_dir_all(plan_dir).unwrap();
+        fs::write(plan_dir.join("phase.md"), phase).unwrap();
+        if let Some(b) = backlog {
+            fs::write(plan_dir.join("backlog.md"), b).unwrap();
+        }
+        if let Some(m) = memory {
+            fs::write(plan_dir.join("memory.md"), m).unwrap();
+        }
+        if let Some(r) = related_plans {
+            fs::write(plan_dir.join("related-plans.md"), r).unwrap();
+        }
     }
 
     #[test]
-    fn discover_plans_derives_project_from_ancestor_git_dir() {
+    fn load_plan_reads_phase_backlog_and_memory() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        let plan_dir = project.join("plan-a");
+        mark_as_git_project(&project);
+        write_plan_files(&plan_dir, "work\n", Some("# b\n"), Some("# m\n"), None);
+
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert_eq!(snapshot.project, "p");
+        assert_eq!(snapshot.plan, "plan-a");
+        assert_eq!(snapshot.phase, "work");
+        assert_eq!(snapshot.backlog.as_deref(), Some("# b\n"));
+        assert_eq!(snapshot.memory.as_deref(), Some("# m\n"));
+    }
+
+    #[test]
+    fn load_plan_derives_project_from_ancestor_git_dir() {
         // Project layout:
         //   tmp/my-project/.git          <- project marker
-        //   tmp/my-project/LLM_STATE/    <- the plan-root argument
         //   tmp/my-project/LLM_STATE/plan-x/phase.md
         // The project name should be "my-project", NOT "LLM_STATE".
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().join("my-project");
-        let root = project.join("LLM_STATE");
-        fs::create_dir_all(&root).unwrap();
+        let plan_dir = project.join("LLM_STATE").join("plan-x");
         mark_as_git_project(&project);
-        write_plan(&root, "plan-x", "work\n", None, None);
+        write_plan_files(&plan_dir, "work\n", None, None, None);
 
-        let plans = discover_plans(&root).unwrap();
-        assert_eq!(plans.len(), 1);
-        assert_eq!(plans[0].project, "my-project");
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert_eq!(snapshot.project, "my-project");
     }
 
     #[test]
-    fn discover_plans_errors_when_no_git_above_plan() {
-        // Tempdir has no `.git` anywhere above the plan → hard error.
+    fn load_plan_errors_when_phase_md_absent() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path().join("rogue-state");
-        fs::create_dir_all(&root).unwrap();
-        write_plan(&root, "plan-x", "work\n", None, None);
+        let plan_dir = tmp.path().join("not-a-plan");
+        fs::create_dir_all(&plan_dir).unwrap();
+        let err = load_plan(&plan_dir).unwrap_err();
+        assert!(format!("{err:#}").contains("not a plan directory"));
+    }
 
-        let err = discover_plans(&root).unwrap_err();
+    #[test]
+    fn load_plan_errors_when_no_git_above_plan() {
+        let tmp = TempDir::new().unwrap();
+        let plan_dir = tmp.path().join("rogue-plan");
+        write_plan_files(&plan_dir, "work\n", None, None, None);
+        let err = load_plan(&plan_dir).unwrap_err();
         assert!(format!("{err:#}").contains("No .git found"));
     }
 
     #[test]
-    fn discover_plans_trims_phase_whitespace() {
+    fn load_plan_trims_phase_whitespace() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().join("p");
-        let root = project.join("state");
-        fs::create_dir_all(&root).unwrap();
+        let plan_dir = project.join("plan-a");
         mark_as_git_project(&project);
-        write_plan(&root, "plan-a", "  \n work \n\n", None, None);
-
-        let plans = discover_plans(&root).unwrap();
-        assert_eq!(plans[0].phase, "work");
+        write_plan_files(&plan_dir, "  \n work \n\n", None, None, None);
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert_eq!(snapshot.phase, "work");
     }
 
     #[test]
-    fn discover_plans_records_missing_backlog_and_memory_as_none() {
+    fn load_plan_records_missing_files_as_none() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().join("p");
-        let root = project.join("state");
-        fs::create_dir_all(&root).unwrap();
+        let plan_dir = project.join("plan-a");
         mark_as_git_project(&project);
-        write_plan(&root, "plan-a", "work\n", None, None);
-
-        let plans = discover_plans(&root).unwrap();
-        assert!(plans[0].backlog.is_none());
-        assert!(plans[0].memory.is_none());
+        write_plan_files(&plan_dir, "work\n", None, None, None);
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert!(snapshot.backlog.is_none());
+        assert!(snapshot.memory.is_none());
     }
 
     #[test]
-    fn discover_plans_returns_sorted_by_plan_name() {
-        let tmp = TempDir::new().unwrap();
-        let project = tmp.path().join("p");
-        let root = project.join("state");
-        fs::create_dir_all(&root).unwrap();
-        mark_as_git_project(&project);
-        write_plan(&root, "zeta", "work\n", None, None);
-        write_plan(&root, "alpha", "work\n", None, None);
-        write_plan(&root, "mu", "work\n", None, None);
-
-        let plans = discover_plans(&root).unwrap();
-        let names: Vec<_> = plans.iter().map(|p| p.plan.as_str()).collect();
-        assert_eq!(names, vec!["alpha", "mu", "zeta"]);
-    }
-
-    #[test]
-    fn discover_plans_errors_when_root_unreadable() {
+    fn load_plan_errors_when_plan_dir_missing() {
         let missing = PathBuf::from("/definitely/not/a/path/for/survey/test");
-        assert!(discover_plans(&missing).is_err());
+        assert!(load_plan(&missing).is_err());
+    }
+
+    #[test]
+    fn load_plan_computes_stable_input_hash_for_same_inputs() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_a = project.join("plan-a");
+        let plan_b = project.join("plan-b");
+        write_plan_files(&plan_a, "work\n", Some("# b\n"), Some("# m\n"), Some("# r\n"));
+        write_plan_files(&plan_b, "work\n", Some("# b\n"), Some("# m\n"), Some("# r\n"));
+
+        let hash_a = load_plan(&plan_a).unwrap().input_hash;
+        let hash_b = load_plan(&plan_b).unwrap().input_hash;
+        assert_eq!(hash_a, hash_b, "identical file contents must hash equally");
+        assert_eq!(hash_a.len(), 64, "SHA-256 hex digest is 64 chars: {hash_a}");
+    }
+
+    #[test]
+    fn load_plan_input_hash_changes_when_any_section_changes() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_dir = project.join("plan-a");
+
+        write_plan_files(&plan_dir, "work\n", Some("# b\n"), Some("# m\n"), Some("# r\n"));
+        let hash_initial = load_plan(&plan_dir).unwrap().input_hash;
+
+        // Mutate each file in turn — each mutation must produce a
+        // different hash from the initial state.
+        fs::write(plan_dir.join("phase.md"), "triage\n").unwrap();
+        let hash_phase = load_plan(&plan_dir).unwrap().input_hash;
+        assert_ne!(hash_initial, hash_phase);
+
+        fs::write(plan_dir.join("phase.md"), "work\n").unwrap();
+        fs::write(plan_dir.join("backlog.md"), "# b2\n").unwrap();
+        let hash_backlog = load_plan(&plan_dir).unwrap().input_hash;
+        assert_ne!(hash_initial, hash_backlog);
+
+        fs::write(plan_dir.join("backlog.md"), "# b\n").unwrap();
+        fs::write(plan_dir.join("memory.md"), "# m2\n").unwrap();
+        let hash_memory = load_plan(&plan_dir).unwrap().input_hash;
+        assert_ne!(hash_initial, hash_memory);
+
+        fs::write(plan_dir.join("memory.md"), "# m\n").unwrap();
+        fs::write(plan_dir.join("related-plans.md"), "# r2\n").unwrap();
+        let hash_related = load_plan(&plan_dir).unwrap().input_hash;
+        assert_ne!(hash_initial, hash_related);
+    }
+
+    #[test]
+    fn load_plan_input_hash_distinguishes_absent_from_empty() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_absent = project.join("absent");
+        let plan_empty = project.join("empty");
+
+        // Absent: no backlog.md file.
+        write_plan_files(&plan_absent, "work\n", None, None, None);
+        // Empty: backlog.md exists but is empty.
+        write_plan_files(&plan_empty, "work\n", Some(""), None, None);
+
+        let hash_absent = load_plan(&plan_absent).unwrap().input_hash;
+        let hash_empty = load_plan(&plan_empty).unwrap().input_hash;
+        assert_ne!(
+            hash_absent, hash_empty,
+            "absent and empty should hash differently so change detection can tell them apart"
+        );
+    }
+
+    #[test]
+    fn load_plan_input_hash_ignores_session_log() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_dir = project.join("plan-a");
+        write_plan_files(&plan_dir, "work\n", Some("# b\n"), None, None);
+        let hash_initial = load_plan(&plan_dir).unwrap().input_hash;
+
+        // Writing session-log.md must NOT affect the hash — it's
+        // append-only and would otherwise invalidate the hash every cycle.
+        fs::write(plan_dir.join("session-log.md"), "many words\n").unwrap();
+        let hash_after_log = load_plan(&plan_dir).unwrap().input_hash;
+        assert_eq!(hash_initial, hash_after_log);
     }
 }

@@ -49,15 +49,26 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn snap(
+        project: &str,
+        plan: &str,
+        phase: &str,
+        backlog: Option<&str>,
+        memory: Option<&str>,
+    ) -> PlanSnapshot {
+        PlanSnapshot {
+            project: project.into(),
+            plan: plan.into(),
+            phase: phase.into(),
+            backlog: backlog.map(|s| s.into()),
+            memory: memory.map(|s| s.into()),
+            input_hash: String::new(),
+        }
+    }
+
     #[test]
     fn render_survey_input_includes_project_and_plan_names() {
-        let plans = vec![PlanSnapshot {
-            project: "Ravel".into(),
-            plan: "sub-A".into(),
-            phase: "work".into(),
-            backlog: Some("# backlog".into()),
-            memory: Some("# memory".into()),
-        }];
+        let plans = vec![snap("Ravel", "sub-A", "work", Some("# backlog"), Some("# memory"))];
         let out = render_survey_input(&plans);
         assert!(out.contains("## Plan: Ravel/sub-A"));
         assert!(out.contains("### phase\nwork"));
@@ -67,13 +78,7 @@ mod tests {
 
     #[test]
     fn render_survey_input_marks_missing_files_explicitly() {
-        let plans = vec![PlanSnapshot {
-            project: "P".into(),
-            plan: "x".into(),
-            phase: "work".into(),
-            backlog: None,
-            memory: None,
-        }];
+        let plans = vec![snap("P", "x", "work", None, None)];
         let out = render_survey_input(&plans);
         assert!(out.contains("### backlog.md\n(missing)"));
         assert!(out.contains("### memory.md\n(missing)"));
@@ -82,20 +87,8 @@ mod tests {
     #[test]
     fn render_survey_input_separates_plans_with_horizontal_rule() {
         let plans = vec![
-            PlanSnapshot {
-                project: "P".into(),
-                plan: "a".into(),
-                phase: "work".into(),
-                backlog: None,
-                memory: None,
-            },
-            PlanSnapshot {
-                project: "P".into(),
-                plan: "b".into(),
-                phase: "triage".into(),
-                backlog: None,
-                memory: None,
-            },
+            snap("P", "a", "work", None, None),
+            snap("P", "b", "triage", None, None),
         ];
         let out = render_survey_input(&plans);
         assert_eq!(out.matches("\n---\n").count(), 2);

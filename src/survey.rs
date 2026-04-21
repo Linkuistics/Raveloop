@@ -31,5 +31,12 @@ mod schema;
 #[allow(unused_imports)]
 pub use compose::{load_survey_prompt, render_survey_input};
 #[allow(unused_imports)]
-pub use discover::{PlanSnapshot, discover_plans};
-pub use invoke::run_survey;
+pub use discover::{PlanSnapshot, load_plan};
+#[allow(unused_imports)]
+pub use schema::{
+    emit_survey_yaml, inject_input_hashes, parse_survey_response, plan_key, PlanRow,
+    SurveyResponse,
+};
+#[allow(unused_imports)]
+pub use render::render_survey_output;
+pub use invoke::{run_survey, run_survey_format};

@@ -273,6 +273,7 @@ mod tests {
             done: d,
             received: r,
             notes: notes.into(),
+            input_hash: String::new(),
         }
     }
 

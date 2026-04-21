@@ -110,19 +110,22 @@ enum Commands {
         /// parent directory must exist.
         plan_dir: PathBuf,
     },
-    /// Produce an LLM-driven plan status overview across one or more
-    /// plan-root directories. Reads every plan's phase/backlog/memory
-    /// into a single fresh-context claude session that returns a
-    /// per-plan summary and a recommended invocation order.
+    /// Produce an LLM-driven plan status overview for one or more plan
+    /// directories. Reads each plan's phase/backlog/memory into a single
+    /// fresh-context claude session that returns a per-plan summary and
+    /// a recommended invocation order, emitted as canonical YAML on
+    /// stdout. Use `ravel-lite survey-format <file>` to render a saved
+    /// YAML survey as human-readable markdown.
     Survey {
         /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
         /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Plan root directories. Each root contributes all plans under
-        /// it (directories containing phase.md). At least one required.
+        /// Plan directories (each containing phase.md). Replaces the
+        /// former plan-root walk: callers now name plans individually.
+        /// At least one required.
         #[arg(required = true, num_args = 1..)]
-        roots: Vec<PathBuf>,
+        plan_dirs: Vec<PathBuf>,
         /// Override the model used for the survey call. Overrides
         /// `models.survey` in agents/claude-code/config.yaml, which in
         /// turn overrides the DEFAULT_SURVEY_MODEL constant.
@@ -134,6 +137,13 @@ enum Commands {
         /// does not produce a result within this window.
         #[arg(long)]
         timeout_secs: Option<u64>,
+    },
+    /// Render a saved YAML survey file (as produced by `ravel-lite
+    /// survey`) as human-readable markdown on stdout. Read-only; no
+    /// network, no LLM call.
+    SurveyFormat {
+        /// Path to a YAML survey file to render.
+        file: PathBuf,
     },
     /// Print the installed ravel-lite version. Equivalent to `--version`;
     /// the subcommand form matches the rest of the CLI surface.
@@ -187,9 +197,12 @@ async fn main() -> Result<()> {
             let config_root = resolve_config_dir(config)?;
             create::run_create(&config_root, plan_dir).await
         }
-        Commands::Survey { config, roots, model, timeout_secs } => {
+        Commands::Survey { config, plan_dirs, model, timeout_secs } => {
             let config_root = resolve_config_dir(config)?;
-            survey::run_survey(&config_root, &roots, model, timeout_secs).await
+            survey::run_survey(&config_root, &plan_dirs, model, timeout_secs).await
+        }
+        Commands::SurveyFormat { file } => {
+            survey::run_survey_format(&file)
         }
         Commands::Version => {
             println!("ravel-lite {VERSION}");
