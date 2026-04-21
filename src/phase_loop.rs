@@ -325,21 +325,11 @@ fn sync_stack_to_disk(stack_path: &Path, stack: &[PlanContext]) -> Result<()> {
         .iter()
         .map(|ctx| pivot::Frame {
             path: std::path::PathBuf::from(&ctx.plan_dir),
-            pushed_at: Some(chrono_like_timestamp()),
+            pushed_at: Some(pivot::push_timestamp()),
             reason: None,
         })
         .collect();
     pivot::write_stack(stack_path, &pivot::Stack { frames })
-}
-
-/// RFC3339-ish timestamp without a chrono dep.
-fn chrono_like_timestamp() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    format!("@{secs}")
 }
 
 /// Read the current on-disk stack frame count. Returns 0 if the file is absent.

@@ -1879,7 +1879,7 @@ fn pivot_decide_after_cycle_push_takes_precedence_over_pop() {
 #[test]
 fn pivot_frame_to_context_resolves_project_dir_by_walkup() {
     use ravel_lite::pivot::{frame_to_context, Frame};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
@@ -1904,7 +1904,7 @@ fn pivot_frame_to_context_resolves_project_dir_by_walkup() {
     assert_eq!(PathBuf::from(&ctx.plan_dir), canonical_plan);
     assert_eq!(PathBuf::from(&ctx.project_dir), canonical_root);
     assert_eq!(ctx.config_root, root_config_root);
-    assert!(PathBuf::from(&ctx.dev_root) == canonical_root.parent().unwrap());
+    assert_eq!(Path::new(&ctx.dev_root), canonical_root.parent().unwrap());
 }
 
 #[test]
@@ -2210,4 +2210,79 @@ async fn pivot_run_stack_short_circuit_pivot() {
         !coord.join("stack.yaml").exists(),
         "stack.yaml should be deleted after pop to depth 1"
     );
+}
+
+/// The `state` subcommand is the shell boundary LLM phase prompts call
+/// into. A unit-level test proves the handlers work in-process, but
+/// the argv shape, exit code, and on-disk effect via a real subprocess
+/// are what the prompts actually depend on — so pin them end-to-end.
+#[test]
+fn state_set_phase_and_push_plan_via_binary() {
+    let tmp = TempDir::new().unwrap();
+    let coord = tmp.path().join("coord");
+    let child = tmp.path().join("child");
+    fs::create_dir_all(&coord).unwrap();
+    fs::create_dir_all(&child).unwrap();
+    fs::write(coord.join("phase.md"), "work").unwrap();
+    fs::write(child.join("phase.md"), "work").unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_ravel-lite");
+
+    let out = Command::new(bin)
+        .args(["state", "set-phase"])
+        .arg(&coord)
+        .arg("analyse-work")
+        .output()
+        .expect("binary must spawn");
+    assert!(
+        out.status.success(),
+        "set-phase exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(coord.join("phase.md")).unwrap().trim(),
+        "analyse-work"
+    );
+
+    let out = Command::new(bin)
+        .args(["state", "push-plan"])
+        .arg(&coord)
+        .arg(&child)
+        .args(["--reason", "kick the child"])
+        .output()
+        .expect("binary must spawn");
+    assert!(
+        out.status.success(),
+        "push-plan exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stack_yaml = fs::read_to_string(coord.join("stack.yaml")).unwrap();
+    assert!(stack_yaml.contains("coord"), "root frame missing: {stack_yaml}");
+    assert!(stack_yaml.contains("child"), "target frame missing: {stack_yaml}");
+    assert!(
+        stack_yaml.contains("kick the child"),
+        "reason missing: {stack_yaml}"
+    );
+}
+
+#[test]
+fn state_set_phase_rejects_invalid_phase_via_binary() {
+    let tmp = TempDir::new().unwrap();
+    let plan = tmp.path();
+    fs::write(plan.join("phase.md"), "work").unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ravel-lite"))
+        .args(["state", "set-phase"])
+        .arg(plan)
+        .arg("analyze-work") // American spelling — invalid
+        .output()
+        .expect("binary must spawn");
+    assert!(!out.status.success(), "invalid phase must exit non-zero");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Invalid phase"), "stderr missing diagnostic: {stderr}");
+    // On-disk phase.md unchanged.
+    assert_eq!(fs::read_to_string(plan.join("phase.md")).unwrap().trim(), "work");
 }

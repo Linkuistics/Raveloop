@@ -96,7 +96,7 @@ code you are about to change and pick from `fixed-memory/` yourself.
    orientation, but do not stage or commit anything. Leaving the tree
    dirty for analyse-work is the expected hand-off.
 
-9. Write `analyse-work` to `{{PLAN}}/phase.md`.
+9. Run `ravel-lite state set-phase {{PLAN}} analyse-work`.
 
 10. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
     task per work phase — fresh context for reflection is more valuable

@@ -143,12 +143,18 @@ pub struct ConfirmState {
     pub reply: Option<oneshot::Sender<bool>>,
 }
 
-impl AppState {
-    pub fn new() -> Self {
+impl Default for AppState {
+    fn default() -> Self {
         Self {
             progress_groups: IndexMap::new(),
             confirm_prompt: None,
         }
+    }
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn clear_agent_progress(&mut self, agent_id: &str) {

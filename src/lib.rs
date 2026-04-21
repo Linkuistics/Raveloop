@@ -8,6 +8,7 @@ pub mod init;
 pub mod phase_loop;
 pub mod pivot;
 pub mod prompt;
+pub mod state;
 pub mod subagent;
 pub mod survey;
 pub mod types;

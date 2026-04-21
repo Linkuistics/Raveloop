@@ -68,7 +68,7 @@ Rules:
 - Omit the file entirely if there are no dispatches
 - Do **not** attempt to dispatch anything yourself — the driver reads this file after you exit and handles dispatch
 
-7. Write `git-commit-triage` to `{{PLAN}}/phase.md`.
+7. Run `ravel-lite state set-phase {{PLAN}} git-commit-triage`.
 
 8. Stop.
 

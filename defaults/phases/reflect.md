@@ -37,11 +37,11 @@ the Memory style rules.
    true and useful, not a historical record. `session-log.md` is the
    safety net for discarded content.
 
-4. Write `git-commit-reflect` to `{{PLAN}}/phase.md`. Reflect
-   **always** writes `git-commit-reflect` as its next phase. The run
+4. Run `ravel-lite state set-phase {{PLAN}} git-commit-reflect`. Reflect
+   **always** sets `git-commit-reflect` as its next phase. The run
    script, after committing, decides whether to run dream (compaction)
    or skip straight to triage based on the compaction trigger. Your
-   job is simply to always write `git-commit-reflect` — do not try to
+   job is simply to always set `git-commit-reflect` — do not try to
    decide whether compaction is "needed".
 
 5. Stop.

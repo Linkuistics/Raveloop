@@ -170,7 +170,7 @@ pub fn format_tool_call(
         "write" | "edit"
     );
     let is_bash_write = tool.name.to_lowercase() == "bash"
-        && tool.detail.as_deref().map_or(false, |d| {
+        && tool.detail.as_deref().is_some_and(|d| {
             d.contains("cat ") && d.contains("> ") || d.contains("echo ") && d.contains("> ")
         });
 
@@ -232,7 +232,7 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
 
     // Push `line`, collapsing runs of blank lines to at most one.
     let push = |out: &mut Vec<StyledLine>, line: StyledLine| {
-        if line.is_blank() && out.last().map_or(false, StyledLine::is_blank) {
+        if line.is_blank() && out.last().is_some_and(StyledLine::is_blank) {
             return;
         }
         out.push(line);
@@ -291,7 +291,7 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
     }
 
     // Trim trailing blank lines
-    while out.len() > 1 && out.last().map_or(false, StyledLine::is_blank) {
+    while out.len() > 1 && out.last().is_some_and(StyledLine::is_blank) {
         out.pop();
     }
 
@@ -474,7 +474,7 @@ mod tests {
         }
         // And the old indent-only-span near-blank must no longer appear.
         for line in &lines {
-            let only_indent = line.0.len() >= 1
+            let only_indent = !line.0.is_empty()
                 && line.0.iter().all(|s| s.text.trim().is_empty());
             if only_indent {
                 assert!(line.is_blank(), "indent-only line should be is_blank(): {line:?}");

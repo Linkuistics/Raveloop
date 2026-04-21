@@ -16,9 +16,21 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+
+/// Canonical form for a `Frame::pushed_at` value. Returned by the driver
+/// (`sync_stack_to_disk`) and the `state push-plan` CLI verb so both write
+/// identical timestamps.
+pub fn push_timestamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    format!("@{secs}")
+}
 
 /// Hard compile-time cap on nesting depth. Prevents runaway recursion
 /// from a buggy coordinator prompt.

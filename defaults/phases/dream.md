@@ -26,7 +26,7 @@ style rules.
    (same claim, different wording). Reflect is the only lossy-pruning
    phase; dream is not.
 
-3. Write `git-commit-dream` to `{{PLAN}}/phase.md`.
+3. Run `ravel-lite state set-phase {{PLAN}} git-commit-dream`.
 
 4. Stop.
 

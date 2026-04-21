@@ -109,7 +109,7 @@ or justify.
    Do not include plan or phase metadata in the commit message — the
    git history provides that context.
 
-10. Write `git-commit-work` to `{{PLAN}}/phase.md`.
+10. Run `ravel-lite state set-phase {{PLAN}} git-commit-work`.
 
 11. Stop.
 

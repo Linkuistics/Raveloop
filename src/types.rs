@@ -25,7 +25,7 @@ impl LlmPhase {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "work" => Some(Self::Work),
             "analyse-work" => Some(Self::AnalyseWork),
@@ -44,6 +44,10 @@ impl fmt::Display for LlmPhase {
 }
 
 /// Script phases — handled inline by the orchestrator (git commits).
+/// The `GitCommit` prefix is load-bearing: it groups these as
+/// commit-audit phases distinct from LLM phases and is visible in
+/// phase.md / prompt text.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScriptPhase {
     GitCommitWork,
@@ -62,7 +66,7 @@ impl ScriptPhase {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "git-commit-work" => Some(Self::GitCommitWork),
             "git-commit-reflect" => Some(Self::GitCommitReflect),
@@ -88,9 +92,9 @@ pub enum Phase {
 
 impl Phase {
     pub fn parse(s: &str) -> Option<Self> {
-        LlmPhase::from_str(s)
+        LlmPhase::parse(s)
             .map(Phase::Llm)
-            .or_else(|| ScriptPhase::from_str(s).map(Phase::Script))
+            .or_else(|| ScriptPhase::parse(s).map(Phase::Script))
     }
 }
 

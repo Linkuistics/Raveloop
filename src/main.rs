@@ -8,6 +8,7 @@ mod init;
 mod phase_loop;
 mod pivot;
 mod prompt;
+mod state;
 mod subagent;
 mod survey;
 mod types;
@@ -121,6 +122,37 @@ enum Commands {
     /// Print the installed ravel-lite version. Equivalent to `--version`;
     /// the subcommand form matches the rest of the CLI surface.
     Version,
+    /// Mutate plan state from prompts without the Read+Write tool-call
+    /// overhead (and permission prompts) of writing files directly.
+    /// Expose via a single `Bash(ravel-lite state *)` allowlist entry.
+    State {
+        #[command(subcommand)]
+        command: StateCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum StateCommands {
+    /// Rewrite `<plan-dir>/phase.md` to the given phase. Validates the
+    /// phase string and requires phase.md to already exist.
+    SetPhase {
+        /// Path to the plan directory whose phase.md to rewrite.
+        plan_dir: PathBuf,
+        /// Phase name to write (e.g. `analyse-work`, `git-commit-work`).
+        phase: String,
+    },
+    /// Append a frame to `<plan-dir>/stack.yaml`. If the file is absent,
+    /// seeds it with the coordinator's own frame before appending the
+    /// target. Validates against cycle + depth cap via `pivot::validate_push`.
+    PushPlan {
+        /// Coordinator's plan directory (where stack.yaml lives).
+        plan_dir: PathBuf,
+        /// Child plan to push onto the stack.
+        target_plan_dir: PathBuf,
+        /// Optional human-readable reason recorded on the new frame.
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -147,6 +179,14 @@ async fn main() -> Result<()> {
             println!("ravel-lite {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        Commands::State { command } => match command {
+            StateCommands::SetPhase { plan_dir, phase } => {
+                state::run_set_phase(&plan_dir, &phase)
+            }
+            StateCommands::PushPlan { plan_dir, target_plan_dir, reason } => {
+                state::run_push_plan(&plan_dir, &target_plan_dir, reason)
+            }
+        },
     }
 }
 

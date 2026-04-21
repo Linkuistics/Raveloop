@@ -253,6 +253,7 @@ fn wrap_at(text: &str, content_width: usize) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn row(
         project: &str,
         plan: &str,
