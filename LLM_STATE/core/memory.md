@@ -78,8 +78,8 @@ Analyse-work overwrites `latest-session.md` unconditionally on entry; a deletion
 ## `spawn_blocking` does not cancel cleanly in `tokio::select!`
 Use `tokio::time::sleep` for tty event polling. A `spawn_blocking` thread is not dropped when the select arm is cancelled; it races the spawned child for the tty. `tokio::time::sleep` is properly cancellable and eliminates the race.
 
-## Dream-baseline seeded in `GitCommitReflect` handler
-`seed_dream_baseline_if_missing` in `src/dream.rs` is called from the `GitCommitReflect` handler in `phase_loop.rs`. Written only when absent; no-ops on subsequent cycles.
+## `dream-baseline` seeded from three call sites
+`seed_dream_baseline_if_missing` in `src/dream.rs` is called from `run_create` (post-session scaffolding), `run_set_phase` (every LLM phase transition including coordinators), and `GitCommitReflect`. Seeds to 0 ("never dreamed"), not current word count; seeding to current count silently delays the first dream by `headroom` words on populated plans.
 
 ## Claude Code TUI requires `--debug-file` workaround for ≤2.1.116
 `invoke_interactive` in `src/agent/claude_code.rs` passes `--debug-file /tmp/claude-debug.log`; debug mode masks a TUI rendering failure via an unknown upstream mechanism. Root cause not found. Remove both `args.push` lines when claude is updated past 2.1.116.
@@ -92,6 +92,12 @@ Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the 
 
 ## CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
 `tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
+
+## `build.rs` emits timestamp, git-describe, and SHA
+`build.rs` emits `BUILD_TIMESTAMP`, `GIT_DESCRIBE`, and `GIT_SHA` as compile-time env vars; `main.rs` concatenates them into a `VERSION` constant used by both `--version` and the `version` subcommand.
+
+## `release.toml` disables publish and push
+`release.toml` sets `publish=false` and `push=false`; `cargo release patch --execute` bumps the version and tags locally without touching crates.io or the remote.
 
 ## `term_title.rs` sets phase title via OSC escape
 `src/term_title.rs` exposes `set_title(project, plan, phase)` (side-effecting) and `format_title_escape` (testable helper). Writes to stdout; clean side-channel because Ratatui uses stderr backend. Includes tmux passthrough (doubled inner ESCs). Called at `LlmPhase` entry in `phase_loop` and `run_stack`, in `do_push` after `sync_stack_to_disk`, and at both pop sites in `run_stack`. Phase labels uppercased to match the phase-header banner convention.
