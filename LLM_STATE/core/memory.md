@@ -116,3 +116,6 @@ The fake-pi script in `pi_phase_cycle` uses a case statement on the current phas
 
 ## Hand-off fields are live in analyse-work and triage prompts
 `defaults/phases/analyse-work.md` and `defaults/phases/triage.md` include the hand-off convention. Analyse-work writes a hand-off block; triage reads it on entry.
+
+## `warn_if_project_tree_dirty` is advisory-only after gate removal
+After the pre-reflect gate was removed (`2026-04-21`), `warn_if_project_tree_dirty` at the top of `GitCommitWork` has no user-facing gate following it where the operator can react. The warning fires but the phase proceeds unconditionally. If this becomes unacceptable, promote the warning to a hard error rather than re-adding a gate.

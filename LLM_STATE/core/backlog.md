@@ -174,206 +174,34 @@ boilerplate's invariant blocks, but:
 
 ---
 
-### Collapse the pre-reflect continue gate; keep only one gate per cycle
+### Integration test for `[HANDOFF]` convention in analyse-work → triage cycle
 
-**Category:** `enhancement`
-**Status:** `done`
-**Dependencies:** none
-
-The phase cycle had two interactive `ui.confirm` gates in
-`src/phase_loop.rs`. The pre-reflect gate (after `GitCommitWork`)
-added no meaningful decision point — analyse-work → reflect → dream →
-triage are headless by design — while the post-triage gate is the
-operator's real checkpoint.
-
-**Results:**
-
-Gate removed; one gate per cycle is now the contract.
-
-- `src/phase_loop.rs` — deleted `ui.confirm("Proceed to reflect phase?")`
-  at the `GitCommitWork` branch. Returns `Ok(true)` unconditionally.
-- `README.md` — phase-cycle diagram updated: `[continue?]` between
-  `git-commit-work` and `reflect` removed.
-- `tests/integration.rs` — three updates:
-  1. `ContractMockAgent::invoke_headless` for `Triage` now APPENDS to
-     `backlog.md` instead of overwriting — a more faithful model of
-     real triage, and it lets `analyse_work_flips_stale_task_status_per_safety_net`
-     keep its post-cycle assertion on the flipped Status.
-  2. Comments and drainer logic updated to describe the one-gate-per-cycle
-     semantics (no more conditional approve/decline).
-  3. Phase-prompt config seeded for all phases the cycle can reach in
-     `pivot_run_stack_short_circuit_pivot` (previously only analyse-work
-     and work were seeded — reflect/triage/dream were needed after the
-     gate was gone).
-
-**Shakes surfaced while re-running the suite:**
-
-- `pi_phase_cycle_substitutes_tokens_and_streams_events` infinite-looped.
-  Root cause: the fake `pi` script unconditionally wrote `phase.md` →
-  `git-commit-work` regardless of which phase invoked it. Pre-gate-removal,
-  the post-analyse-work confirm terminated the loop; after removal,
-  `GitCommitWork` → Reflect → fake-pi-writes-`git-commit-work` →
-  `GitCommitWork` → … ping-pong. Fixed by making the fake pi phase-aware:
-  it writes analyse-work contract files only when current phase is
-  `analyse-work` and advances reflect/triage cleanly otherwise.
-- `pivot_run_stack_short_circuit_pivot` errored on missing
-  `config/phases/reflect.md`. Before the gate removal the child cycle
-  exited before loading reflect.md; it now needs it.
-
-**Side effect kept in scope as an explicit follow-on:**
-`warn_if_project_tree_dirty` at the top of `GitCommitWork` is now
-advisory-only — no gate follows where the operator can react. If that
-is unacceptable the warning should be promoted to an error rather than
-re-added as a gate. Out of scope here; recorded in the backlog
-description of the original task.
-
----
-
-### Preserve hand-off rationale across the analyse-work → triage boundary
-
-**Category:** `prompt-tuning`
-**Status:** `done`
-**Dependencies:** none
+**Category:** `test`
+**Status:** `not_started`
+**Dependencies:** none — convention is live in both `defaults/phases/analyse-work.md` and `defaults/phases/triage.md`
 
 **Description:**
 
-Hand-offs — forward-looking design notes that a work session settles but
-doesn't itself implement — currently lose their rationale between
-analyse-work and triage, and sometimes vanish entirely. Root cause
-surfaced during the coordinator-plan-creation investigation
-(`2026-04-21` session, user-quoted transcript): a ~250-line design
-discussion compressed to ~15 lines in analyse-work's latest-session.md
-and Results-block note, then was dropped entirely by the subsequent
-triage phase. Only the terminal-title hand-off from the same session
-survived; the coordinator-plan one did not.
+Extend `ContractMockAgent` to inject `[HANDOFF]` markers into a Results
+block and run a synthetic analyse-work → triage cycle. Assert that triage
+correctly mines the marker and either promotes it to a new backlog task
+or archives it to `memory.md`.
 
-**Results:**
+This was deferred from the "Preserve hand-off rationale" task. The
+convention is now live in shipped prompts; the next real hand-off session
+is the first end-to-end exercise, but an automated test guards the
+pipeline before that.
 
-Implemented both sides of the convention.
+**Deliverables:**
 
-- `defaults/phases/analyse-work.md` step 8 now documents:
-  1. An optional `## Hand-offs` section in the `latest-session.md`
-     format. Includes a sub-template for each hand-off entry with
-     the required fields (problem, decisions with rationale, reference
-     examples, dependencies).
-  2. A Hand-off convention block that specifies the two channels —
-     **preferred:** promote to a new `not_started` backlog task with
-     the settled design inlined (10–40 lines); **fallback:** record in
-     `## Hand-offs` AND add a `[HANDOFF] <title>` note to the
-     completing task's `Results:` block. The convention also
-     cross-references triage's mining step.
+1. A `ContractMockAgent::invoke_headless` injection for `AnalyseWork`
+   that emits a `[HANDOFF]` marker in a completing task's `Results:`
+   block inside `latest-session.md`.
+2. A test that runs a full analyse-work → git-commit-work cycle,
+   then a triage cycle, and asserts the hand-off survives as either
+   a new `not_started` backlog task or a new `memory.md` entry.
 
-- `defaults/phases/triage.md` step 3 now:
-  1. Mines each `done` task's `Results:` block for `[HANDOFF]` markers
-     or a labelled `Hand-offs:` / `Followups:` section BEFORE deleting
-     the task.
-  2. Promotes concrete hand-offs to new top-level backlog tasks with
-     the inlined design content copied verbatim.
-  3. Archives strategic-but-unconcrete hand-offs to `memory.md`.
-  4. Only then deletes the completed task.
-  The summary output vocabulary (lines 80-87) gained `[PROMOTED]`
-  and `[ARCHIVED]` labels.
-
-**Not implemented:**
-
-- Optional integration test (deliverable #3). The test would extend
-  `ContractMockAgent` to inject `[HANDOFF]` markers into Results
-  blocks and run a synthetic analyse-work → triage cycle. Deferred;
-  the convention is now live in the shipped prompts and the next
-  real session that produces a hand-off is the first end-to-end
-  exercise.
-- Deliverable #4 (a memory entry documenting the convention itself)
-  is left for reflect — the convention is now in prompts and the
-  reflect phase will capture it organically the next cycle that lands
-  a hand-off.
-
-**Measurement:** the next settled-but-not-implemented hand-off must
-survive a full analyse-work → triage → next-work cycle without manual
-intervention. Verify by instrumenting the next real hand-off.
-
----
-
-### Narrow `warn_if_project_tree_dirty` to work-agent-touched files only
-
-**Category:** `enhancement`
-**Status:** `done`
-**Dependencies:** none
-
-**Description:**
-
-`warn_if_project_tree_dirty` at `phase_loop.rs:94` is pathspec-unscoped
-— it fires on any dirty file in the project tree. In monorepos with
-multiple plans the check can still produce false positives from sibling
-plans' in-flight writes, even after the atomic phase-transition fix.
-
-**Results:**
-
-Narrowing now intersects the dirty list with
-`git diff --name-only <work_baseline>`.
-
-- `src/git.rs` — added `paths_changed_since_baseline(project_dir, baseline_sha)`
-  returning a `HashSet<String>` of paths that differ from the baseline.
-  Untracked files are explicitly excluded from the diff call (they are
-  diff-invisible by definition) — the caller treats them as an
-  always-include category.
-- `src/phase_loop.rs` — `warn_if_project_tree_dirty` now takes a
-  `plan_dir` arg, reads `work-baseline`, and filters the porcelain
-  output: untracked `??` lines are kept (new since baseline by
-  definition); other entries are kept only if the path appears in the
-  baseline-diff set. A new `parse_porcelain_path` helper extracts the
-  path from an `XY path` porcelain line with rename handling
-  (`R  old -> new` → returns the new path).
-- Soft-fail preserved: if the baseline is missing or the diff call
-  errors, the narrowing is skipped and the over-inclusive warning
-  fires — strictly less noisy, never less accurate.
-- Tests added: `parse_porcelain_path` covering modified / untracked /
-  rename / malformed cases; `paths_changed_since_baseline_returns_tracked_modifications`
-  covering the excludes-untracked / excludes-unchanged invariants.
-
----
-
-### Clean up stale `ravel-lite-config/skills/` detritus from renamed defaults location
-
-**Category:** `maintenance`
-**Status:** `done`
-**Dependencies:** none
-
-**Description:**
-
-`ravel-lite-config/skills/` is stale detritus from the former
-`defaults/skills/` location, which was renamed to
-`agents/pi/subagents/`. The `init --force` command does not delete
-files that have been removed from `EMBEDDED_FILES`, so the stale
-`skills/` directory persists in existing config dirs after an
-`init --force` refresh.
-
-**Results:**
-
-Went with option (b) — targeted prune via a `RETIRED_PATHS` list — over
-option (a) (document-only). Reasoning: option (a) would leave the
-existing drift in every user's config forever; option (b) gives the
-cleanup for free on the next `init --force`, while keeping blast radius
-narrow (no "prune everything not in `EMBEDDED_FILES`" sweep that could
-eat user-added files).
-
-- `src/init.rs` — added
-  `const RETIRED_PATHS: &[&str] = &["skills"]`. After the scaffold
-  loop, when `force` is true, each entry is deleted if present
-  (`remove_dir_all` for dirs, `remove_file` for files). Completion
-  banner now reports the pruned count alongside created / overwritten /
-  unchanged. Non-force init never prunes — prune is opt-in via
-  `--force` and deliberately not a separate flag (the user has already
-  declared intent to refresh by passing `--force`).
-- Tests — `init_force_prunes_retired_paths` (seeds stale `skills/`,
-  asserts it's gone after `init --force`, asserts the replacement
-  `agents/pi/subagents/` is still scaffolded) and
-  `init_without_force_does_not_prune_retired_paths` (asserts the
-  opt-in property).
-
-**Minor follow-on:** documenting the prune behaviour in the README's
-init section is deferred. The completion banner surfaces it at runtime,
-so it's discoverable through use; not worth a separate task unless a
-user hits confusion.
+**Results:** _pending_
 
 ---
 
@@ -564,7 +392,7 @@ should settle which.
 
 - Memory entry `Phase prompts invoke 'ravel-lite state set-phase'`
   records the convention this task generalises.
-- The "Preserve hand-off rationale" task above (now done) means
+- The "Preserve hand-off rationale" task (now done) means
   Q6 can rely on the `[HANDOFF]` convention in Results blocks.
   The research question is narrower as a result: the Results block
   authorship path only needs to support the now-stable convention.
