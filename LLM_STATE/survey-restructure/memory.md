@@ -50,3 +50,6 @@ All nested structs (`PlanRow`, `SurveyResponse`, and their fields) require `#[de
 
 ### Per-plan task counts: deferred until core task #3 (structured backlog parser) settles
 The design doc flagged moving per-plan task-count extraction from LLM prompt to Rust as a follow-on. This is intentionally deferred: the right implementation depends on how `core/backlog.md` task #3 (structured backlog parser) resolves. Once that parser exists, task counts can be derived from it rather than inferred by the survey LLM. Do not implement until core task #3 is complete.
+
+### Plan directory pending manual archive
+After the survey-restructure plan's final cycle completes, `LLM_STATE/survey-restructure/` should be moved to `LLM_STATE/archive/survey-restructure/`. A one-step `mv` after the triage phase exits is sufficient. This keeps session-logs discoverable without polluting active-plan routing.
