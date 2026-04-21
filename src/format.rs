@@ -128,6 +128,8 @@ static ACTION_INTENTS: Lazy<HashMap<&'static str, Option<Intent>>> = Lazy::new(|
     m.insert("STATS",         None);                    // metric, not a state
     // backlog task states (triage)
     m.insert("DONE",          Some(Intent::Added));     // task completed → closed
+    m.insert("PROMOTED",      Some(Intent::Added));     // handoff → standalone task
+    m.insert("ARCHIVED",      Some(Intent::Added));     // handoff → memory.md entry
     m.insert("BLOCKER",       Some(Intent::Changed));   // was buried blocker → promoted
     m.insert("REPRIORITISED", Some(Intent::Changed));   // priority shifted (delta, kept)
     m.insert("DISPATCH",      Some(Intent::Added));     // handoff to another plan
@@ -217,10 +219,14 @@ pub fn format_tool_call(
 }
 
 /// Format result text from a headless phase.
-/// Recognises [ACTION] markers and Insight blocks.
+/// Recognises [ACTION] markers, `→ …` continuations under the previous
+/// action, and Insight blocks.
 pub fn format_result_text(text: &str) -> Vec<StyledLine> {
     static ACTION_RE: Lazy<Regex> = Lazy::new(|| {
         Regex::new(r"^[\s\-\*]*\[([A-Za-z ]+)\]\s*(.*)$").unwrap()
+    });
+    static CONTINUATION_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^\s*→\s*(.*)$").unwrap()
     });
     static PHASE_MD_RE: Lazy<Regex> = Lazy::new(|| {
         Regex::new(r"(?i)(?:^(?:`?phase\.md`?|Phase)\s+(?:set to|written|→))|(?:phase\.md.*`git-commit-)|(?:wrote.*phase\.md)").unwrap()
@@ -229,6 +235,11 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
     // Leading blank line separates progress from result.
     let mut out: Vec<StyledLine> = vec![StyledLine::empty()];
     let mut in_insight = false;
+    // Intent of the most recent action marker. Enables `→ …` continuation
+    // lines (dream two-line entries, triage hand-off pairs) to render
+    // aligned under the detail column and inherit the action's intent.
+    // Cleared on any blank or non-continuation intervening line.
+    let mut last_action_intent: Option<Option<Intent>> = None;
 
     // Push `line`, collapsing runs of blank lines to at most one.
     let push = |out: &mut Vec<StyledLine>, line: StyledLine| {
@@ -260,6 +271,25 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
                     Span::plain("  "),
                     Span::styled(detail, detail_style),
                 ]));
+                last_action_intent = Some(intent_opt);
+                continue;
+            }
+        }
+
+        // `→ …` continuation under the most recent action — re-indents to the
+        // detail column so the post-change state sits directly below the label.
+        if let Some(caps) = CONTINUATION_RE.captures(line) {
+            if let Some(intent_opt) = last_action_intent {
+                let rest = caps[1].to_string();
+                let detail_style = match intent_opt {
+                    Some(intent) => Style::intent(intent),
+                    None => Style::dim(),
+                };
+                let indent = " ".repeat(2 + *LABEL_WIDTH + 2);
+                push(&mut out, StyledLine(vec![
+                    Span::plain(indent),
+                    Span::styled(format!("→ {rest}"), detail_style),
+                ]));
                 continue;
             }
         }
@@ -267,6 +297,7 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
         // Insight block opening
         if line.contains("★") && line.contains("Insight") && line.contains("─") {
             in_insight = true;
+            last_action_intent = None;
             push(&mut out, StyledLine(vec![
                 Span::plain("  "),
                 Span::styled("★ Insight", Style::bold_intent(Intent::Meta)),
@@ -280,10 +311,12 @@ pub fn format_result_text(text: &str) -> Vec<StyledLine> {
         }
         // Blank input line — emit a real blank, not an indent-only span.
         if line.trim().is_empty() {
+            last_action_intent = None;
             push(&mut out, StyledLine::empty());
             continue;
         }
         // Insight content or regular text — indent, dim
+        last_action_intent = None;
         push(&mut out, StyledLine(vec![
             Span::plain("  "),
             Span::dim(line.to_string()),
@@ -486,6 +519,92 @@ mod tests {
     fn clean_tool_name_strips_mcp_prefix() {
         assert_eq!(clean_tool_name("mcp__server__tool_name"), "tool_name");
         assert_eq!(clean_tool_name("Read"), "Read");
+    }
+
+    #[test]
+    fn format_result_text_promoted_and_archived_are_recognised_actions() {
+        let lines = format_result_text(
+            "[PROMOTED] Handoff A — from completed task\n\
+             [ARCHIVED] Handoff B — to memory.md, from completed task",
+        );
+        let promoted = lines.iter().find(|l| flat_text(l).contains("PROMOTED")).unwrap();
+        let promoted_tag = promoted.0.iter().find(|s| s.text.trim() == "PROMOTED").unwrap();
+        assert_eq!(promoted_tag.style, Style::bold_intent(Intent::Added));
+
+        let archived = lines.iter().find(|l| flat_text(l).contains("ARCHIVED")).unwrap();
+        let archived_tag = archived.0.iter().find(|s| s.text.trim() == "ARCHIVED").unwrap();
+        assert_eq!(archived_tag.style, Style::bold_intent(Intent::Added));
+
+        // Brackets must be stripped (proof that the line went through the action
+        // formatter, not the generic dim-text fallthrough).
+        assert!(!flat_text(promoted).contains("[PROMOTED]"));
+        assert!(!flat_text(archived).contains("[ARCHIVED]"));
+    }
+
+    #[test]
+    fn format_result_text_continuation_aligns_under_detail_column() {
+        let input = "[AWKWARD] heading — old phrasing\n   → new phrasing";
+        let lines = format_result_text(input);
+
+        let cont_row = lines
+            .iter()
+            .find(|l| {
+                let t = flat_text(l);
+                t.contains("→") && t.contains("new phrasing")
+            })
+            .expect("continuation row");
+        let cont_text = flat_text(cont_row);
+        let indent_width = 2 + *LABEL_WIDTH + 2;
+        assert!(
+            cont_text.starts_with(&" ".repeat(indent_width)),
+            "continuation must indent to detail column: got {cont_text:?}"
+        );
+        assert!(cont_text[indent_width..].starts_with("→ new phrasing"));
+    }
+
+    #[test]
+    fn format_result_text_continuation_inherits_action_intent() {
+        // OVERLAPPING → Meta; continuation detail span must carry the same intent.
+        let lines = format_result_text("[OVERLAPPING] A + B\n   → merged heading");
+        let cont_row = lines
+            .iter()
+            .find(|l| flat_text(l).contains("merged heading"))
+            .unwrap();
+        let arrow_span = cont_row
+            .0
+            .iter()
+            .find(|s| s.text.contains("→"))
+            .expect("arrow span");
+        assert_eq!(arrow_span.style, Style::intent(Intent::Meta));
+    }
+
+    #[test]
+    fn format_result_text_continuation_without_prior_action_falls_through() {
+        // A stray arrow line with no preceding action stays as ordinary dim text.
+        let lines = format_result_text("just prose\n   → orphan arrow");
+        let orphan = lines
+            .iter()
+            .find(|l| flat_text(l).contains("orphan arrow"))
+            .unwrap();
+        let text = flat_text(orphan);
+        let indent_width = 2 + *LABEL_WIDTH + 2;
+        assert!(
+            !text.starts_with(&" ".repeat(indent_width)),
+            "orphan arrow must not be indented to detail column: {text:?}"
+        );
+    }
+
+    #[test]
+    fn format_result_text_blank_line_breaks_continuation_association() {
+        let input = "[AWKWARD] heading — old\n\n   → stray arrow";
+        let lines = format_result_text(input);
+        let stray = lines.iter().find(|l| flat_text(l).contains("stray")).unwrap();
+        let text = flat_text(stray);
+        let indent_width = 2 + *LABEL_WIDTH + 2;
+        assert!(
+            !text.starts_with(&" ".repeat(indent_width)),
+            "blank line must break continuation chain: {text:?}"
+        );
     }
 
 }

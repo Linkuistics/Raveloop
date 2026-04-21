@@ -98,9 +98,13 @@ code you are about to change and pick from `fixed-memory/` yourself.
 
 9. Run `ravel-lite state set-phase {{PLAN}} analyse-work`.
 
-10. Stop. Do NOT pick another task. Do NOT reflect. Do NOT triage. One
-    task per work phase — fresh context for reflection is more valuable
-    than momentum.
+10. Stop. One task per work phase is the default — fresh context for
+    reflection is more valuable than momentum — so do not pick another
+    task on your own initiative, reflect, or triage. If the user
+    explicitly requested multiple tasks in step 2, honour that request:
+    complete each one (repeating steps 4-7 per task) before the single
+    step 9 transition, then stop. Do not volunteer additional work
+    beyond what the user asked for.
 
     **Do NOT write session log entries.** The analyse-work phase handles
     session logging by examining the actual git diff — this produces a
