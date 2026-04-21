@@ -560,10 +560,22 @@ impl Agent for ContractMockAgent {
                 fs::write(plan.join("phase.md"), "git-commit-dream")?;
             }
             LlmPhase::Triage => {
-                fs::write(
-                    plan.join("backlog.md"),
-                    "# Backlog\n\n## Placeholder task\nAdded by contract test.\n",
-                )?;
+                // Append rather than overwrite so tests that seed backlog
+                // content before the cycle (e.g. the safety-net test) can
+                // still observe analyse-work's earlier status flips after
+                // the full cycle runs. Models in production don't wipe
+                // the backlog each triage either.
+                let backlog_path = plan.join("backlog.md");
+                let existing = fs::read_to_string(&backlog_path).unwrap_or_default();
+                let appended = if existing.trim().is_empty() {
+                    "# Backlog\n\n## Placeholder task\nAdded by contract test.\n".to_string()
+                } else {
+                    format!(
+                        "{}\n## Placeholder task\nAdded by contract test.\n",
+                        existing.trim_end()
+                    )
+                };
+                fs::write(&backlog_path, appended)?;
                 fs::write(plan.join("phase.md"), "git-commit-triage")?;
             }
             LlmPhase::Work => {
@@ -644,18 +656,16 @@ async fn phase_contract_round_trip_writes_expected_files() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let ui = UI::new(tx);
 
-    // The phase loop asks for confirmation at two points: after
-    // git-commit-work ("Proceed to reflect phase?") and after
-    // git-commit-triage ("Proceed to next work phase?"). Approve the
-    // first so the full cycle runs, decline the second so the loop
-    // exits without entering the interactive work phase.
+    // The phase loop asks for confirmation once per full cycle: after
+    // git-commit-triage ("Proceed to next work phase?"). Decline it so
+    // the loop exits cleanly after one cycle without entering the
+    // interactive work phase of the next.
     let drain = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             match msg {
                 UIMessage::Quit => break,
-                UIMessage::Confirm { message, reply } => {
-                    let approve = !message.contains("next work phase");
-                    let _ = reply.send(approve);
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
                 }
                 _ => {}
             }
@@ -736,9 +746,10 @@ async fn phase_contract_round_trip_writes_expected_files() {
 /// Pins the analyse-work safety-net: when a task has a non-empty
 /// `Results:` block but its `Status:` line is still `not_started` or
 /// `in_progress`, a well-behaved model (as simulated by
-/// `ContractMockAgent`) flips the status to `done`. Declines the
-/// "Proceed to reflect phase?" confirm to isolate the assertion from
-/// subsequent phases that also rewrite `backlog.md`.
+/// `ContractMockAgent`) flips the status to `done`. Runs the full
+/// cycle (no pre-reflect gate exists to stop at) and relies on the
+/// mock's append-only triage to preserve analyse-work's edits into
+/// the final on-disk backlog.
 #[tokio::test]
 async fn analyse_work_flips_stale_task_status_per_safety_net() {
     let tmp = TempDir::new().unwrap();
@@ -802,8 +813,8 @@ Placeholder for the safety-net test.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let ui = UI::new(tx);
 
-    // Decline every confirm so the loop exits after git-commit-work,
-    // before reflect/triage get a chance to rewrite backlog.md.
+    // Decline every confirm — only the post-triage gate exists now,
+    // so this simply stops the loop after the full cycle completes.
     let drain = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             match msg {
@@ -1283,9 +1294,14 @@ mod pi_integration {
             .unwrap();
         fs::write(plan_dir.join("work-baseline"), &head.stdout).unwrap();
 
-        // Fake pi: dump the prompt arg, write the analyse-work contract
-        // files so the cycle can advance, and emit two stream events that
-        // exercise both the Progress path and the Persist path.
+        // Fake pi: dump the prompt arg, and advance the cycle. For the
+        // analyse-work phase specifically, also write the session contract
+        // files so that leg of the cycle exercises the prompt-substitution
+        // and audit-commit path. For reflect and triage it just advances
+        // phase.md to the next script phase — otherwise the cycle (which
+        // now runs headless past the former pre-reflect gate) would spin
+        // forever between GitCommitWork and a reflect step that re-wrote
+        // phase.md back to `git-commit-work`.
         let prompt_dump = root.join("captured-prompt.txt");
         let template = r#"#!/bin/sh
 prompt=""
@@ -1296,16 +1312,27 @@ while [ $# -gt 0 ]; do
     esac
 done
 printf '%s' "$prompt" > '__PROMPT_DUMP__'
-cat > '__PLAN_DIR__/latest-session.md' <<'SESSION_EOF'
+current=$(cat '__PLAN_DIR__/phase.md' 2>/dev/null || echo '')
+case "$current" in
+    analyse-work)
+        cat > '__PLAN_DIR__/latest-session.md' <<'SESSION_EOF'
 ### Session 1 (2026-04-19T00:00:00Z) — pi mock
 - minimal session entry
 SESSION_EOF
-cat > '__PLAN_DIR__/commit-message.md' <<'COMMIT_EOF'
+        cat > '__PLAN_DIR__/commit-message.md' <<'COMMIT_EOF'
 analyse-work: pi mock session
 
 Written by the fake pi binary in pi_phase_cycle test.
 COMMIT_EOF
-printf 'git-commit-work' > '__PLAN_DIR__/phase.md'
+        printf 'git-commit-work' > '__PLAN_DIR__/phase.md'
+        ;;
+    reflect)
+        printf 'git-commit-reflect' > '__PLAN_DIR__/phase.md'
+        ;;
+    triage)
+        printf 'git-commit-triage' > '__PLAN_DIR__/phase.md'
+        ;;
+esac
 echo '{"type":"tool_execution_start","tool_name":"read","tool_input":{"file_path":"/x.md"}}'
 echo '{"type":"message_end","content":[{"type":"text","text":"done"}]}'
 "#;
@@ -2048,11 +2075,16 @@ async fn pivot_run_stack_short_circuit_pivot() {
     fs::create_dir_all(&child).unwrap();
     fs::write(child.join("phase.md"), "work\n").unwrap();
 
-    // Minimal config for prompts — analyse-work needs a phases directory.
+    // Config prompts for every phase the cycle can reach. The pre-reflect
+    // gate used to exit the child before reflect/triage were loaded, so
+    // earlier versions of this test only seeded analyse-work and work.
     let config_root = root.join("config");
     fs::create_dir_all(config_root.join("phases")).unwrap();
     fs::write(config_root.join("phases/analyse-work.md"), "analyse-work {{PLAN}}\n").unwrap();
     fs::write(config_root.join("phases/work.md"), "work {{PLAN}}\n").unwrap();
+    fs::write(config_root.join("phases/reflect.md"), "reflect {{PLAN}}\n").unwrap();
+    fs::write(config_root.join("phases/triage.md"), "triage {{PLAN}}\n").unwrap();
+    fs::write(config_root.join("phases/dream.md"), "dream {{PLAN}}\n").unwrap();
 
     Command::new("git").args(["add", "."]).current_dir(root).output().unwrap();
     Command::new("git").args(["commit", "-m", "init"]).current_dir(root).output().unwrap();

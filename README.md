@@ -17,7 +17,7 @@ message model, and agent trait.
 ## Phase Cycle
 
 ```
-work → analyse-work → git-commit-work → [continue?] →
+work → analyse-work → git-commit-work →
 reflect → git-commit-reflect → [dream trigger?] →
 dream → git-commit-dream →
 triage → git-commit-triage → [continue?] → work

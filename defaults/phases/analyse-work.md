@@ -85,6 +85,14 @@ or justify.
    - What worked, what didn't
    - What this suggests trying next
    - Key learnings or discoveries
+
+   ## Hand-offs (omit this section entirely when there are none)
+
+   ### <hand-off title>
+   - Problem being solved
+   - Settled design decisions, each with a one-sentence rationale
+   - Reference examples (file paths, line numbers)
+   - Dependencies
    ```
 
    The timestamp is ISO 8601 UTC with seconds precision. Obtain with:
@@ -92,6 +100,29 @@ or justify.
 
    Base the entry on the actual diff and the backlog results, not
    assumptions. Be specific about what files were changed and why.
+
+   **Hand-off convention.** A hand-off is a forward-looking design
+   that this session settled but did NOT implement — a Q&A that
+   resolved an approach, a reference example identified for a later
+   task, a rejected alternative worth recording. Hand-offs must
+   survive analyse-work → triage even when the implementing task is
+   deleted next cycle. Record each hand-off by whichever channel fits:
+
+   - **Preferred: promote directly to a new backlog task.** When the
+     design is concrete enough to be picked up by a future work
+     cycle, add a new task to `{{PLAN}}/backlog.md` with
+     `Status: not_started` and a description that **inlines** the
+     settled design — not a one-liner pointer. Include: the problem
+     being solved, each decision with a one-sentence rationale,
+     reference examples (file paths, line numbers), and dependencies.
+     Target 10–40 lines; enough that triage can promote without
+     rereading the whole diff.
+
+   - **Fallback: record in the `## Hand-offs` section above AND add a
+     `[HANDOFF] <title>` note to the completing task's `Results:`
+     block.** Use this when the design is only partially settled.
+     Triage mines `[HANDOFF]` markers from completed tasks before
+     deleting them (see `defaults/phases/triage.md` step 3).
 
 9. Write `{{PLAN}}/commit-message.md` with a git commit message for the
    **plan-state commit** (the one `git-commit-work` will make next). This

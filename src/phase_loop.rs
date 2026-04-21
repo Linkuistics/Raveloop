@@ -7,7 +7,10 @@ use anyhow::{Context, Result};
 use crate::agent::Agent;
 use crate::dream::{seed_dream_baseline_if_missing, should_dream, update_dream_baseline};
 use crate::format::phase_info;
-use crate::git::{git_commit_plan, git_save_work_baseline, work_tree_snapshot, working_tree_status};
+use crate::git::{
+    git_commit_plan, git_save_work_baseline, paths_changed_since_baseline, work_tree_snapshot,
+    working_tree_status,
+};
 use crate::pivot;
 use crate::prompt::compose_prompt;
 use crate::subagent::dispatch_subagents;
@@ -127,6 +130,20 @@ fn log_commit(ui: &UI, phase_name: &str, plan: &str, result: &crate::git::Commit
 /// `git status` — the warning just needs enough context to alarm the user.
 const DIRTY_PATH_DISPLAY_LIMIT: usize = 20;
 
+/// Extract the path from a `git status --porcelain` line. Lines are
+/// `XY path` (2 status chars + space + path); renames are `R  old -> new`
+/// and the new path is returned. Returns `None` on unparseable input —
+/// callers treat that as "preserve the entry" since a conservative keep
+/// beats a silent drop when the narrowing filter can't classify a line.
+fn parse_porcelain_path(line: &str) -> Option<&str> {
+    let rest = line.get(3..)?;
+    if let Some(arrow) = rest.find(" -> ") {
+        Some(rest[arrow + 4..].trim())
+    } else {
+        Some(rest.trim())
+    }
+}
+
 /// After the work-phase commit, the project tree should be clean: the agent
 /// is expected to have committed every source-file edit it made during the
 /// work phase, and `git_commit_plan` itself just committed the plan
@@ -135,9 +152,18 @@ const DIRTY_PATH_DISPLAY_LIMIT: usize = 20;
 /// loop to advance past lost work as if the backlog were empty. Surface a
 /// loud warning so the user can recover before phase state advances.
 ///
-/// Soft-failure: a transient git error here shouldn't kill the loop, so the
-/// warning is best-effort. The status check itself is read-only.
-fn warn_if_project_tree_dirty(ui: &UI, project_dir: &Path) {
+/// The dirty set is narrowed to paths the work agent could plausibly have
+/// touched: untracked files (new since baseline by definition) plus any
+/// tracked file that differs from the work baseline per `git diff
+/// --name-only <baseline>`. This filters out sibling-plan in-flight writes
+/// in multi-plan monorepos where `git status` is repo-wide. If the
+/// baseline is missing or the diff call fails, the narrowing is skipped
+/// and the original (over-inclusive) dirty list is used — strictly more
+/// noisy, never less accurate.
+///
+/// Soft-failure: a transient git error here shouldn't kill the loop, so
+/// the warning is best-effort. The status check itself is read-only.
+fn warn_if_project_tree_dirty(ui: &UI, project_dir: &Path, plan_dir: &Path) {
     let dirty = match working_tree_status(project_dir) {
         Ok(d) => d,
         Err(_) => return,
@@ -145,16 +171,43 @@ fn warn_if_project_tree_dirty(ui: &UI, project_dir: &Path) {
     if dirty.is_empty() {
         return;
     }
+
+    let baseline_sha = fs::read_to_string(plan_dir.join("work-baseline"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let touched: Option<std::collections::HashSet<String>> = baseline_sha
+        .as_deref()
+        .and_then(|sha| paths_changed_since_baseline(project_dir, sha).ok());
+
+    let filtered: Vec<&String> = dirty
+        .iter()
+        .filter(|line| {
+            let Some(set) = &touched else { return true };
+            if line.starts_with("??") {
+                return true;
+            }
+            match parse_porcelain_path(line) {
+                Some(path) => set.contains(path),
+                None => true,
+            }
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        return;
+    }
+
     ui.log("\n  ⚠  WARNING: uncommitted changes remain in the project tree");
     ui.log("     after the work commit. The work agent likely edited files");
     ui.log("     without committing them. Review and recover before continuing:");
-    for line in dirty.iter().take(DIRTY_PATH_DISPLAY_LIMIT) {
+    for line in filtered.iter().take(DIRTY_PATH_DISPLAY_LIMIT) {
         ui.log(&format!("       {line}"));
     }
-    if dirty.len() > DIRTY_PATH_DISPLAY_LIMIT {
+    if filtered.len() > DIRTY_PATH_DISPLAY_LIMIT {
         ui.log(&format!(
             "       ... and {} more (run `git status` for the full list)",
-            dirty.len() - DIRTY_PATH_DISPLAY_LIMIT
+            filtered.len() - DIRTY_PATH_DISPLAY_LIMIT
         ));
     }
 }
@@ -223,8 +276,8 @@ async fn handle_script_phase(
             write_phase(plan_dir, Phase::Llm(LlmPhase::Reflect))?;
             let result = git_commit_plan(plan_dir, &name, "work")?;
             log_commit(ui, "work", &scope, &result);
-            warn_if_project_tree_dirty(ui, project_dir);
-            Ok(ui.confirm("Proceed to reflect phase?").await)
+            warn_if_project_tree_dirty(ui, project_dir, plan_dir);
+            Ok(true)
         }
         ScriptPhase::GitCommitReflect => {
             // First-run fallback for plans created before `dream-baseline`
@@ -634,6 +687,31 @@ mod tests {
         // Defensive: if project_dir somehow resolves to "" the banner still
         // identifies the plan rather than rendering "  / core" with a dangling slash.
         assert_eq!(header_scope("", "core"), "core");
+    }
+
+    #[test]
+    fn parse_porcelain_path_handles_modified_file() {
+        assert_eq!(parse_porcelain_path(" M src/foo.rs"), Some("src/foo.rs"));
+        assert_eq!(parse_porcelain_path("M  src/foo.rs"), Some("src/foo.rs"));
+    }
+
+    #[test]
+    fn parse_porcelain_path_handles_untracked() {
+        assert_eq!(parse_porcelain_path("?? new.rs"), Some("new.rs"));
+    }
+
+    #[test]
+    fn parse_porcelain_path_returns_new_name_for_rename() {
+        assert_eq!(
+            parse_porcelain_path("R  old/path.rs -> new/path.rs"),
+            Some("new/path.rs")
+        );
+    }
+
+    #[test]
+    fn parse_porcelain_path_returns_none_on_too_short_input() {
+        assert_eq!(parse_porcelain_path(""), None);
+        assert_eq!(parse_porcelain_path("ab"), None);
     }
 
     #[test]

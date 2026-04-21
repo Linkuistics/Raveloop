@@ -71,6 +71,37 @@ pub fn git_save_work_baseline(plan_dir: &Path) {
     let _ = fs::write(&baseline_path, &sha);
 }
 
+/// Paths that differ from `baseline_sha` in the working tree of
+/// `project_dir`. Runs `git diff --name-only <baseline>`; untracked
+/// files are NOT included — they're invisible to `diff` by definition
+/// and the caller handles them as an always-included category.
+///
+/// Returned as a `HashSet` so callers can do O(1) membership tests
+/// against porcelain paths when narrowing a dirty-tree warning.
+pub fn paths_changed_since_baseline(
+    project_dir: &Path,
+    baseline_sha: &str,
+) -> Result<std::collections::HashSet<String>> {
+    let output = Command::new("git")
+        .current_dir(project_dir)
+        .args(["diff", "--name-only", baseline_sha])
+        .output()
+        .context("Failed to run git diff --name-only")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git diff --name-only exited {} in {}",
+            output.status,
+            project_dir.display()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect())
+}
+
 /// Lines from `git status --porcelain` run from `project_dir`. Each entry
 /// is the raw porcelain line including the two-character XY status prefix
 /// — preserved so the caller can render them identically to what the user
@@ -264,6 +295,32 @@ mod tests {
             snapshot.contains("(clean — nothing uncommitted or untracked)"),
             "clean status should render an explicit empty-state marker, got:\n{snapshot}"
         );
+    }
+
+    #[test]
+    fn paths_changed_since_baseline_returns_tracked_modifications() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        Command::new("git").current_dir(repo).args(["init", "-q"]).output().unwrap();
+        Command::new("git").current_dir(repo).args(["config", "user.email", "t@t"]).output().unwrap();
+        Command::new("git").current_dir(repo).args(["config", "user.name", "t"]).output().unwrap();
+
+        fs::write(repo.join("a.txt"), "v1\n").unwrap();
+        fs::write(repo.join("b.txt"), "v1\n").unwrap();
+        Command::new("git").current_dir(repo).args(["add", "-A"]).output().unwrap();
+        Command::new("git").current_dir(repo).args(["commit", "-q", "-m", "baseline"]).output().unwrap();
+        let baseline = String::from_utf8(
+            Command::new("git").current_dir(repo).args(["rev-parse", "HEAD"]).output().unwrap().stdout
+        ).unwrap().trim().to_string();
+
+        // One tracked file modified (uncommitted), one untracked file added.
+        fs::write(repo.join("a.txt"), "v2\n").unwrap();
+        fs::write(repo.join("c.txt"), "new\n").unwrap();
+
+        let changed = paths_changed_since_baseline(repo, &baseline).unwrap();
+        assert!(changed.contains("a.txt"), "modified tracked file should be in set, got {changed:?}");
+        assert!(!changed.contains("b.txt"), "untouched file must not be in set, got {changed:?}");
+        assert!(!changed.contains("c.txt"), "untracked file is diff-invisible, got {changed:?}");
     }
 
     #[test]

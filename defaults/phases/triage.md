@@ -31,12 +31,27 @@ to propagate learnings to related plans when warranted.
 
 2. Add new tasks implied by learnings in `memory.md`.
 
-3. **Delete completed tasks.** Remove any task with status `done`, and
-   clear any "Completed Tasks" section entirely — heading and all.
-   Reflect has already run and anything worth keeping is now in
-   `memory.md`; the session-log entry is the durable record of what
-   happened. The backlog is for work that still needs doing, and must
-   never carry a standing "Completed" holding area between cycles.
+3. **Mine completed tasks for hand-offs, then delete them.** For each
+   task with `Status: done`, scan its `Results:` block for `[HANDOFF]`
+   markers or a labelled `Hand-offs:` / `Followups:` section. For each
+   hand-off found:
+
+   - **Promote to a new top-level backlog task** when the settled
+     design is concrete — copy the inlined decision content verbatim
+     into the new task's description, set `Status: not_started`, and
+     emit `[PROMOTED] <hand-off title>` in the triage summary.
+   - **Archive to `memory.md`** when the design is strategic but not
+     yet concrete enough to be a standalone task — write a durable
+     memory entry capturing the design intent and rationale, and emit
+     `[ARCHIVED] <hand-off title>` in the summary.
+
+   Only after every hand-off is extracted is the completed task safe
+   to delete. Then remove any task with status `done`, and clear any
+   "Completed Tasks" section entirely — heading and all. Reflect has
+   already run and anything worth keeping is now in `memory.md`; the
+   session-log entry is the durable record of what happened. The
+   backlog is for work that still needs doing, and must never carry
+   a standing "Completed" holding area between cycles.
 
 4. Remove tasks that are no longer relevant (dependencies met, approach
    changed, out of scope).
@@ -79,6 +94,8 @@ After completing all writes, print a brief summary using this structure:
 ```
 [DONE] <task title> — completed, captured in memory
 [NEW] <task title> — <why>
+[PROMOTED] <hand-off title> — from <completed task title>
+[ARCHIVED] <hand-off title> — to memory.md, from <completed task title>
 [BLOCKER] <task title> — extracted from <parent task>
 [REPRIORITISED] <task title> — <old priority → new>
 [OBSOLETE] <task title> — <why no longer relevant>

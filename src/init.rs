@@ -38,6 +38,18 @@ const EMBEDDED_FILES: &[EmbeddedFile] = &[
     EmbeddedFile { path: "create-plan.md", content: include_str!("../defaults/create-plan.md") },
 ];
 
+/// Paths that used to ship via `EMBEDDED_FILES` but have been removed
+/// or renamed. `init --force` deletes these from the target dir so
+/// existing configs catch up to the current layout without manual
+/// cleanup. Keep the list narrow: only add an entry when we are sure
+/// the path was once ours and a user could not legitimately be keeping
+/// it for their own purposes.
+const RETIRED_PATHS: &[&str] = &[
+    // Former location of pi subagent prompts; moved to
+    // `agents/pi/subagents/` as part of the drift-guard cleanup.
+    "skills",
+];
+
 pub fn run_init(target_dir: &Path, force: bool) -> Result<()> {
     fs::create_dir_all(target_dir)
         .with_context(|| format!("Failed to create {}", target_dir.display()))?;
@@ -77,8 +89,29 @@ pub fn run_init(target_dir: &Path, force: bool) -> Result<()> {
         }
     }
 
+    let mut pruned = 0;
     if force {
-        println!("  ✓ Init --force complete: {created} created, {overwritten} overwritten, {skipped} unchanged");
+        for retired in RETIRED_PATHS {
+            let path = target_dir.join(retired);
+            if !path.exists() {
+                continue;
+            }
+            if path.is_dir() {
+                fs::remove_dir_all(&path).with_context(|| {
+                    format!("Failed to prune retired dir {}", path.display())
+                })?;
+            } else {
+                fs::remove_file(&path).with_context(|| {
+                    format!("Failed to prune retired file {}", path.display())
+                })?;
+            }
+            pruned += 1;
+            println!("  ✗ Pruned retired path: {retired}");
+        }
+    }
+
+    if force {
+        println!("  ✓ Init --force complete: {created} created, {overwritten} overwritten, {skipped} unchanged, {pruned} pruned");
     } else {
         println!("  ✓ Init complete: {created} created, {skipped} skipped (already exist)");
     }
@@ -174,6 +207,43 @@ mod tests {
                 "defaults/fixed-memory/{name} is not registered in EMBEDDED_FILES"
             );
         }
+    }
+
+    #[test]
+    fn init_force_prunes_retired_paths() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("my-config");
+        // Simulate the pre-rename layout: a stale skills/ directory
+        // holding pi subagent prompts that have since moved to
+        // agents/pi/subagents/.
+        fs::create_dir_all(target.join("skills")).unwrap();
+        fs::write(target.join("skills/brainstorming.md"), "stale\n").unwrap();
+
+        run_init(&target, true).unwrap();
+
+        assert!(
+            !target.join("skills").exists(),
+            "init --force should prune the retired skills/ directory"
+        );
+        assert!(
+            target.join("agents/pi/subagents/brainstorming.md").exists(),
+            "replacement location must still be scaffolded after prune"
+        );
+    }
+
+    #[test]
+    fn init_without_force_does_not_prune_retired_paths() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("my-config");
+        fs::create_dir_all(target.join("skills")).unwrap();
+        fs::write(target.join("skills/brainstorming.md"), "stale\n").unwrap();
+
+        run_init(&target, false).unwrap();
+
+        assert!(
+            target.join("skills").exists(),
+            "non-force init must not prune — pruning is opt-in via --force"
+        );
     }
 
     #[test]
