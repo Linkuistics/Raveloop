@@ -178,69 +178,34 @@ impl Agent for ClaudeCodeAgent {
             args.push("--dangerously-skip-permissions".to_string());
         }
 
-        args.push(prompt.to_string());
+        // WORKAROUND (2026-04-21): claude's interactive TUI silently
+        // fails to render when claude is spawned by ravel-lite, even
+        // though the EXACT same argv, cwd, env, prompt, and binary
+        // path render normally when invoked from a bash shell. Adding
+        // `--debug-file <path>` (which implicitly turns on `--debug`
+        // mode in claude — see `claude --help`) reliably masks the
+        // bug. We do not understand why; investigating took hours and
+        // ruled out: termios state, isatty on stdin/stdout/stderr,
+        // process-group leadership, foreground tty ownership, signal
+        // mask, signal handlers, O_NONBLOCK, args content, env vars,
+        // claude version (2.1.113 / 2.1.114 / 2.1.116), prompt size,
+        // the cmux wrapper, and earlier ravel-lite versions (commit
+        // 91ad991 from 2026-04-19 also reproduces the bug).
+        //
+        // The same shell command works:
+        //     cd <project> && claude --add-dir <plan> "<prompt>"
+        // but ravel-lite's std::process::Command spawn of the same
+        // does not. Difference must be in inherited process state we
+        // could not isolate without dtrace-level instrumentation.
+        //
+        // TRY REMOVING THIS in the future when claude is updated past
+        // 2.1.116 — delete the next two `args.push` lines and verify
+        // the Work-phase TUI still renders. If it does, the upstream
+        // issue is fixed and this workaround is no longer needed.
+        args.push("--debug-file".to_string());
+        args.push("/tmp/claude-debug.log".to_string());
 
-        // Temporary diagnostic — dump args + env + tty + termios state to
-        // /tmp/ravel-debug.log so we can see what's different between shell
-        // spawn (works) and ravel-lite spawn (claude TUI doesn't render).
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/ravel-debug.log") {
-            use std::io::Write;
-            let _ = writeln!(f, "---- invoke_interactive @ {:?} ----", std::time::SystemTime::now());
-            let _ = writeln!(f, "cwd={}", ctx.project_dir);
-            let _ = writeln!(f, "args[0..{}]:", args.len());
-            for (i, a) in args.iter().enumerate() {
-                let disp = if a.len() > 120 { format!("{}... [truncated, len={}]", &a[..120], a.len()) } else { a.clone() };
-                let _ = writeln!(f, "  [{i}] {disp}");
-            }
-            let _ = writeln!(f, "--- env ---");
-            let mut env_pairs: Vec<(String, String)> = std::env::vars().collect();
-            env_pairs.sort();
-            for (k, v) in &env_pairs {
-                let vd = if v.len() > 200 { format!("{}...[len={}]", &v[..200], v.len()) } else { v.clone() };
-                let _ = writeln!(f, "  {k}={vd}");
-            }
-            let _ = writeln!(f, "--- tty ---");
-            // Unsafe for isatty on raw fds
-            unsafe {
-                let _ = writeln!(f, "  isatty(stdin)={}", libc::isatty(0) != 0);
-                let _ = writeln!(f, "  isatty(stdout)={}", libc::isatty(1) != 0);
-                let _ = writeln!(f, "  isatty(stderr)={}", libc::isatty(2) != 0);
-                let _ = writeln!(f, "  getpgrp()={}", libc::getpgrp());
-                let _ = writeln!(f, "  tcgetpgrp(stdin)={}", libc::tcgetpgrp(0));
-            }
-            // termios snapshot — verifies disable_raw_mode actually restored
-            // cooked-mode bits before the child inherits this tty. If
-            // ICANON/ECHO/ISIG are off here the child gets a half-raw tty
-            // and its TUI silently fails (and ctrl-C goes weird).
-            let _ = writeln!(f, "--- termios(stdin) ---");
-            unsafe {
-                let mut t: libc::termios = std::mem::zeroed();
-                let rc = libc::tcgetattr(0, &mut t);
-                let _ = writeln!(f, "  tcgetattr rc={rc}");
-                let _ = writeln!(f, "  c_iflag=0x{:x} c_oflag=0x{:x} c_cflag=0x{:x} c_lflag=0x{:x}",
-                    t.c_iflag, t.c_oflag, t.c_cflag, t.c_lflag);
-                let on = |bit: libc::tcflag_t, mask: libc::tcflag_t| (bit & mask) != 0;
-                let _ = writeln!(f, "  lflag: ICANON={} ECHO={} ECHOE={} ECHOK={} ISIG={} IEXTEN={}",
-                    on(t.c_lflag, libc::ICANON),
-                    on(t.c_lflag, libc::ECHO),
-                    on(t.c_lflag, libc::ECHOE),
-                    on(t.c_lflag, libc::ECHOK),
-                    on(t.c_lflag, libc::ISIG),
-                    on(t.c_lflag, libc::IEXTEN),
-                );
-                let _ = writeln!(f, "  iflag: ICRNL={} IXON={} BRKINT={} ISTRIP={}",
-                    on(t.c_iflag, libc::ICRNL),
-                    on(t.c_iflag, libc::IXON),
-                    on(t.c_iflag, libc::BRKINT),
-                    on(t.c_iflag, libc::ISTRIP),
-                );
-                let _ = writeln!(f, "  oflag: OPOST={} ONLCR={}",
-                    on(t.c_oflag, libc::OPOST),
-                    on(t.c_oflag, libc::ONLCR),
-                );
-            }
-            let _ = writeln!(f, "spawning claude now...");
-        }
+        args.push(prompt.to_string());
 
         let status = std::process::Command::new("claude")
             .args(&args)
@@ -250,11 +215,6 @@ impl Agent for ClaudeCodeAgent {
             .stderr(Stdio::inherit())
             .status()
             .context("Failed to spawn claude")?;
-
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/ravel-debug.log") {
-            use std::io::Write;
-            let _ = writeln!(f, "claude exited: {:?}", status);
-        }
 
         if !status.success() {
             anyhow::bail!("claude exited with code {:?}", status.code());

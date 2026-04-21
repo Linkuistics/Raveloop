@@ -202,13 +202,7 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) ->
 
     let tui_handle = tokio::spawn(run_tui(rx));
 
-    // BISECTION TEST: temporarily call old phase_loop (raveloop entry
-    // point, behaviorally identical to the working pre-pivot version)
-    // instead of run_stack. If the Work-phase TUI renders here but not
-    // with run_stack, the bug is in run_stack despite identical-looking
-    // Work-phase invocation. Pivot is broken under this test (no stack
-    // handling) — diagnostic only.
-    let result = phase_loop::phase_loop(agent, &ctx, &shared_config, &ui).await;
+    let result = phase_loop::run_stack(agent, ctx, &shared_config, &ui).await;
 
     if let Err(ref e) = result {
         // Show the error inside the TUI first so the user sees it in
