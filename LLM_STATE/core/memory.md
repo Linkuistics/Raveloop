@@ -10,7 +10,7 @@ The test iterates every on-disk pi prompt file and asserts no unresolved tokens 
 `src/config.rs` implements `*.local.yaml` overlays. Deep-merge: scalar collisions go to overlay, map collisions recurse. A `models.work: ""` overlay blanks only that key without losing sibling keys.
 
 ## Pi subagent definitions live at `agents/pi/subagents/`
-`defaults/agents/pi/subagents/` holds pi subagent definitions (brainstorming, tdd, writing-plans). The former `defaults/skills/` location was a misnomer; `init.rs` embed paths and `pi.rs` reads are updated accordingly.
+`defaults/agents/pi/subagents/` holds pi subagent definitions (brainstorming, tdd, writing-plans); `init.rs` embed paths and `pi.rs` reads reference this location.
 
 ## `init.rs` drift-detection test guards coding-style registration
 The test reads `defaults/fixed-memory/coding-style-*.md` at test time and asserts every file on disk is registered as an `EmbeddedFile`. Adding a new coding-style file without registering it fails the test.
@@ -43,7 +43,7 @@ RELATED_PLANS and custom tokens expand first; atomic path tokens ({{DEV_ROOT}} e
 `PiAgent::invoke_headless` pipes stderr into a fixed-size rolling buffer (`STDERR_BUFFER_CAP = 4096`). Tail surfaces in error messages on failure; eliminates TUI bleed-through during headless invocation.
 
 ## `pi_phase_cycle` test guards runtime token substitution
-`pi_phase_cycle_substitutes_tokens_and_streams_events` runs a full `phase_loop` cycle with a real `PiAgent` and a fake `pi` shell script; asserts zero unresolved `{{…}}` tokens in the captured prompt, correct `UIMessage` variant fan-out (`Progress`, `Persist`, `AgentDone`), and audit commit via `commit-message.md`. Closes the gap that let the `{{MEMORY_DIR}}` regression escape.
+`pi_phase_cycle_substitutes_tokens_and_streams_events` runs a full `phase_loop` cycle with a real `PiAgent` and a fake `pi` shell script; asserts zero unresolved `{{…}}` tokens in the captured prompt, correct `UIMessage` variant fan-out (`Progress`, `Persist`, `AgentDone`), and audit commit via `commit-message.md`.
 
 ## `pi_invoke_headless` test guards stderr-tail surfacing
 `pi_invoke_headless_surfaces_stderr_tail_on_failure` asserts a non-zero `pi` exit (code 17) surfaces the stderr tail in the returned error. Guards the buffered-stderr fix. See: `Pi stderr captured in 4096-byte rolling buffer`.
@@ -57,7 +57,7 @@ RELATED_PLANS and custom tokens expand first; atomic path tokens ({{DEV_ROOT}} e
 ## `GitCommitWork` appends `latest-session.md` to `session-log.md`
 `append_session_log` in `phase_loop.rs` runs at the top of `GitCommitWork`, before `write_phase`. Reads `latest-session.md` and appends to `session-log.md`. Tail-check makes it idempotent; crash-retry is safe.
 
-## `write_phase` called before `git_commit_plan` in all `GitCommit*` handlers
+## `write_phase` precedes `git_commit_plan` in all commit handlers
 All four `ScriptPhase::GitCommit*` handlers in `phase_loop.rs` call `write_phase(next)` before `git_commit_plan`. Phase.md is captured in the same commit as other plan-state writes; the plan tree is clean at every user-prompt point.
 
 ## Work-baseline seeded atomically in the triage commit
@@ -105,11 +105,11 @@ The fake-pi script in `pi_phase_cycle` uses a case statement on the current phas
 ## Hand-off fields are live in analyse-work and triage prompts
 `defaults/phases/analyse-work.md` and `defaults/phases/triage.md` include the hand-off convention. Analyse-work writes a hand-off block; triage reads it on entry.
 
-## `warn_if_project_tree_dirty` is advisory-only after gate removal
-After the pre-reflect gate was removed (`2026-04-21`), `warn_if_project_tree_dirty` at the top of `GitCommitWork` has no user-facing gate following it where the operator can react. The warning fires but the phase proceeds unconditionally. If this becomes unacceptable, promote the warning to a hard error rather than re-adding a gate.
+## `warn_if_project_tree_dirty` is advisory-only
+`warn_if_project_tree_dirty` at `GitCommitWork` entry has no user-facing gate; the warning fires but the phase proceeds unconditionally. If this becomes unacceptable, promote to a hard error rather than re-adding a gate.
 
-## `phase_loop` exits after one full cycle; `run_single_plan` holds the inter-cycle prompt
-Post-5c: `phase_loop` is a single-cycle function. The inter-cycle user prompt ("continue / switch plan / exit") lives in `run_single_plan`, which wraps `phase_loop` in a loop. Multi-plan dispatch calls `phase_loop` directly via `dispatch_one_cycle` in `src/multi_plan.rs`.
+## `phase_loop` is single-cycle; `run_single_plan` holds the inter-cycle prompt
+`phase_loop` is a single-cycle function. The inter-cycle user prompt ("continue / switch plan / exit") lives in `run_single_plan`, which wraps `phase_loop` in a loop. Multi-plan dispatch calls `phase_loop` directly via `dispatch_one_cycle` in `src/multi_plan.rs`.
 
 ## `src/multi_plan.rs` owns survey-driven multi-plan routing
 `src/multi_plan.rs` implements `build_plan_dir_map`, `options_from_response`, `select_plan_interactive`, and `run_multi_plan`. `ravel-lite run` accepts 1..N plan dirs; `--survey-state` is required when N > 1. Routes to the next plan via `dispatch_one_cycle`; the dispatch loop replaced the former LLM-authored coordinator-plan concept.
@@ -124,7 +124,7 @@ Post-5c: `phase_loop` is a single-cycle function. The inter-cycle user prompt ("
 `push-plan` CLI verb, `run_stack`, `stack.yaml`, and `src/pivot.rs` are deleted. `src/state.rs` reduced from ~230 to ~80 lines; `src/phase_loop.rs` de-pivoted. Multi-plan routing is exclusively in `src/multi_plan.rs`.
 
 ## `project_root_for_plan` derives project root as `<plan>/../..`
-Pure path math; no disk walk, no `.git` requirement. Replaced `find_project_root` (`.git`-walkup) for monorepo compatibility. Contract: `<plan>` must be at least three path components deep.
+Pure path math; no disk walk, no `.git` requirement. Contract: `<plan>` must be at least three path components deep.
 
 ## Git query functions scope to project dir via pathspec
 `working_tree_status`, `paths_changed_since_baseline`, and `work_tree_snapshot` append `-- <project_dir>` pathspec. `git_commit_plan` is intentionally unscoped; it runs from `plan_dir` CWD, already limiting `git add .` to plan-state files.
