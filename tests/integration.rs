@@ -291,8 +291,8 @@ fn survey_yaml_emit_injects_input_hashes_and_round_trips() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path().join("Proj");
     fs::create_dir_all(project.join(".git")).unwrap();
-    let plan_a = project.join("plan-a");
-    let plan_b = project.join("plan-b");
+    let plan_a = project.join("LLM_STATE").join("plan-a");
+    let plan_b = project.join("LLM_STATE").join("plan-b");
     fs::create_dir_all(&plan_a).unwrap();
     fs::create_dir_all(&plan_b).unwrap();
     fs::write(plan_a.join("phase.md"), "work").unwrap();
@@ -335,8 +335,8 @@ fn survey_incremental_merge_reuses_unchanged_rows_and_includes_llm_delta() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path().join("Proj");
     fs::create_dir_all(project.join(".git")).unwrap();
-    let plan_stable = project.join("stable");
-    let plan_mutated = project.join("mutated");
+    let plan_stable = project.join("LLM_STATE").join("stable");
+    let plan_mutated = project.join("LLM_STATE").join("mutated");
     fs::create_dir_all(&plan_stable).unwrap();
     fs::create_dir_all(&plan_mutated).unwrap();
     fs::write(plan_stable.join("phase.md"), "work").unwrap();
@@ -424,7 +424,7 @@ fn survey_incremental_is_noop_when_no_files_changed() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path().join("Proj");
     fs::create_dir_all(project.join(".git")).unwrap();
-    let plan_dir = project.join("unchanged");
+    let plan_dir = project.join("LLM_STATE").join("unchanged");
     fs::create_dir_all(&plan_dir).unwrap();
     fs::write(plan_dir.join("phase.md"), "work").unwrap();
     fs::write(plan_dir.join("backlog.md"), "# original").unwrap();
@@ -458,7 +458,7 @@ fn survey_incremental_rejects_llm_delta_outside_changed_set() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path().join("Proj");
     fs::create_dir_all(project.join(".git")).unwrap();
-    let plan_a = project.join("a");
+    let plan_a = project.join("LLM_STATE").join("a");
     fs::create_dir_all(&plan_a).unwrap();
     fs::write(plan_a.join("phase.md"), "work").unwrap();
     fs::write(plan_a.join("backlog.md"), "# original").unwrap();
@@ -1912,8 +1912,8 @@ fn multi_plan_round_trip_preserves_selection_mapping() {
     let tmp = TempDir::new().unwrap();
     let project = tmp.path().join("Proj");
     fs::create_dir_all(project.join(".git")).unwrap();
-    let plan_a = project.join("plan-a");
-    let plan_b = project.join("plan-b");
+    let plan_a = project.join("LLM_STATE").join("plan-a");
+    let plan_b = project.join("LLM_STATE").join("plan-b");
     fs::create_dir_all(&plan_a).unwrap();
     fs::create_dir_all(&plan_b).unwrap();
     fs::write(plan_a.join("phase.md"), "work").unwrap();

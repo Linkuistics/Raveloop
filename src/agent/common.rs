@@ -204,13 +204,13 @@ pub async fn run_streaming_child(
 }
 
 /// Build a `PlanContext` for a subagent dispatched to `target_plan`.
-/// Resolves `project_dir` via `git::find_project_root` and derives
+/// Resolves `project_dir` via `git::project_root_for_plan` and derives
 /// `dev_root` as the grandparent of the plan directory.
 pub fn build_dispatch_plan_context(
     target_plan: &str,
     config_root: String,
 ) -> Result<PlanContext> {
-    let project_dir = crate::git::find_project_root(Path::new(target_plan))?;
+    let project_dir = crate::git::project_root_for_plan(Path::new(target_plan))?;
     Ok(PlanContext {
         plan_dir: target_plan.to_string(),
         project_dir,

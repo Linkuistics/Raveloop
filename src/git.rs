@@ -1,6 +1,6 @@
 // src/git.rs
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -72,9 +72,11 @@ pub fn git_save_work_baseline(plan_dir: &Path) {
 }
 
 /// Paths that differ from `baseline_sha` in the working tree of
-/// `project_dir`. Runs `git diff --name-only <baseline>`; untracked
-/// files are NOT included — they're invisible to `diff` by definition
-/// and the caller handles them as an always-included category.
+/// `project_dir`. Runs `git diff --name-only <baseline> -- <project_dir>`;
+/// the pathspec scopes the query to the subtree so a monorepo's sibling
+/// subtrees are invisible. Untracked files are NOT included — they're
+/// invisible to `diff` by definition and the caller handles them as an
+/// always-included category.
 ///
 /// Returned as a `HashSet` so callers can do O(1) membership tests
 /// against porcelain paths when narrowing a dirty-tree warning.
@@ -84,7 +86,8 @@ pub fn paths_changed_since_baseline(
 ) -> Result<std::collections::HashSet<String>> {
     let output = Command::new("git")
         .current_dir(project_dir)
-        .args(["diff", "--name-only", baseline_sha])
+        .args(["diff", "--name-only", baseline_sha, "--"])
+        .arg(project_dir)
         .output()
         .context("Failed to run git diff --name-only")?;
     if !output.status.success() {
@@ -102,20 +105,23 @@ pub fn paths_changed_since_baseline(
         .collect())
 }
 
-/// Lines from `git status --porcelain` run from `project_dir`. Each entry
-/// is the raw porcelain line including the two-character XY status prefix
+/// Lines from `git status --porcelain -- <project_dir>`. Each entry is
+/// the raw porcelain line including the two-character XY status prefix
 /// — preserved so the caller can render them identically to what the user
-/// would see if they ran `git status` themselves.
+/// would see if they ran `git status` themselves. The pathspec scopes
+/// the query to the subtree so sibling subtrees in a monorepo don't
+/// leak into the warning.
 ///
 /// Used by the work-phase commit boundary as a postcondition: a clean
-/// project tree after the work commit means the agent committed
-/// everything it claimed; non-empty output means something was edited
-/// but not committed (the silent-failure mode that masks lost work as
-/// "backlog empty"). Returns `Ok(vec![])` on a clean tree.
+/// subtree after the work commit means the agent committed everything
+/// it claimed; non-empty output means something was edited but not
+/// committed (the silent-failure mode that masks lost work as
+/// "backlog empty"). Returns `Ok(vec![])` on a clean subtree.
 pub fn working_tree_status(project_dir: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .current_dir(project_dir)
-        .args(["status", "--porcelain"])
+        .args(["status", "--porcelain", "--"])
+        .arg(project_dir)
         .output()
         .context("Failed to run git status")?;
     if !output.status.success() {
@@ -131,17 +137,34 @@ pub fn working_tree_status(project_dir: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Find the project root by walking up from a directory to find .git.
-pub fn find_project_root(start_dir: &Path) -> Result<String> {
-    let mut dir = start_dir.canonicalize().unwrap_or_else(|_| start_dir.to_path_buf());
-    loop {
-        if dir.join(".git").exists() {
-            return Ok(dir.to_string_lossy().to_string());
-        }
-        if !dir.pop() {
-            anyhow::bail!("No .git found above {}", start_dir.display());
-        }
-    }
+/// Derive the subtree root controlled by ravel-lite from a plan
+/// directory. By ravel-lite convention every plan lives at
+/// `<subtree>/<state-dir>/<plan>` (typically `<project>/LLM_STATE/<plan>`),
+/// so the subtree root is `<plan>/../..` — pure path math, no disk walk.
+///
+/// This is deliberately decoupled from `.git` location. In a single-repo
+/// layout the subtree root also happens to be the git-repo root; in a
+/// monorepo the git repo is somewhere further up and we don't need to
+/// know where. Git queries that care about scope take this path as a
+/// pathspec.
+///
+/// Errors if the plan dir doesn't have two parent directories (e.g.
+/// `/plan` or `/a/plan`) — any well-formed plan path has at least two.
+pub fn project_root_for_plan(plan_dir: &Path) -> Result<String> {
+    let canon = plan_dir
+        .canonicalize()
+        .unwrap_or_else(|_| plan_dir.to_path_buf());
+    let root: PathBuf = canon
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .with_context(|| {
+            format!(
+                "Cannot derive subtree root from plan dir {} — expected <subtree>/<state-dir>/<plan> layout",
+                plan_dir.display()
+            )
+        })?;
+    Ok(root.to_string_lossy().to_string())
 }
 
 /// Captures the work-tree state after the work phase exits so the
@@ -160,7 +183,8 @@ pub fn find_project_root(start_dir: &Path) -> Result<String> {
 pub fn work_tree_snapshot(project_dir: &Path, baseline_sha: &str) -> String {
     let diff_stat = Command::new("git")
         .current_dir(project_dir)
-        .args(["diff", "--stat", baseline_sha])
+        .args(["diff", "--stat", baseline_sha, "--"])
+        .arg(project_dir)
         .output()
         .ok()
         .and_then(|o| if o.status.success() {
@@ -170,7 +194,8 @@ pub fn work_tree_snapshot(project_dir: &Path, baseline_sha: &str) -> String {
         });
     let status = Command::new("git")
         .current_dir(project_dir)
-        .args(["status", "--porcelain"])
+        .args(["status", "--porcelain", "--"])
+        .arg(project_dir)
         .output()
         .ok()
         .and_then(|o| if o.status.success() {
@@ -204,16 +229,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn find_project_root_finds_git() {
-        // This test runs inside a git repo (the ravel-lite project itself)
-        let result = find_project_root(Path::new("."));
-        assert!(result.is_ok());
+    fn project_root_for_plan_derives_two_levels_up() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plan_dir = tmp.path().join("LLM_STATE").join("plan-x");
+        fs::create_dir_all(&plan_dir).unwrap();
+        let root = project_root_for_plan(&plan_dir).unwrap();
+        // canonicalize may prepend /private on macOS; compare via canonicalize.
+        let expected = tmp.path().canonicalize().unwrap().to_string_lossy().to_string();
+        assert_eq!(root, expected);
     }
 
     #[test]
-    fn find_project_root_errors_on_root() {
-        let result = find_project_root(Path::new("/tmp/nonexistent-asdhjkasd"));
-        assert!(result.is_err());
+    fn project_root_for_plan_errors_on_shallow_path() {
+        // `/plan` has no grandparent — the function must reject it rather
+        // than silently returning `/` and letting downstream git calls
+        // operate on the whole filesystem.
+        let result = project_root_for_plan(Path::new("/"));
+        assert!(result.is_err(), "shallow path should error, got {result:?}");
+    }
+
+    #[test]
+    fn project_root_for_plan_works_on_non_existent_paths() {
+        // Pure path math — no disk walk, so non-existent paths are fine
+        // as long as the derivation has two parent levels.
+        let root = project_root_for_plan(Path::new("/a/b/c")).unwrap();
+        assert_eq!(root, "/a");
     }
 
     #[test]
@@ -333,5 +373,78 @@ mod tests {
         // Empty repo with no untracked files — porcelain output should be empty.
         let status = working_tree_status(repo).unwrap();
         assert!(status.is_empty(), "expected empty status on clean tree, got: {status:?}");
+    }
+
+    /// Monorepo scoping: the git queries ignore edits outside the
+    /// subtree rooted at `project_dir`. Simulates:
+    ///
+    ///   outer-repo/.git
+    ///   outer-repo/sibling/src.rs            <- edits here must be invisible
+    ///   outer-repo/tools/ravel-lite/...      <- `project_dir` = subtree root
+    ///   outer-repo/tools/ravel-lite/src.rs   <- edits here must be visible
+    ///
+    /// The three query functions (`working_tree_status`,
+    /// `paths_changed_since_baseline`, `work_tree_snapshot`) all apply
+    /// the same pathspec, so one synthesis covers all three.
+    #[test]
+    fn git_queries_are_scoped_to_subtree_in_monorepo() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let outer = tmp.path().canonicalize().unwrap();
+        Command::new("git").current_dir(&outer).args(["init", "-q"]).output().unwrap();
+        Command::new("git").current_dir(&outer).args(["config", "user.email", "t@t"]).output().unwrap();
+        Command::new("git").current_dir(&outer).args(["config", "user.name", "t"]).output().unwrap();
+
+        let sibling = outer.join("sibling");
+        let subtree = outer.join("tools").join("ravel-lite");
+        fs::create_dir_all(&sibling).unwrap();
+        fs::create_dir_all(&subtree).unwrap();
+        fs::write(sibling.join("src.rs"), "fn sibling_v1() {}\n").unwrap();
+        fs::write(subtree.join("src.rs"), "fn subtree_v1() {}\n").unwrap();
+
+        Command::new("git").current_dir(&outer).args(["add", "-A"]).output().unwrap();
+        Command::new("git").current_dir(&outer).args(["commit", "-q", "-m", "baseline"]).output().unwrap();
+        let baseline = String::from_utf8(
+            Command::new("git").current_dir(&outer).args(["rev-parse", "HEAD"]).output().unwrap().stdout
+        ).unwrap().trim().to_string();
+
+        // Simulate a work phase: modify a file in each subtree, add an
+        // untracked file in each subtree.
+        fs::write(sibling.join("src.rs"), "fn sibling_v2() {}\n").unwrap();
+        fs::write(sibling.join("new.rs"), "fn sibling_new() {}\n").unwrap();
+        fs::write(subtree.join("src.rs"), "fn subtree_v2() {}\n").unwrap();
+        fs::write(subtree.join("new.rs"), "fn subtree_new() {}\n").unwrap();
+
+        let status = working_tree_status(&subtree).unwrap();
+        let status_blob = status.join("\n");
+        assert!(
+            status_blob.contains("tools/ravel-lite/src.rs")
+                && status_blob.contains("tools/ravel-lite/new.rs"),
+            "subtree edits must appear in status, got: {status_blob}"
+        );
+        assert!(
+            !status_blob.contains("sibling/src.rs") && !status_blob.contains("sibling/new.rs"),
+            "sibling edits must NOT appear in status, got: {status_blob}"
+        );
+
+        let changed = paths_changed_since_baseline(&subtree, &baseline).unwrap();
+        assert!(
+            changed.contains("tools/ravel-lite/src.rs"),
+            "subtree diff must see modified subtree file, got {changed:?}"
+        );
+        assert!(
+            !changed.contains("sibling/src.rs"),
+            "subtree diff must NOT see modified sibling file, got {changed:?}"
+        );
+
+        let snapshot = work_tree_snapshot(&subtree, &baseline);
+        assert!(
+            snapshot.contains("tools/ravel-lite/src.rs")
+                && snapshot.contains("tools/ravel-lite/new.rs"),
+            "snapshot must include subtree changes, got:\n{snapshot}"
+        );
+        assert!(
+            !snapshot.contains("sibling/src.rs") && !snapshot.contains("sibling/new.rs"),
+            "snapshot must NOT include sibling changes, got:\n{snapshot}"
+        );
     }
 }

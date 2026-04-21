@@ -43,6 +43,29 @@ triage → git-commit-triage → [continue?] → work
   reads their JSON stream output, and renders progress. It never calls
   LLM APIs directly.
 
+## Project layout
+
+A plan always lives at `<project>/<state-dir>/<plan>` — typically
+`<project>/LLM_STATE/<plan>`. Ravel-lite derives the "project" (the
+subtree it controls) from this layout as `<plan_dir>/../..` — pure
+path math, independent of where `.git` sits.
+
+### Monorepo subtrees
+
+Because the project root is derived from the plan path rather than
+from `.git`, ravel-lite runs cleanly inside a monorepo subtree. Place
+the plan at `<monorepo>/<path-to-subtree>/LLM_STATE/<plan>` and
+ravel-lite will treat `<path-to-subtree>` as the project: all git
+queries (dirty-tree checks, baseline diffs, snapshot for analyse-work)
+are pathspec-scoped to the subtree, so sibling subtrees in the same
+monorepo are invisible. Baseline SHAs remain repo-wide — the scope is
+on the query, not the anchor.
+
+Commit-message prefix conventions (e.g., conventional-commits rules
+the monorepo enforces) are not automated — the per-commit
+`commit-message.md` authored by analyse-work is the customisation
+point.
+
 ## Releasing
 
 Versions are cut with [`cargo-release`](https://github.com/crate-ci/cargo-release):

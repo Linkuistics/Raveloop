@@ -22,7 +22,7 @@ use crate::agent::claude_code::ClaudeCodeAgent;
 use crate::agent::pi::PiAgent;
 use crate::agent::Agent;
 use crate::config::{load_agent_config, load_shared_config};
-use crate::git::find_project_root;
+use crate::git::project_root_for_plan;
 use crate::phase_loop;
 use crate::survey::{
     compute_survey_response, emit_survey_yaml, load_plan, plan_key, SurveyResponse,
@@ -228,7 +228,7 @@ async fn dispatch_one_cycle(
 ) -> Result<()> {
     let shared_config = load_shared_config(config_root)?;
     let mut agent_config = load_agent_config(config_root, &shared_config.agent)?;
-    let project_dir = find_project_root(plan_dir)?;
+    let project_dir = project_root_for_plan(plan_dir)?;
 
     if dangerous {
         if shared_config.agent == "claude-code" {
@@ -514,16 +514,17 @@ mod tests {
     fn build_plan_dir_map_errors_on_duplicate_key() {
         use tempfile::TempDir;
         let tmp = TempDir::new().unwrap();
-        let project = tmp.path().join("Proj");
-        fs::create_dir_all(project.join(".git")).unwrap();
-        let plan_a = project.join("dup");
-        let plan_b_container = project.join("nested").join("dup");
+        // Two distinct paths that collapse to the same (project, plan)
+        // pair under `<plan>/../..`-based derivation:
+        //   tmp/a/Proj/LLM_STATE/dup → project=Proj, plan=dup
+        //   tmp/b/Proj/LLM_STATE/dup → project=Proj, plan=dup
+        let plan_a = tmp.path().join("a").join("Proj").join("LLM_STATE").join("dup");
+        let plan_b = tmp.path().join("b").join("Proj").join("LLM_STATE").join("dup");
         fs::create_dir_all(&plan_a).unwrap();
-        fs::create_dir_all(&plan_b_container).unwrap();
+        fs::create_dir_all(&plan_b).unwrap();
         fs::write(plan_a.join("phase.md"), "work").unwrap();
-        fs::write(plan_b_container.join("phase.md"), "work").unwrap();
-        // Both load_plan calls derive `project=Proj, plan=dup` — same key.
-        let err = build_plan_dir_map(&[plan_a, plan_b_container]).unwrap_err();
+        fs::write(plan_b.join("phase.md"), "work").unwrap();
+        let err = build_plan_dir_map(&[plan_a, plan_b]).unwrap_err();
         assert!(format!("{err:#}").contains("same project/plan key"));
     }
 

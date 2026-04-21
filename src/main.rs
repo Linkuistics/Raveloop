@@ -26,7 +26,7 @@ use crate::agent::claude_code::ClaudeCodeAgent;
 use crate::agent::pi::PiAgent;
 use crate::agent::Agent;
 use crate::config::{load_agent_config, load_shared_config, resolve_config_dir};
-use crate::git::find_project_root;
+use crate::git::project_root_for_plan;
 use crate::types::{AgentConfig, LlmPhase, PlanContext};
 use crate::ui::{run_tui, UI};
 
@@ -283,7 +283,7 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) ->
 
     let shared_config = load_shared_config(config_root)?;
     let mut agent_config = load_agent_config(config_root, &shared_config.agent)?;
-    let project_dir = find_project_root(plan_dir)?;
+    let project_dir = project_root_for_plan(plan_dir)?;
 
     if dangerous {
         if shared_config.agent == "claude-code" {

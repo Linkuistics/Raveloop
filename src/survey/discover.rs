@@ -11,7 +11,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
-use crate::git::find_project_root;
+use crate::git::project_root_for_plan;
 
 /// A single plan's state, bundled for inclusion in the survey prompt.
 /// `input_hash` is a SHA-256 over the four state files
@@ -29,17 +29,17 @@ pub struct PlanSnapshot {
     pub input_hash: String,
 }
 
-/// Derive the project name for a plan by walking up from the plan's
-/// own directory to the nearest ancestor containing `.git`, then
-/// taking that ancestor's basename. Hard errors if no `.git` is found
-/// above the plan — plans outside a git repo are unsupported.
+/// Derive the project name for a plan by deriving the subtree root
+/// (`<plan>/../..`) and taking its basename. In a single-repo layout
+/// this is the repo name; in a monorepo it's the subtree name — which
+/// is what should label the plan, since plans are per-subtree.
 fn project_name_for_plan(plan_path: &Path) -> Result<String> {
-    let git_root = find_project_root(plan_path)?;
-    Path::new(&git_root)
+    let root = project_root_for_plan(plan_path)?;
+    Path::new(&root)
         .file_name()
         .and_then(|n| n.to_str())
         .map(|s| s.to_string())
-        .with_context(|| format!("Could not derive project name from git root {git_root}"))
+        .with_context(|| format!("Could not derive project name from subtree root {root}"))
 }
 
 /// Load a single plan directory's state into a `PlanSnapshot`. A
@@ -138,9 +138,10 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    /// Create a fake git project at `project_dir` with an empty `.git`
-    /// directory — `find_project_root` only checks for `.git`'s
-    /// existence, not its validity, so this is sufficient for tests.
+    /// Ensure `project_dir` exists on disk. Under the old git-walkup
+    /// scheme this also seeded `.git/`; under the current path-math
+    /// scheme the `.git` seed is irrelevant but harmless. Kept to
+    /// simulate a realistic project layout.
     fn mark_as_git_project(project_dir: &Path) {
         fs::create_dir_all(project_dir.join(".git")).unwrap();
     }
@@ -167,9 +168,10 @@ mod tests {
 
     #[test]
     fn load_plan_reads_phase_backlog_and_memory() {
+        // Layout matches the ravel-lite convention: <project>/<state-dir>/<plan>.
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().join("p");
-        let plan_dir = project.join("plan-a");
+        let plan_dir = project.join("LLM_STATE").join("plan-a");
         mark_as_git_project(&project);
         write_plan_files(&plan_dir, "work\n", Some("# b\n"), Some("# m\n"), None);
 
@@ -204,15 +206,6 @@ mod tests {
         fs::create_dir_all(&plan_dir).unwrap();
         let err = load_plan(&plan_dir).unwrap_err();
         assert!(format!("{err:#}").contains("not a plan directory"));
-    }
-
-    #[test]
-    fn load_plan_errors_when_no_git_above_plan() {
-        let tmp = TempDir::new().unwrap();
-        let plan_dir = tmp.path().join("rogue-plan");
-        write_plan_files(&plan_dir, "work\n", None, None, None);
-        let err = load_plan(&plan_dir).unwrap_err();
-        assert!(format!("{err:#}").contains("No .git found"));
     }
 
     #[test]
