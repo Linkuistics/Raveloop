@@ -101,3 +101,18 @@ Single source-of-truth for the `pushed_at` timestamp format. Phase-loop and the 
 
 ## `term_title.rs` sets phase title via OSC escape
 `src/term_title.rs` exposes `set_title(project, plan, phase)` (side-effecting) and `format_title_escape` (testable helper). Writes to stdout; clean side-channel because Ratatui uses stderr backend. Includes tmux passthrough (doubled inner ESCs). Called at `LlmPhase` entry in `phase_loop` and `run_stack`, in `do_push` after `sync_stack_to_disk`, and at both pop sites in `run_stack`. Phase labels uppercased to match the phase-header banner convention.
+
+## Reflect phase runs automatically after git-commit-work
+The runner proceeds from `GitCommitWork` to reflect without user confirmation. No pre-reflect gate exists; reflect is unconditional after work commit.
+
+## Fake-pi script must be phase-aware
+The fake-pi script in `pi_phase_cycle` uses a case statement on the current phase to emit distinct next-phase values. Writing `git-commit-work` unconditionally causes an infinite loop; each phase must map to a different output.
+
+## Pivot tests require all five phase configs seeded
+`pivot_run_stack_short_circuit_pivot` and related pivot tests fail with a missing-config error before pivot logic runs if any of the five phase config files (`work.md`, `analyse-work.md`, `triage.md`, `reflect.md`, `dream.md`) is absent from the fixture.
+
+## `ContractMockAgent` for Triage appends, not overwrites
+`ContractMockAgent::invoke_headless` uses append mode for `Triage` so the safety-net test can observe analyse-work's status flips written earlier in the same cycle.
+
+## Hand-off fields are live in analyse-work and triage prompts
+`defaults/phases/analyse-work.md` and `defaults/phases/triage.md` include the hand-off convention. Analyse-work writes a hand-off block; triage reads it on entry.
