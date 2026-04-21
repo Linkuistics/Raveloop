@@ -103,7 +103,16 @@ The fake-pi script in `pi_phase_cycle` uses a case statement on the current phas
 `ContractMockAgent::invoke_headless` uses append mode for `Triage` so the safety-net test can observe analyse-work's status flips written earlier in the same cycle.
 
 ## Hand-off fields are live in analyse-work and triage prompts
-`defaults/phases/analyse-work.md` and `defaults/phases/triage.md` include the hand-off convention. Analyse-work writes a hand-off block; triage reads it on entry.
+`defaults/phases/analyse-work.md` and `defaults/phases/triage.md` include the hand-off convention. Analyse-work writes a hand-off block; triage reads it on entry. See: `[HANDOFF] integration tests guard promote-vs-archive cycle`.
+
+## `[HANDOFF]` integration tests guard promote-vs-archive cycle
+`handoff_marker_in_analyse_work_is_promoted_by_triage` and `handoff_marker_in_analyse_work_is_archived_by_triage` in `tests/integration.rs` run the full analyse-work → git-commit-work → reflect → git-commit-reflect → triage → git-commit-triage cycle. CI-protects the hand-off convention. See: `ContractMockAgent has opt-in handoff injection`.
+
+## `ContractMockAgent` has opt-in handoff injection
+`handoff_injection: Option<HandoffInjection>` field with `with_handoff_injection()` builder. `HandoffDisposition` inside `HandoffInjection` pins promote-vs-archive without hardcoding LLM reasoning, keeping hand-off tests deterministic.
+
+## Task blocks delimited by `\n---` separator
+`inject_handoff_into_task_block` and `extract_handoff_from_block` both split on `\n---`. Protocol for separating the main task block from an appended hand-off block.
 
 ## `warn_if_project_tree_dirty` is advisory-only
 `warn_if_project_tree_dirty` at `GitCommitWork` entry has no user-facing gate; the warning fires but the phase proceeds unconditionally. If this becomes unacceptable, promote to a hard error rather than re-adding a gate.
