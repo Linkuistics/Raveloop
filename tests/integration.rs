@@ -349,11 +349,10 @@ fn survey_incremental_merge_reuses_unchanged_rows_and_includes_llm_delta() {
 
     // Construct a prior as it would appear on disk: cold-path LLM
     // output + hash injection.
-    let llm_cold = format!(
-        "plans:\n  \
+    let llm_cold = "plans:\n  \
          - project: Proj\n    plan: stable\n    phase: work\n    unblocked: 1\n    blocked: 0\n    done: 0\n    received: 0\n    notes: ''\n  \
-         - project: Proj\n    plan: mutated\n    phase: work\n    unblocked: 2\n    blocked: 0\n    done: 0\n    received: 0\n    notes: pre-mutation\n",
-    );
+         - project: Proj\n    plan: mutated\n    phase: work\n    unblocked: 2\n    blocked: 0\n    done: 0\n    received: 0\n    notes: pre-mutation\n"
+        .to_string();
     let mut prior = ravel_lite::survey::parse_survey_response(&llm_cold).unwrap();
     let prior_hashes: std::collections::HashMap<String, String> = [
         (ravel_lite::survey::plan_key("Proj", "stable"), snap_stable_before.input_hash.clone()),
@@ -590,6 +589,75 @@ fn flip_stale_task_statuses(backlog: &str) -> String {
         .join("\n---")
 }
 
+#[derive(Clone, Debug)]
+enum HandoffDisposition {
+    Promote,
+    Archive,
+}
+
+#[derive(Clone)]
+struct HandoffInjection {
+    target_task_title: String,
+    handoff_title: String,
+    handoff_body: String,
+    disposition: HandoffDisposition,
+}
+
+/// Appends a `[HANDOFF] <title>` marker plus inlined body to the
+/// matching task's block in `backlog.md`. Match is by exact `### <title>`
+/// heading line. Panics if no matching block is found — callers seed
+/// the backlog themselves.
+fn inject_handoff_into_task_block(
+    backlog: &str,
+    target_task_title: &str,
+    handoff_title: &str,
+    handoff_body: &str,
+) -> String {
+    let target_heading = format!("### {target_task_title}");
+    let mut found = false;
+    let updated: Vec<String> = backlog
+        .split("\n---")
+        .map(|block| {
+            let matches = block
+                .lines()
+                .any(|line| line.trim_end() == target_heading);
+            if !matches {
+                return block.to_string();
+            }
+            found = true;
+            format!(
+                "{}\n\n[HANDOFF] {handoff_title}\n{handoff_body}\n",
+                block.trim_end()
+            )
+        })
+        .collect();
+    assert!(
+        found,
+        "inject_handoff_into_task_block: no task '{target_task_title}' in backlog"
+    );
+    updated.join("\n---")
+}
+
+/// Scans a backlog block for a `[HANDOFF] <title>` marker and returns
+/// `(title, body)` if found. The body runs from the line after the
+/// marker up to the next blank line or end-of-block.
+fn extract_handoff_from_block(block: &str) -> Option<(String, String)> {
+    let mut lines = block.lines();
+    while let Some(line) = lines.next() {
+        if let Some(title) = line.strip_prefix("[HANDOFF] ") {
+            let mut body_lines: Vec<&str> = Vec::new();
+            for next in lines.by_ref() {
+                if next.trim().is_empty() {
+                    break;
+                }
+                body_lines.push(next);
+            }
+            return Some((title.trim().to_string(), body_lines.join("\n")));
+        }
+    }
+    None
+}
+
 fn init_test_repo(root: &std::path::Path) {
     let run = |args: &[&str]| {
         let out = Command::new("git")
@@ -699,6 +767,11 @@ struct ContractMockAgent {
     /// phase. Tests inspect this to verify token substitution (e.g. that
     /// `{{WORK_TREE_STATUS}}` is replaced with real snapshot output).
     captured_prompts: Arc<Mutex<HashMap<LlmPhase, String>>>,
+    /// When `Some`, analyse-work injects a `[HANDOFF]` marker into the
+    /// named task's Results block and writes a matching `## Hand-offs`
+    /// section to latest-session.md; triage then mines the marker and
+    /// promotes or archives it per the disposition.
+    handoff_injection: Option<HandoffInjection>,
 }
 
 impl ContractMockAgent {
@@ -707,7 +780,13 @@ impl ContractMockAgent {
             plan_dir,
             commit_project_dir: None,
             captured_prompts: Arc::new(Mutex::new(HashMap::new())),
+            handoff_injection: None,
         }
+    }
+
+    fn with_handoff_injection(mut self, injection: HandoffInjection) -> Self {
+        self.handoff_injection = Some(injection);
+        self
     }
 }
 
@@ -753,6 +832,33 @@ impl Agent for ContractMockAgent {
                     if flipped != backlog {
                         fs::write(&backlog_path, flipped)?;
                     }
+                }
+                // Hand-off injection: after the safety-net flip, a
+                // well-behaved model following the analyse-work prompt's
+                // fallback path appends a `[HANDOFF]` marker to the
+                // completing task's Results block and mirrors the
+                // hand-off into latest-session.md under `## Hand-offs`.
+                // Triage mines the marker from the backlog next cycle.
+                if let Some(injection) = &self.handoff_injection {
+                    let backlog = fs::read_to_string(&backlog_path)?;
+                    let injected = inject_handoff_into_task_block(
+                        &backlog,
+                        &injection.target_task_title,
+                        &injection.handoff_title,
+                        &injection.handoff_body,
+                    );
+                    fs::write(&backlog_path, injected)?;
+                    fs::write(
+                        plan.join("latest-session.md"),
+                        format!(
+                            "### Session 1 (2026-04-18T00:00:00Z) — handoff test\n\
+                             - mock analyse-work output with handoff\n\n\
+                             ## Hand-offs\n\n\
+                             ### {}\n\
+                             - {}\n",
+                            injection.handoff_title, injection.handoff_body,
+                        ),
+                    )?;
                 }
                 // Source-commit simulation: a well-behaved model reads
                 // the WORK_TREE_STATUS snapshot in the prompt, stages
@@ -807,14 +913,60 @@ impl Agent for ContractMockAgent {
                 fs::write(plan.join("phase.md"), "git-commit-dream")?;
             }
             LlmPhase::Triage => {
-                // Append rather than overwrite so tests that seed backlog
-                // content before the cycle (e.g. the safety-net test) can
-                // still observe analyse-work's earlier status flips after
-                // the full cycle runs. Models in production don't wipe
-                // the backlog each triage either.
                 let backlog_path = plan.join("backlog.md");
                 let existing = fs::read_to_string(&backlog_path).unwrap_or_default();
-                let appended = if existing.trim().is_empty() {
+                let new_backlog = if let Some(injection) = &self.handoff_injection {
+                    // Hand-off mining simulation: a well-behaved model
+                    // scans every Status: done task for `[HANDOFF]`
+                    // markers, promotes or archives each one per the
+                    // disposition, and then deletes the done task. This
+                    // is the production triage contract, minus the
+                    // promote-vs-archive judgement call, which the test
+                    // pins via the injection's disposition field.
+                    let mut kept_blocks: Vec<String> = Vec::new();
+                    let mut mined: Vec<(String, String)> = Vec::new();
+                    for block in existing.split("\n---") {
+                        let is_done = block.contains("**Status:** `done`");
+                        if is_done {
+                            if let Some(handoff) = extract_handoff_from_block(block) {
+                                mined.push(handoff);
+                            }
+                            // Drop every done task — triage deletes them
+                            // unconditionally after mining hand-offs.
+                            continue;
+                        }
+                        kept_blocks.push(block.to_string());
+                    }
+                    let mut backlog_after = kept_blocks.join("\n---");
+                    if let HandoffDisposition::Promote = injection.disposition {
+                        for (title, body) in &mined {
+                            backlog_after.push_str(&format!(
+                                "\n### {title}\n\n\
+                                 **Category:** `followup`\n\
+                                 **Status:** `not_started`\n\
+                                 **Dependencies:** none\n\n\
+                                 **Description:**\n\n\
+                                 {body}\n\n\
+                                 **Results:** _pending_\n\n\
+                                 ---\n"
+                            ));
+                        }
+                    }
+                    if let HandoffDisposition::Archive = injection.disposition {
+                        let memory_path = plan.join("memory.md");
+                        let mut memory = fs::read_to_string(&memory_path)
+                            .unwrap_or_else(|_| "# Memory\n".to_string());
+                        for (title, body) in &mined {
+                            memory.push_str(&format!("\n## {title}\n{body}\n"));
+                        }
+                        fs::write(&memory_path, memory)?;
+                    }
+                    backlog_after
+                } else if existing.trim().is_empty() {
+                    // Default behaviour: append a placeholder so the
+                    // contract test can observe that triage wrote
+                    // backlog.md. Mirrors "models in production don't
+                    // wipe the backlog each triage."
                     "# Backlog\n\n## Placeholder task\nAdded by contract test.\n".to_string()
                 } else {
                     format!(
@@ -822,7 +974,7 @@ impl Agent for ContractMockAgent {
                         existing.trim_end()
                     )
                 };
-                fs::write(&backlog_path, appended)?;
+                fs::write(&backlog_path, new_backlog)?;
                 fs::write(plan.join("phase.md"), "git-commit-triage")?;
             }
             LlmPhase::Work => {
@@ -1091,6 +1243,262 @@ Placeholder for the safety-net test.
     );
 }
 
+/// Shared fixture for the hand-off convention tests: a pre-seeded
+/// backlog with one finished-but-unflipped task the safety-net will
+/// flip to `done` during analyse-work, creating the hand-off mining
+/// target triage then consumes.
+const HANDOFF_TARGET_TASK_TITLE: &str = "Hand-off source task";
+
+fn seed_handoff_backlog() -> String {
+    format!(
+        "\
+# Backlog
+
+## Tasks
+
+### {HANDOFF_TARGET_TASK_TITLE}
+
+**Category:** `enhancement`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+A task that the work phase completed; analyse-work's safety-net will
+flip it to done and the hand-off convention will attach a `[HANDOFF]`
+marker to its Results block.
+
+**Results:** Implemented the change and the test suite passed.
+
+---
+"
+    )
+}
+
+/// End-to-end coverage for the `[HANDOFF]` convention, promote path:
+/// analyse-work attaches a hand-off marker to a completing task's
+/// Results block, git-commit-work commits plan state, then triage
+/// mines the marker and promotes it to a new `not_started` backlog
+/// task while deleting the original done task. Guards the pipeline
+/// that `defaults/phases/analyse-work.md` and `defaults/phases/triage.md`
+/// jointly implement.
+#[tokio::test]
+async fn handoff_marker_in_analyse_work_is_promoted_by_triage() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    init_test_repo(root);
+
+    let config_root = root.join("config");
+    ravel_lite::init::run_init(&config_root, false).unwrap();
+
+    let plan_dir = root.join("plans/handoff-promote-plan");
+    fs::create_dir_all(&plan_dir).unwrap();
+    fs::write(plan_dir.join("phase.md"), "analyse-work").unwrap();
+    fs::write(plan_dir.join("backlog.md"), seed_handoff_backlog()).unwrap();
+    fs::write(plan_dir.join("memory.md"), "# Memory\n").unwrap();
+
+    let head = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    fs::write(plan_dir.join("work-baseline"), &head.stdout).unwrap();
+
+    let handoff_title = "Follow-up: extract shared helper".to_string();
+    let handoff_body =
+        "Problem: three callers duplicate the block-split parse. \
+         Decision: introduce `parse_backlog_blocks()` in `src/backlog.rs`. \
+         References: tests/integration.rs:570 (flip_stale_task_statuses).".to_string();
+
+    let agent = Arc::new(
+        ContractMockAgent::new(plan_dir.clone()).with_handoff_injection(HandoffInjection {
+            target_task_title: HANDOFF_TARGET_TASK_TITLE.to_string(),
+            handoff_title: handoff_title.clone(),
+            handoff_body: handoff_body.clone(),
+            disposition: HandoffDisposition::Promote,
+        }),
+    );
+
+    let shared = SharedConfig {
+        agent: "mock".into(),
+        headroom: 10_000,
+    };
+
+    let ctx = PlanContext {
+        plan_dir: plan_dir.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    let drain = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = phase_loop(agent, &ctx, &shared, &ui).await;
+    ui.quit();
+    let _ = drain.await;
+
+    assert!(result.is_ok(), "phase_loop returned error: {result:?}");
+
+    // The original completed task is gone (triage deletes done tasks
+    // after mining).
+    let backlog = fs::read_to_string(plan_dir.join("backlog.md")).unwrap();
+    assert!(
+        !backlog.contains(HANDOFF_TARGET_TASK_TITLE),
+        "triage should delete the original done task after mining hand-offs, got:\n{backlog}"
+    );
+
+    // A promoted task carries the hand-off title as its heading and is
+    // not_started, with the inlined body preserved.
+    assert!(
+        backlog.contains(&format!("### {handoff_title}")),
+        "triage should promote the hand-off into a new backlog task, got:\n{backlog}"
+    );
+    assert!(
+        backlog.contains("**Status:** `not_started`"),
+        "promoted hand-off task should be not_started, got:\n{backlog}"
+    );
+    assert!(
+        backlog.contains("introduce `parse_backlog_blocks()`"),
+        "promoted task should preserve the inlined hand-off body, got:\n{backlog}"
+    );
+
+    // memory.md is untouched by triage in the promote path — reflect's
+    // write is the final memory state.
+    let memory = fs::read_to_string(plan_dir.join("memory.md")).unwrap();
+    assert!(
+        !memory.contains(&handoff_title),
+        "promote disposition should not write the hand-off to memory.md, got:\n{memory}"
+    );
+
+    // The analyse-work prompt actually loaded (smoke: the captured
+    // prompt contains the hand-off convention text from the embedded
+    // default prompt, confirming no {{…}} token drift blocked it).
+    // We verify the mirrored latest-session.md hand-off block survives
+    // the cycle — latest-session.md is only overwritten by analyse-work.
+    let latest = fs::read_to_string(plan_dir.join("latest-session.md")).unwrap();
+    assert!(
+        latest.contains("## Hand-offs"),
+        "latest-session.md should retain the ## Hand-offs section, got:\n{latest}"
+    );
+    assert!(
+        latest.contains(&format!("### {handoff_title}")),
+        "latest-session.md should list the hand-off by title, got:\n{latest}"
+    );
+}
+
+/// End-to-end coverage for the `[HANDOFF]` convention, archive path:
+/// analyse-work attaches a hand-off marker, triage archives it to
+/// `memory.md` (not a new backlog task) and deletes the original done
+/// task. Complementary to the promote test — both dispositions must
+/// survive the cycle.
+#[tokio::test]
+async fn handoff_marker_in_analyse_work_is_archived_by_triage() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    init_test_repo(root);
+
+    let config_root = root.join("config");
+    ravel_lite::init::run_init(&config_root, false).unwrap();
+
+    let plan_dir = root.join("plans/handoff-archive-plan");
+    fs::create_dir_all(&plan_dir).unwrap();
+    fs::write(plan_dir.join("phase.md"), "analyse-work").unwrap();
+    fs::write(plan_dir.join("backlog.md"), seed_handoff_backlog()).unwrap();
+    fs::write(plan_dir.join("memory.md"), "# Memory\n").unwrap();
+
+    let head = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    fs::write(plan_dir.join("work-baseline"), &head.stdout).unwrap();
+
+    let handoff_title = "Strategic: revisit parser architecture".to_string();
+    let handoff_body =
+        "Not concrete enough for a backlog task. Keep as memory: the \
+         markdown-first approach has friction points we should revisit \
+         once three more plans are in flight.".to_string();
+
+    let agent = Arc::new(
+        ContractMockAgent::new(plan_dir.clone()).with_handoff_injection(HandoffInjection {
+            target_task_title: HANDOFF_TARGET_TASK_TITLE.to_string(),
+            handoff_title: handoff_title.clone(),
+            handoff_body: handoff_body.clone(),
+            disposition: HandoffDisposition::Archive,
+        }),
+    );
+
+    let shared = SharedConfig {
+        agent: "mock".into(),
+        headroom: 10_000,
+    };
+
+    let ctx = PlanContext {
+        plan_dir: plan_dir.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    let drain = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = phase_loop(agent, &ctx, &shared, &ui).await;
+    ui.quit();
+    let _ = drain.await;
+
+    assert!(result.is_ok(), "phase_loop returned error: {result:?}");
+
+    // Original done task deleted; no new backlog entry for the hand-off.
+    let backlog = fs::read_to_string(plan_dir.join("backlog.md")).unwrap();
+    assert!(
+        !backlog.contains(HANDOFF_TARGET_TASK_TITLE),
+        "triage should delete the original done task, got:\n{backlog}"
+    );
+    assert!(
+        !backlog.contains(&format!("### {handoff_title}")),
+        "archive disposition should not create a new backlog task, got:\n{backlog}"
+    );
+
+    // The hand-off lives in memory.md instead.
+    let memory = fs::read_to_string(plan_dir.join("memory.md")).unwrap();
+    assert!(
+        memory.contains(&format!("## {handoff_title}")),
+        "triage should append the archived hand-off as a memory entry, got:\n{memory}"
+    );
+    assert!(
+        memory.contains("markdown-first approach has friction"),
+        "archived hand-off should preserve the body, got:\n{memory}"
+    );
+}
+
 /// End-to-end check that the orchestrator's work-tree snapshot reaches
 /// the analyse-work prompt AND that a well-behaved model acting on the
 /// snapshot commits uncommitted source files. Mirrors the production
@@ -1131,6 +1539,7 @@ async fn analyse_work_receives_snapshot_and_commits_uncommitted_source() {
         plan_dir: plan_dir.clone(),
         commit_project_dir: Some(root.to_path_buf()),
         captured_prompts: Arc::new(Mutex::new(HashMap::new())),
+        handoff_injection: None,
     });
     let captured = agent.captured_prompts.clone();
 

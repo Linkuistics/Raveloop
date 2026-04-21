@@ -57,11 +57,14 @@ pub struct PlanRow {
     #[serde(default)]
     pub notes: String,
     /// SHA-256 hex digest over `phase.md` + `backlog.md` + `memory.md`
-    /// + `related-plans.md` contents. Computed entirely in Rust and
-    /// injected into each row after the LLM's response is parsed
-    /// (matched by `project` + `plan`). The LLM never sees or emits
-    /// this field — `#[serde(default)]` lets LLM YAML without the
-    /// field deserialise, leaving the hash empty until injected.
+    /// + `related-plans.md` contents.
+    ///
+    /// Computed entirely in Rust and injected into each row after the
+    /// LLM's response is parsed (matched by `project` + `plan`). The
+    /// LLM never sees or emits this field — `#[serde(default)]` lets
+    /// LLM YAML without the field deserialise, leaving the hash empty
+    /// until injected.
+    ///
     /// Forward-compat seam for 5b's incremental-survey change
     /// detection.
     #[serde(default)]
