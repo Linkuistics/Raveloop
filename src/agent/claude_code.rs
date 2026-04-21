@@ -178,15 +178,6 @@ impl Agent for ClaudeCodeAgent {
             args.push("--dangerously-skip-permissions".to_string());
         }
 
-        // Ask claude to record its own startup decisions to a file we can
-        // diff after a hung pilot. Implicitly enables debug mode (per
-        // `claude --help`). If this file is empty/missing after a stuck
-        // launch, claude never reached its main loop; if it's full of
-        // entries but we still see no UI, claude is rendering invisibly
-        // and the bug is on our side of the tty.
-        args.push("--debug-file".to_string());
-        args.push("/tmp/claude-debug.log".to_string());
-
         args.push(prompt.to_string());
 
         // Temporary diagnostic — dump args + env + tty + termios state to

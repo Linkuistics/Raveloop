@@ -339,9 +339,16 @@ pub async fn run_tui(mut rx: mpsc::UnboundedReceiver<UIMessage>) -> Result<(), a
                     Some(msg) => state.handle_message(msg),
                 }
             }
-            _ = tokio::task::spawn_blocking(|| {
-                event::poll(Duration::from_millis(50)).ok();
-            }) => {
+            // tokio::time::sleep (not spawn_blocking(event::poll)) because
+            // the latter holds an OS thread inside crossterm's stdin epoll
+            // until the timeout fires, even after select! drops its
+            // JoinHandle. After Suspend the blocking thread keeps running
+            // for up to 50ms, races the just-spawned child for the tty
+            // (termios is global to the device, so once the child enables
+            // raw mode our blocked event::poll wakes and reads bytes the
+            // child needed). sleep() is properly cancellable: dropping it
+            // cancels the timer-wheel registration, no thread, no race.
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if !suspended {
                     if let Ok(true) = event::poll(Duration::from_millis(0)) {
                         if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
