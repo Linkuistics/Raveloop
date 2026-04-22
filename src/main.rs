@@ -1,12 +1,6 @@
 mod agent;
 mod config;
 mod create;
-// `discover` is declared so that `crate::discover::cache::rename` in
-// `projects.rs` resolves when compiling the binary crate. Most of the
-// module is only exercised through the library crate (and the `cli
-// discover` command will wire up more of it shortly); suppress
-// dead-code warnings until the CLI plumbing lands.
-#[allow(dead_code)]
 mod discover;
 mod dream;
 mod format;
@@ -576,6 +570,31 @@ enum RelatedProjectsCommands {
         a: String,
         b: String,
     },
+    /// Run the two-stage LLM discovery pipeline over all catalogued
+    /// projects (or just `--project <name>`). Writes proposals to
+    /// `<config-dir>/discover-proposals.yaml` for user review.
+    Discover {
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Restrict Stage 1 re-analysis to a single project; Stage 2
+        /// still operates over the full catalog's cached surfaces.
+        #[arg(long)]
+        project: Option<String>,
+        /// Maximum parallel Stage 1 subagents. Default 4.
+        #[arg(long)]
+        concurrency: Option<usize>,
+        /// Skip the review gate: run `discover-apply` immediately after
+        /// proposals are written.
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Merge a previously-produced `discover-proposals.yaml` into
+    /// `related-projects.yaml`. Idempotent; reports and rejects
+    /// kind-conflicts without aborting.
+    DiscoverApply {
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -642,11 +661,11 @@ async fn main() -> Result<()> {
             println!("ravel-lite {VERSION}");
             Ok(())
         }
-        Commands::State { command } => dispatch_state(command),
+        Commands::State { command } => dispatch_state(command).await,
     }
 }
 
-fn dispatch_state(command: StateCommands) -> Result<()> {
+async fn dispatch_state(command: StateCommands) -> Result<()> {
     match command {
         StateCommands::SetPhase { plan_dir, phase } => {
             state::run_set_phase(&plan_dir, &phase)
@@ -690,7 +709,7 @@ fn dispatch_state(command: StateCommands) -> Result<()> {
             };
             state::migrate::run_migrate(&plan_dir, &options)
         }
-        StateCommands::RelatedProjects { command } => dispatch_related_projects(command),
+        StateCommands::RelatedProjects { command } => dispatch_related_projects(command).await,
         StateCommands::MigrateRelatedProjects {
             plan_dir,
             config,
@@ -710,7 +729,7 @@ fn dispatch_state(command: StateCommands) -> Result<()> {
     }
 }
 
-fn dispatch_related_projects(command: RelatedProjectsCommands) -> Result<()> {
+async fn dispatch_related_projects(command: RelatedProjectsCommands) -> Result<()> {
     match command {
         RelatedProjectsCommands::List { config, plan } => {
             let config_root = resolve_config_dir(config)?;
@@ -729,6 +748,24 @@ fn dispatch_related_projects(command: RelatedProjectsCommands) -> Result<()> {
                 anyhow::anyhow!("invalid kind {kind:?}; expected 'sibling' or 'parent-of'")
             })?;
             related_projects::run_remove_edge(&config_root, kind, &a, &b)
+        }
+        RelatedProjectsCommands::Discover {
+            config,
+            project,
+            concurrency,
+            apply: apply_flag,
+        } => {
+            let config_root = resolve_config_dir(config)?;
+            let options = crate::discover::RunDiscoverOptions {
+                project_filter: project,
+                concurrency,
+                apply: apply_flag,
+            };
+            crate::discover::run_discover(&config_root, options).await
+        }
+        RelatedProjectsCommands::DiscoverApply { config } => {
+            let config_root = resolve_config_dir(config)?;
+            crate::discover::apply::run_discover_apply(&config_root)
         }
     }
 }
