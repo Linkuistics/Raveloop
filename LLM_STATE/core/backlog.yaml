@@ -117,7 +117,7 @@ tasks:
 - id: r8-migrate-rust-side-plan-state-readers-from-md-to-yaml
   title: R8 — Migrate Rust-side plan-state readers from .md to .yaml
   category: enhancement
-  status: not_started
+  status: done
   dependencies: []
   description: |
     R6 migrated the LLM-facing phase prompts to `ravel-lite state <verb>` calls, so backlog / memory / session-log mutations now land only in the `.yaml` files. The Rust side still reads the legacy `.md` copies in four places, so R6 deliberately did **not** pass `--delete-originals`: deleting them would silently regress survey, dream compaction, and related-plans substitution.
@@ -135,3 +135,37 @@ tasks:
 
     **Category:** `enhancement`
     **Dependencies:** R6 (done)
+  results: |
+    **Done:**
+
+    - `src/dream.rs`: migrated `memory.md` raw reads to `state::memory::read_memory`. Word count now sums titles + bodies across parsed entries (new regression test `update_baseline_counts_entry_titles_and_bodies` pins the contract).
+    - `src/survey/discover.rs`: migrated `backlog.md` and `memory.md` reads to `read_backlog` / `read_memory`. `PlanSnapshot::backlog` / `.memory` now carry re-serialised YAML; `task_counts` is derived from the already-parsed `BacklogFile` (removed the separate `parse_backlog_markdown` round-trip). Phase.md and related-plans.md reads kept — neither is deleted by `state migrate --delete-originals`.
+    - `src/survey/compose.rs`: updated section labels from `backlog.md`/`memory.md` to `backlog.yaml`/`memory.yaml` and wrapped content in \`\`\`yaml code fences so the LLM sees structured content with the right framing.
+    - `defaults/survey.md` + `defaults/survey-incremental.md`: updated textual references so the prompt matches the new YAML-labelled payload.
+    - `src/related_projects.rs`: added `read_related_plans_markdown(plan_dir)` as the single canonical access point for plan-local `related-plans.md` prose. `src/main.rs` and `src/multi_plan.rs` both route through it instead of duplicating `fs::read_to_string(...).unwrap_or_default()`.
+    - `tests/integration.rs`: added `write_memory_yaml_with_word_count` and `write_backlog_yaml_with_marker` helpers; migrated every plan-state write in `dream_guard_integration`, `git_commit_reflect_seeds_dream_baseline_when_missing`, and four survey-related integration tests from raw `.md` writes to typed-YAML writes via the state API.
+
+    **Verification:**
+
+    - `cargo build`: clean (deny-warnings enforced).
+    - `cargo clippy --all-targets`: no lints.
+    - `cargo test`: 379 unit + 27 integration + 17 state-focused tests all pass.
+
+    **Scope decisions — deliberate.**
+
+    The memory entry and backlog description both list four Rust files, but only two are in the blast radius of `state migrate --delete-originals` (which deletes `backlog.md`, `memory.md`, `session-log.md`, `latest-session.md`):
+
+    - `src/dream.rs` — read `memory.md`; migrated.
+    - `src/survey/discover.rs` — read `backlog.md` + `memory.md`; migrated.
+
+    `src/multi_plan.rs` and `src/main.rs` only read `related-plans.md` (whose deletion is gated by a separate migration tool, `run_migrate_related_projects --delete-original`) and check `phase.md` existence (not migrated; still the canonical phase marker). Neither breaks when `state migrate --delete-originals` runs. I still consolidated their duplicated `related-plans.md` read behind `read_related_plans_markdown` so the canonical-path goal holds: a single helper means the future swap to "render from `related-projects.yaml`" is a one-function change.
+
+    **What didn't / watch out for:**
+
+    - Swapping `backlog.md` content for YAML-serialised `backlog.yaml` changes the LLM payload layout. The survey prompts were updated to match, but the change is visible to the LLM on first run after this lands — a minor one-time behavioural shift.
+    - Existing `dream-baseline` values were computed against `memory.md` word counts. The new measurement (titles + bodies from parsed memory.yaml) differs slightly because markdown heading punctuation (`##`, `#`) is excluded. First dream on a pre-existing plan may fire slightly earlier/later than under the old counting rule; `update_dream_baseline` self-corrects after the first successful dream.
+    - `tests/integration.rs` still contains several tests that write `backlog.md` but the writes are now dead-weight (not read by `load_plan`). Most such sites were migrated; a few remain in tests that assert orthogonal behaviour (contract mock agent, etc.) and were intentionally left since rewriting them would balloon the diff.
+
+    **Unblocks:**
+
+    `ravel-lite state migrate --delete-originals` can now safely remove `backlog.md`, `memory.md`, `session-log.md`, `latest-session.md` from any plan dir — no production reader of the deleted files remains. Suggested follow-up: actually run `--delete-originals` against `LLM_STATE/core` in a subsequent task to retire the legacy files and verify the full cycle under the deleted-originals state.
