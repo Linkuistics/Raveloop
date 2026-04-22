@@ -157,13 +157,19 @@ Lines matching `^\s*→\s*(.*)` immediately after an action marker are re-indent
 Project-level (not plan-level) edge list, keyed by plan name. Plans reference each other by name; the global list is shareable across all plans in a project.
 
 ## Plan-state files use structured YAML
-Structured YAML replaces prose plan-state files, accessed via `ravel-lite state <file> <verb>`. `state backlog` (R1) is complete.
+Structured YAML replaces prose plan-state files, accessed via `ravel-lite state <file> <verb>`. `state backlog` (R1) and `state memory` (R2) are complete.
 
 ## Plan-state migration requires atomicity, idempotency, dry-run, validation
 Any plan-state migration tool must apply changes atomically, be safe to re-run (idempotent), support `--dry-run` preview, and validate round-trip fidelity.
 
+## `migrate.rs` uses parse-all-then-write-all planner
+`plan_backlog_migration` and `plan_memory_migration` each return `Option<PendingMigration>`; `run_migrate` collects all, errors if set is empty, then writes only after all parses succeed. Parse failure on any file aborts before any disk write. Adding R3 session-log adds a third variant with no structural change.
+
+## `state::memory` parses `^## ` headings; empty body is an error
+`parse_md.rs` in `state::memory` splits on `^## ` (not `### ` as backlog uses). An entry with an empty body after the heading is a parse error, not silently skipped. See: `split_into_task_blocks splits on ### headings`.
+
 ## Structured plan-state design at `docs/structured-plan-state-design.md`
-Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1 (`state backlog` and `state migrate`) is complete; R2 (`state memory`) mirrors R1's module pattern exactly.
+Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1 (`state backlog` and `state migrate`) and R2 (`state memory`) are complete. R3 (`state session-log`) adds a third `PendingMigration` variant to `migrate.rs` with no structural change.
 
 ## `src/projects.rs` holds `ProjectsCatalog`
 `ProjectsCatalog` (schema_version 1) maps project names to absolute paths. `auto_add` is pure and returns `AlreadyCatalogued`/`Added`/`NameCollision`. `ensure_in_catalog_interactive` is generic over `Read + Write`. Atomic save.
@@ -178,7 +184,7 @@ Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1 (`state ba
 Called in `Commands::Run` before Ratatui alternate-screen takeover so any `NameCollision` prompt reaches a real tty.
 
 ## `src/state/` module structure
-`src/state.rs` restructured into `src/state/` with `phase.rs`, `backlog/` (schema, yaml_io, parse_md, verbs, mod), and `migrate.rs`. New state areas follow this layout.
+`src/state.rs` restructured into `src/state/` with `phase.rs`, `backlog/` (schema, yaml_io, parse_md, verbs, mod), `memory/` (schema, yaml_io, parse_md, verbs, mod), and `migrate.rs`. New state areas follow this layout.
 
 ## `find_task` centralises backlog id-lookup
 `find_task` in `src/state/backlog/verbs.rs` is the single resolution point for task-id lookup; all mutation verbs call it. Do not duplicate id-lookup logic.
@@ -186,5 +192,5 @@ Called in `Commands::Run` before Ratatui alternate-screen takeover so any `NameC
 ## `split_into_task_blocks` splits on `### ` headings
 `split_into_task_blocks` uses `### ` heading boundaries, not `\n---`; `\n---` incorrectly fragments `[HANDOFF]` blocks appended to task bodies. See: `Task blocks delimited by \n--- separator`.
 
-## `dispatch_state` and `dispatch_backlog` route state subcommands
-`main.rs` routes `ravel-lite state` via `dispatch_state`, which delegates backlog subcommands to `dispatch_backlog`. New state areas extend `dispatch_state`; new backlog verbs extend `dispatch_backlog`.
+## `dispatch_state` routes state subcommands
+`main.rs` routes `ravel-lite state` via `dispatch_state`, which delegates to `dispatch_backlog` or `dispatch_memory`. New state areas extend `dispatch_state`; new area verbs extend their own dispatcher.
