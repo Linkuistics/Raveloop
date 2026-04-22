@@ -33,41 +33,219 @@ tasks:
 - id: r7-2-proposalsfile-and-proposalrecord-schemas
   title: R7.2 — ProposalsFile and ProposalRecord schemas
   category: enhancement
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Extend `src/discover/schema.rs` with `ProposalsFile`, `ProposalRecord`, and `Stage1Failure` types (the Stage 2 output schema that `apply` reads). See `docs/r7-related-projects-discovery-plan.md` § Task 2. Ends with a round-trip YAML test.
+  results: |
+    Extended `src/discover/schema.rs` with Stage 2 output types per
+    `docs/r7-related-projects-discovery-plan.md` § Task 2.
+
+    **Shipped:**
+    - `PROPOSALS_SCHEMA_VERSION: u32 = 1` constant.
+    - `ProposalsFile { schema_version, generated_at, source_tree_shas:
+      BTreeMap<String,String>, proposals: Vec<ProposalRecord>, failures:
+      Vec<Stage1Failure> }` — three collection fields carry `#[serde(default)]`
+      for tolerance to omitted LLM output.
+    - `ProposalRecord { kind: EdgeKind, participants, rationale,
+      supporting_surface_fields }`. `EdgeKind` is re-used from
+      `src/related_projects.rs` so proposals emit/parse as the already-defined
+      `sibling` / `parent-of` kebab-case tags.
+    - `Stage1Failure { project, error }` for per-project failure pass-through
+      from Stage 1 into the Stage 2 proposals file.
+    - Round-trip YAML test `proposals_file_round_trips_via_yaml`.
+
+    Imports hoisted to the top of the file (std → external → local), keeping
+    rustfmt StdExternalCrate grouping.
+
+    **Verification:** `cargo test --lib discover::schema` → 3 passed (baseline
+    2 pre-existing + 1 new).
+
+    **What this suggests next:** Task 2 of 12 is the proposals-file schema that
+    Task 7 (Stage 2 orchestration) and Task 9 (apply) both consume — both
+    tasks can now proceed in terms of type availability. Task 9 only depends
+    on Task 2 and is orthogonal to Stages 1/2, so it is now fully unblocked
+    as an option for a parallel thread.
 - id: r7-3-tree-sha-helper-with-dirty-tree-check
   title: R7.3 — Tree-SHA helper with dirty-tree check
   category: enhancement
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Create `src/discover/tree_sha.rs::compute_project_tree_sha(project_path)`. Handles top-level repos and monorepo subtrees uniformly via `git rev-parse HEAD:<rel-path>`. Bails on non-git or dirty subtree with actionable errors. See `docs/r7-related-projects-discovery-plan.md` § Task 3.
+  results: |
+    Created `src/discover/tree_sha.rs` per
+    `docs/r7-related-projects-discovery-plan.md` § Task 3. Registered in
+    `src/discover/mod.rs`.
+
+    **Shipped:**
+    - `pub fn compute_project_tree_sha(project_path: &Path) -> Result<String>`.
+    - Internal helpers `repo_toplevel`, `ensure_clean_subtree`.
+    - Semantics: subtree-scoped via `git rev-parse HEAD:<rel>` (empty rel →
+      `HEAD^{tree}`). Bails with actionable messages on non-git
+      (`"initialise with `git init`"`) or dirty subtree (prints the
+      porcelain status).
+    - 5 tests covering: top-level repo yields a 40-hex SHA; monorepo
+      subtrees have distinct SHAs; sibling-only change leaves other
+      subtree's SHA stable (core cache-key property); non-git bails with
+      actionable message; dirty subtree bails.
+
+    **Deviation from the plan's literal code — deliberate, worth recording
+    in memory:** On macOS, `TempDir::new()` returns paths under
+    `/var/folders/...` while `git rev-parse --show-toplevel` canonicalises
+    through the `/var → /private/var` symlink, so the plan's raw
+    `strip_prefix(&toplevel)` returns `"prefix not found"` even for a true
+    top-level repo. Added `std::fs::canonicalize(project_path)` before the
+    strip_prefix. This is not a test hack — catalog paths in real use may
+    also contain symlinks, and eager canonicalisation is the correct
+    production behaviour. The spec's semantics are preserved: empty `rel`
+    → `HEAD^{tree}`, non-empty → `HEAD:<rel>`, same error messages.
+
+    **Verification:** `cargo test --lib discover::tree_sha` → 5 passed.
+    Full lib suite → 395 passed; clippy `-D warnings` clean.
+
+    **What this suggests next:** the plan doc's Task 3 code drop-in should
+    be annotated with the canonicalize fix so the next person copying it
+    doesn't hit the same macOS surprise. Capture in triage.
 - id: r7-4-per-project-cache-read-and-write
   title: R7.4 — Per-project cache read and write
   category: enhancement
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Create `src/discover/cache.rs` with atomic tmp-then-rename writes to `<config-dir>/discover-cache/<name>.yaml`. Matches `src/related_projects.rs::save_atomic` pattern. See `docs/r7-related-projects-discovery-plan.md` § Task 4.
+  results: |
+    Created `src/discover/cache.rs` per
+    `docs/r7-related-projects-discovery-plan.md` § Task 4. Registered in
+    `src/discover/mod.rs`.
+
+    **Shipped:**
+    - `CACHE_DIR = "discover-cache"`; `cache_dir(config_root)` and
+      `cache_path(config_root, name)` helpers.
+    - `load(config_root, name) -> Result<Option<SurfaceFile>>` — `None` when
+      file absent; parse failure or schema-version mismatch is a hard error
+      with an actionable message ("delete the cache file to force
+      re-analysis").
+    - `save_atomic(config_root, &SurfaceFile)` — lazily creates
+      `<config-dir>/discover-cache/`, writes to
+      `<name>.tmp` then `rename()`s to `<name>.yaml`. Matches the pattern
+      used by `src/related_projects.rs::save_atomic`.
+    - `rename(config_root, old, new)` — moves the cache file; silently
+      succeeds when source absent (renaming a never-analysed project is
+      legitimate). Called by R7.5.
+    - 6 tests covering load-absent, save/load round-trip, lazy dir creation,
+      schema-version rejection, rename-moves-file (documents the stale
+      on-disk `project` field post-rename — tolerated by design), and
+      rename-silent-no-op.
+
+    **Verification:** `cargo test --lib discover::cache` → 6 passed.
+
+    **What this suggests next:** R7.5 (`projects::run_rename` cascade into
+    cache dir) is now fully unblocked and mechanically small — it just
+    threads `discover::cache::rename()` into the existing rename cascade in
+    `src/projects.rs`. R7.6 (Stage 1 orchestration) is also unblocked now
+    that both R7.3 (tree_sha) and R7.4 (cache) are landed.
 - id: r7-5-extend-projects-rename-cascade-into-cache-dir
   title: R7.5 — Extend projects rename cascade into cache dir
   category: enhancement
-  status: not_started
+  status: done
   dependencies:
   - r7-4-per-project-cache-read-and-write
   description: |
     Extend `src/projects.rs::run_rename` so a catalog rename now cascades into three places: the catalog itself, `related-projects.yaml`, and `<config-dir>/discover-cache/<name>.yaml`. See `docs/r7-related-projects-discovery-plan.md` § Task 5.
+  results: |
+    Extended `src/projects.rs::run_rename` to cascade into
+    `<config-dir>/discover-cache/<name>.yaml`, completing the three-place
+    cascade: catalog → related-projects.yaml → discover-cache.
+
+    **Shipped:**
+    - `run_rename` now calls `crate::discover::cache::rename(config_root, old, new)` after the `related_projects::rename_project_in_edges` call.
+    - Two new tests in `projects::tests`:
+      - `run_rename_cascades_into_discover_cache` — seeds a cache file under `OldName`, renames to `NewName`, asserts the old path is gone and the new path loads.
+      - `run_rename_cascade_is_noop_when_no_cache_file` — confirms renaming a project without a cache file does not create the cache dir.
+
+    **Test signature deviation from plan spec:** The plan's sample test called
+    `run_add(&cfg, "OldName", &project)` but the real signature is
+    `run_add(&cfg, name: Option<&str>, path: &Path)`. Used `Some("OldName")`.
+
+    **Downstream effect — disclosed under R7.6:** this edit introduced
+    `crate::discover::cache::rename` into `src/projects.rs`, which is
+    declared in both `src/lib.rs` and `src/main.rs`. The binary crate's
+    module tree previously did not declare `mod discover;`, causing
+    `unresolved import` in the binary compilation. This is fixed (and
+    flagged) as part of R7.6's subagent work by adding a gated
+    `#[allow(dead_code)] mod discover;` to `main.rs`. The allow will be
+    removed once R7.10 wires CLI subcommands through discover.
+
+    **Verification:** `cargo test --lib projects` → 53 passed (51 baseline + 2 new).
+
+    **What this suggests next:** mechanical rename cascades are now
+    complete for all three user-visible project-name surfaces. Future
+    surfaces (survey state, dream state) would need similar cascade
+    threading; consider a Trait-based cascade registry if a third surface
+    is added.
 - id: r7-6-stage-1-orchestration-and-prompt-template
   title: R7.6 — Stage 1 orchestration and prompt template
   category: enhancement
-  status: not_started
+  status: done
   dependencies:
   - r7-3-tree-sha-helper-with-dirty-tree-check
   - r7-4-per-project-cache-read-and-write
   description: |
     Create `defaults/discover-stage1.md` and `src/discover/stage1.rs`. Given config root + catalog, determine cache misses, spawn bounded-parallel subagents (semaphore, default 4), inject identity fields, write caches, return full surface set for Stage 2. Register prompt in `src/init.rs`. See `docs/r7-related-projects-discovery-plan.md` § Task 6.
+  results: |
+    Implemented Stage 1 orchestration + prompt template per
+    `docs/r7-related-projects-discovery-plan.md` § Task 6.
+
+    **Shipped:**
+    - `defaults/discover-stage1.md` — Stage 1 prompt template verbatim.
+    - `src/discover/stage1.rs` — `run_stage1`, `Stage1Config`,
+      `Stage1Outcome`, `DEFAULT_STAGE1_TIMEOUT_SECS`, plus `process_project`,
+      `spawn_claude_with_cwd`, and a 30-line `format_unix_utc` /
+      `current_utc_rfc3339` helper.
+    - `src/discover/mod.rs` — `pub mod stage1;` added (alphabetical between
+      schema and tree_sha).
+    - `src/init.rs` — `discover-stage1.md` registered as an `EmbeddedFile`.
+    - `src/main.rs` — `#[allow(dead_code)] mod discover;` added so the
+      binary crate resolves `crate::discover::cache::rename` introduced by
+      R7.5 (see R7.5 results for discussion). The allow attribute will be
+      removed when R7.10 wires CLI plumbing through discover.
+
+    **Deliberate deviations from the plan's literal code (flagged by subagent):**
+
+    1. **Did not add `chrono` dependency.** Rolled a tested proleptic-Gregorian
+       `format_unix_utc` instead. Rationale: `analysed_at` is informational
+       only (never parsed back), so pulling in a date/time crate for a
+       format-only use is disproportionate. Boundary cases tested
+       (1970-01-01, 2000-01-01, 2024-02-29 leap).
+    2. **Used Result-valued match rather than `.expect` on `acquire_owned`.**
+       Per `coding-style-rust.md` "avoid `unwrap`/`expect` in production
+       code" — semaphore-closed surfaces as a `Stage1Failure` rather than
+       panicking.
+    3. **Did not stub `defaults/discover-stage2.md`.** Plan's Step 2
+       suggested registering stage2 now to satisfy a drift test; but the
+       only drift test in `src/init.rs` is
+       `every_default_coding_style_file_is_embedded`, which is scoped to
+       `defaults/fixed-memory/coding-style-*.md` only. No generic
+       `defaults/*` drift test exists. R7.7 will handle stage2 properly.
+    4. **Inlined `init_repo_with_readme` test helper** rather than hoisting
+       `tree_sha::tests::init_repo_with_readme` to `pub(crate)`. Narrow
+       test-module duplication (~6 lines) beats cross-module test coupling.
+       Worth remembering if a third git-test helper appears — then extract
+       to a shared `test_support` module.
+
+    **Verification:** `cargo test --lib discover::stage1` → 2 passed (the
+    extra test covers the in-house RFC-3339 helper). Full `cargo test --lib`
+    → 399 passed (397 baseline + 2 new). `cargo clippy --lib --tests -D
+    warnings` → clean.
+
+    **What this suggests next:** R7.7 (Stage 2 prompt + orchestration) is
+    now unblocked. R7.7 should include the `defaults/discover-stage2.md`
+    file the subagent deferred. R7.8 (top-level `run_discover`) becomes
+    mostly glue once R7.7 lands. Also worth capturing in memory: the
+    discover module's shape — per-stage submodule with `run_<stage>`
+    entrypoint, Config struct, and Outcome enum — is a useful reusable
+    template for future multi-stage LLM pipelines.
 - id: r7-7-stage-2-orchestration-and-prompt-template
   title: R7.7 — Stage 2 orchestration and prompt template
   category: enhancement
