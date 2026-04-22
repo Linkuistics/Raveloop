@@ -26,57 +26,6 @@ govern this implementation.
 
 ---
 
-### R4 — Implement `state projects` catalog + auto-add on `ravel-lite run`
-
-**Category:** `enhancement`
-**Status:** `done`
-**Dependencies:** none
-
-**Description:**
-
-Global `../ravel-lite-config/projects.yaml` catalog mapping project names to
-absolute paths. CLI: `state projects list / add / remove / rename`. Auto-add
-hook in `ravel-lite run` that registers a new project under its directory
-basename on first invocation (collision → explicit-name prompt).
-
-This is independent of R1–R3 and can proceed in parallel with them.
-
-**Results:**
-
-New `src/projects.rs` module defines `ProjectsCatalog { schema_version: 1,
-projects: [{name, path}] }` with `load_or_empty` + atomic `save_atomic` (tmp
-+ rename, mirrors `state::atomic_write`). Core decision logic is pure:
-`auto_add(&mut catalog, &path) -> AutoAddOutcome` returns `AlreadyCatalogued`
-/ `Added` / `NameCollision`; I/O + prompting live in
-`ensure_in_catalog_interactive` (generic over `Read + Write` so tests drive
-it with `Cursor`).
-
-CLI: `ravel-lite state projects list|add|remove|rename`, each taking
-`--config` matching the existing run/survey precedence chain. `add` refuses
-relative paths (catalog is anchored; a relative path resolves differently
-from different CWDs). `rename` is scoped to the catalog file only — the
-related-projects cascade is R5's job.
-
-Auto-add hook: `register_projects_from_plan_dirs` in `main.rs` runs inside
-`Commands::Run` before the TUI starts. Collects distinct projects via
-`project_root_for_plan`, prompts on stderr/stdin on basename collision
-(blank input aborts with an actionable error pointing at
-`state projects add --name <n>`). Keeping this in main.rs keeps the prompt
-on real stdin before Ratatui's alternate-screen takeover.
-
-Coverage: 18 unit tests in the module (round-trip, schema-version reject,
-collision handling, CLI handler behaviour, interactive prompt success +
-abort paths) and 2 CLI-binary integration tests (`add → list → rename →
-remove` round-trip; relative-path rejection). Full test suite 238+27 green;
-`cargo clippy --all-targets -- -D warnings` clean.
-
-Suggests next: R5 (`state related-projects` edge list + `migrate-related-projects`)
-is now unblocked — the catalog exists so edge-list name resolution has a target.
-R5's `rename` cascade will extend `projects::run_rename` to also rewrite
-edges in `related-projects.yaml`.
-
----
-
 ### R2 — Implement structured `state memory` verb surface + memory migration
 
 **Category:** `enhancement`
@@ -114,7 +63,7 @@ to `session-log.yaml`'s `sessions:` list with session-id idempotency. Extends
 
 **Category:** `enhancement`
 **Status:** `not_started`
-**Dependencies:** R4 (catalog must exist to resolve names ↔ paths)
+**Dependencies:** R4 (done — catalog exists; names ↔ paths resolution is now available)
 
 **Description:**
 
