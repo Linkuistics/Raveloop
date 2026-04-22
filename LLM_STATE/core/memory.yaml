@@ -330,7 +330,7 @@ entries:
 - id: multi-stage-llm-pipeline-uses-run-config-outcome-submodule-shape
   title: Multi-stage LLM pipeline uses run/Config/Outcome submodule shape
   body: |
-    Each stage in `src/discover/` exposes `run_<stage>`, `<Stage>Config`, and `<Stage>Outcome`. This is the reusable template for adding new stages to multi-stage LLM pipelines in this codebase.
+    Each stage in `src/discover/` exposes `run_<stage>`, `<Stage>Config`, and `<Stage>Outcome`. Internal shape: `Config` → `pub async run` fn → helper `spawn` fn → unit tests. Stages mirror each other structurally; reviewers can navigate a new stage immediately. This is the reusable template for adding new stages to multi-stage LLM pipelines in this codebase.
 - id: rename-cascade-registry-design-consideration
   title: Rename cascade registry design consideration
   body: |
@@ -345,3 +345,15 @@ entries:
     **Why:** R7.5 completed the third cascade point. The R7.5 author noted that a Trait-based registry is warranted if a third surface is added — that threshold is now met.
 
     **How to apply:** Before adding any new rename cascade point, evaluate whether to introduce a `RenameHook` trait (or similar) and register all cascade handlers at startup. Three cascade points in `run_rename` is already approaching the boundary where manual threading becomes error-prone.
+- id: find-conflicting-kind-misses-parent-of-direction-reversals
+  title: find_conflicting_kind misses parent-of direction reversals
+  body: |
+    `parent-of(A,B)` and `parent-of(B,A)` are not flagged as conflicts; both have `kind == ParentOf`, so the kind-mismatch filter passes them through. A dedicated directional check is needed. Tracked as a backlog task.
+- id: discover-e2e-uses-a-fake-claude-bash-shim-per-stage
+  title: Discover e2e uses a fake-claude bash shim per stage
+  body: |
+    Discover e2e tests use a fake-claude bash shim. The shim distinguishes Stage1 vs Stage2 invocations by grepping the prompt header; extracts the injected YAML surface-file path from the prompt body; writes a canned YAML response matching the expected schema. Pattern for testing multi-stage discover pipelines without a live model.
+- id: sharedconfig-headroom-has-no-serde-default-tests-must-supply-it
+  title: SharedConfig.headroom has no serde default; tests must supply it
+  body: |
+    `SharedConfig` has no `#[serde(default)]` on the `headroom: usize` field. Minimal config YAML snippets in e2e tests must include `headroom: <usize>` or deserialization fails.
