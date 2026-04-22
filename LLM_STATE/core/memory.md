@@ -164,3 +164,15 @@ Any plan-state migration tool must apply changes atomically, be safe to re-run (
 
 ## Structured plan-state design at `docs/structured-plan-state-design.md`
 Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. See also: R1 implementation plan at `docs/structured-backlog-r1-plan.md` (13-task TDD-by-task, covers `state backlog` verb surface and backlog-scoped migrate).
+
+## `src/projects.rs` holds `ProjectsCatalog`
+`ProjectsCatalog` (schema_version 1) maps project names to absolute paths. `auto_add` is pure and returns `AlreadyCatalogued`/`Added`/`NameCollision`. `ensure_in_catalog_interactive` is generic over `Read + Write`. Atomic save.
+
+## `state projects add` rejects relative paths
+`add` enforces absolute paths; relative paths resolve differently from different CWDs, so the catalog is path-anchored. Rejection is a hard error at CLI entry.
+
+## `state projects rename` is catalog-only
+`rename` updates the catalog name only. Cascade into `related-projects.yaml` is deferred to R5.
+
+## `register_projects_from_plan_dirs` runs before TUI startup
+Called in `Commands::Run` before Ratatui alternate-screen takeover so any `NameCollision` prompt reaches a real tty.
