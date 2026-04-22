@@ -30,59 +30,6 @@ tasks:
     trivial (27-line deletion, produced by a subagent, reverted via `git checkout`)
     but the TUI verification step cannot be done by a subagent (no tty) and was
     not done by a human.
-- id: apply-layer-directional-conflict-check-for-parent-of-reversals
-  title: Apply-layer directional conflict check for parent-of reversals
-  category: enhancement
-  status: done
-  dependencies: []
-  description: |
-    Discovered during R7.9 code-quality review. `find_conflicting_kind` in `src/discover/apply.rs` detects sibling-vs-parent-of conflicts on the same unordered pair, but does NOT catch `parent-of(A,B)` vs a proposed `parent-of(B,A)`. Both have `kind == ParentOf`, so the `kind != proposed.kind` filter lets the proposal through. `add_edge`'s canonical key for ParentOf preserves insertion order (direction is semantic), so both edges coexist — a contradictory graph state where A is parent of B and B is parent of A.
-
-    **Decision:** Treat reversed ParentOf edges as a directional conflict, not a duplicate. The fix is ~3 lines in `find_conflicting_kind`: when `existing.kind == ParentOf && proposed.kind == ParentOf` and the sorted (unordered) pair matches but the raw (ordered) pair differs, return the existing edge as a conflict.
-
-    **Reference:** `src/discover/apply.rs` — `find_conflicting_kind` function (written in R7.9, session 19). The existing kind-mismatch branch handles all non-ParentOf cases correctly; only the ParentOf-vs-reversed-ParentOf case leaks through.
-
-    **Dependencies:** None. Standalone fix inside `apply.rs`; no schema changes needed.
-  results: |
-    ## What was done
-
-    Fixed the directional-conflict hole in `find_conflicting_kind` (`src/discover/apply.rs`) identified during R7.9 code review. The existing filter `e.kind != proposed.kind` let through a same-kind `ParentOf` edge with reversed participants, so `parent-of(A,B)` + proposed `parent-of(B,A)` would both land in the edge list — a contradictory graph state (A parent of B *and* B parent of A).
-
-    **Code change** (3 lines in the filter predicate plus a broader doc comment):
-
-    ```rust
-    ev == pair_sorted
-        && (e.kind != proposed.kind
-            || (e.kind == EdgeKind::ParentOf
-                && e.participants != proposed.participants))
-    ```
-
-    Also extended the `run_discover_apply` conflict log line to include `existing.participants`, so a reversed-parent-of conflict is printed readably (previously it would say `proposed ParentOf … but existing ParentOf blocks it` with no direction info). Imported `EdgeKind` into the module to keep the predicate concise.
-
-    ## Verification
-
-    TDD cycle followed. Two new tests in `apply.rs`:
-
-    1. `apply_rejects_reversed_parent_of_as_conflict` — the RED test: seeds `parent-of(A,B)`, proposes `parent-of(B,A)`, asserts `added == 0`, `kind_conflicts.len() == 1`, and only the original edge survives on disk. Confirmed failing against pre-fix code (it reported `added == 1`), passing after the fix.
-    2. `apply_treats_duplicate_parent_of_as_already_present` — the negative control: an exact-duplicate `parent-of(A,B)` must still be routed through `add_edge` as `already_present` (not a conflict). Green both before and after the fix — guards against the predicate being written too aggressively.
-
-    Full test suite: **406 lib tests + all integration suites pass, 0 failures**. Clippy clean on `--lib --tests`.
-
-    ## What worked
-
-    - The ~3-line-fix estimate from the backlog entry was accurate — the bug was precisely a missing OR-branch in the existing predicate. No schema change, no new data structure, no API change. `EdgeKind` was already available through the `related_projects` module.
-    - TDD cycle: RED test reproduced the bug first try with a clear assertion (`added == 1` vs expected 0). Pairing it with a negative-control test caught a whole class of over-fitting I might otherwise have missed.
-    - Log-line improvement was a cheap quality-of-life add — without `existing.participants` in the output, a user hitting this conflict in production would see a message that looked self-contradictory.
-
-    ## What didn't / considerations
-
-    - The function name `find_conflicting_kind` is slightly misleading now that it also flags same-kind reversed parent-of. I left it as-is because the task spec explicitly said "~3 lines in `find_conflicting_kind`" (i.e. keep it local), and reframing the name as "find conflict of any edge-kind policy" keeps the semantics sensible. If a future task broadens the conflict policy further, a rename (and possibly a rename of `KindConflict` struct) would be worth picking up.
-    - The fix is purely in the apply layer — `RelatedProjectsFile::add_edge`'s canonical key remains order-preserving for `ParentOf`, because direction-as-identity is the correct schema-level invariant. Pushing this policy down into `add_edge` would conflate schema-level uniqueness with apply-level policy.
-
-    ## What this suggests next
-
-    - No immediate follow-up on this code path. The backlog item was standalone and is closed.
-    - The two remaining backlog items (claude-code `--debug-file` removal, live smoke-test of discover pipeline) both require human-at-tty verification. Mentioned for triage awareness — they are the logical next candidates once a human is available at the keyboard.
 - id: smoke-test-discover-pipeline-against-real-project-catalog
   title: Smoke-test discover pipeline against real project catalog
   category: validation
