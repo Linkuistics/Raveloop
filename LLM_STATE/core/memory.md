@@ -36,6 +36,9 @@ Replacing `Option<FormattedOutput>` with an enum makes `valid but no display` an
 ## Phase contract test validates per-phase file writes
 `phase_contract_round_trip_writes_expected_files` runs `phase_loop` from `analyse-work` via `ContractMockAgent`; 6 assertions cover latest-session.md, commit-message.md consumed, memory.md updated, backlog.md updated, phase.md ends at `work`, and git log subjects.
 
+## `{{TOOL_READ}}` token scoped to `work.md` only
+Headless phases (analyse-work, reflect, dream) must not include `{{TOOL_READ}}`; an unresolved token in a headless phase fails integration tests.
+
 ## `substitute_tokens` expands content macros before path tokens
 RELATED_PLANS and custom tokens expand first; atomic path tokens ({{DEV_ROOT}} etc.) expand second. Reversing the order causes fatal errors when RELATED_PLANS content itself contains path tokens.
 
@@ -78,8 +81,8 @@ Use `tokio::time::sleep` for tty event polling. A `spawn_blocking` thread is not
 ## Claude Code TUI requires `--debug-file` workaround for ≤2.1.116
 `invoke_interactive` in `src/agent/claude_code.rs` passes `--debug-file /tmp/claude-debug.log`; debug mode masks a TUI rendering failure via an unknown upstream mechanism. Root cause not found. Remove both `args.push` lines when claude is updated past 2.1.116.
 
-## Phase prompts invoke `ravel-lite state set-phase`
-All 5 `defaults/phases/*.md` prompts use `ravel-lite state set-phase <plan-dir> <phase>` to transition phase. Direct writes to `phase.md` bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` also refuses to create a plan dir that does not already exist.
+## Phase prompts use `ravel-lite state` CLI verbs
+All `defaults/phases/*.md` and `create-plan.md` use `ravel-lite state <verb>` for plan-state operations (R6 complete). Direct writes to plan-state files bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` refuses to create a plan dir that does not already exist.
 
 ## CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
 `tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
@@ -159,8 +162,8 @@ Implemented in `src/related_projects.rs`. Edge kinds: `sibling` and `parent-of`.
 ## Sibling edges dedup by sorted participants; parent-of by order
 In `src/related_projects.rs`, sibling edge identity is order-insensitive (participants sorted before dedup); parent-of edge identity preserves participant order. Reversing this rule silently creates duplicate or missing edges.
 
-## `.yaml` plan-state files are preview data until R6
-Phase prompts still read and write `.md` files; `.yaml` files produced by `state migrate` are frozen at migration-time and diverge as `.md` changes. R6 must re-migrate (with `--force --delete-originals`) before rewriting phase prompts to use CLI verbs. R1 (`state backlog` and `state migrate`), R2 (`state memory`), R3 (`state session-log`), R4 (`state projects`), and R5 (`state related-projects`) are complete.
+## Four Rust readers bypass plan-state CLI
+`src/dream.rs`, `src/survey/discover.rs`, `src/multi_plan.rs`, and `src/main.rs` still read `.md` plan-state files directly; `--delete-originals` was deferred until R8 migrates these readers and can atomically delete `.md` originals.
 
 ## `state migrate` takes `PLAN_DIR` as positional argument
 `--plan-dir` is not a valid flag; the CLI expects `PLAN_DIR` positionally. Correct usage: `ravel-lite state migrate <PLAN_DIR>`. Task deliverable documentation incorrectly described it as `--plan-dir`.
@@ -175,7 +178,7 @@ Any plan-state migration tool must apply changes atomically, be safe to re-run (
 `parse_md.rs` in `state::memory` splits on `^## ` (not `### ` as backlog uses). An entry with an empty body after the heading is a parse error, not silently skipped. See: `split_into_task_blocks splits on ### headings`.
 
 ## Structured plan-state design at `docs/structured-plan-state-design.md`
-Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1–R5 complete. See: `.yaml plan-state files are preview data until R6`.
+Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1–R6 complete. See: `Four Rust readers bypass plan-state CLI`.
 
 ## `src/projects.rs` holds `ProjectsCatalog`
 `ProjectsCatalog` (schema_version 1) maps project names to absolute paths. `auto_add` is pure and returns `AlreadyCatalogued`/`Added`/`NameCollision`. `ensure_in_catalog_interactive` is generic over `Read + Write`. Atomic save.
@@ -183,8 +186,8 @@ Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1–R5 compl
 ## `state projects add` rejects relative paths
 `add` enforces absolute paths; relative paths resolve differently from different CWDs, so the catalog is path-anchored. Rejection is a hard error at CLI entry.
 
-## `state projects rename` is catalog-only
-`rename` updates the catalog name only. Cascade into `related-projects.yaml` is deferred to R6.
+## `state projects rename` cascades into `related-projects.yaml`
+`rename` updates the catalog name and cascades via `rename_project_in_edges` in `src/related_projects.rs`.
 
 ## `register_projects_from_plan_dirs` runs before TUI startup
 Called in `Commands::Run` before Ratatui alternate-screen takeover so any `NameCollision` prompt reaches a real tty.
