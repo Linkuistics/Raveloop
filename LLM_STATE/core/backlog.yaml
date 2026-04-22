@@ -30,102 +30,6 @@ tasks:
     trivial (27-line deletion, produced by a subagent, reverted via `git checkout`)
     but the TUI verification step cannot be done by a subagent (no tty) and was
     not done by a human.
-- id: r7-7-stage-2-orchestration-and-prompt-template
-  title: R7.7 — Stage 2 orchestration and prompt template
-  category: enhancement
-  status: done
-  dependencies: []
-  description: |
-    Create `defaults/discover-stage2.md` and `src/discover/stage2.rs`. Take Stage 1 surfaces + catalog, compose single prompt, invoke `claude -p`, parse proposal YAML, return `ProposalsFile`. Stage 1 failures pass through into `proposals.failures`. See `docs/r7-related-projects-discovery-plan.md` § Task 7.
-  results: |
-    Created `defaults/discover-stage2.md` (Stage 2 prompt template with `{{PROPOSALS_OUTPUT_PATH}}` and `{{SURFACE_RECORDS_YAML}}` placeholders) and `src/discover/stage2.rs` (~150 LOC: `Stage2Config`, `run_stage2`, `render_surfaces_for_prompt`, `spawn_claude_for_stage2`, `DEFAULT_STAGE2_TIMEOUT_SECS = 300`). Registered `pub mod stage2;` in `src/discover/mod.rs`.
-
-    **What worked:** Spec code was near-verbatim copyable; module shape mirrors `stage1.rs` (Config → pub async run fn → helper spawn fn → tests). The injection boundary is preserved — `RawStage2Output` accepts only `generated_at` + `proposals` from the LLM; `schema_version` and `source_tree_shas` are injected post-parse by Rust.
-
-    **Review outcomes:** Spec compliant on first pass. Code-quality review flagged three Important items, all fixed: (I-1) pre-spawn tmp-file cleanup now wrapped with `with_context`, matching stage1.rs convention; (I-2) post-run `read_to_string` also wrapped with context; (I-3) the unit test was deepened from a single-surface substring-match to a two-surface structural round-trip that asserts order and wrapper-key shape.
-
-    **Suggests next:** R7.8 (already landed in this session). The `spawn_claude_*` duplication between stage1 and stage2 is tolerable at two copies; if R7.x adds a third, extract.
-- id: r7-8-top-level-run-discover-orchestrator-with-proposals-writeback
-  title: R7.8 — Top-level run-discover orchestrator with proposals writeback
-  category: enhancement
-  status: done
-  dependencies:
-  - r7-7-stage-2-orchestration-and-prompt-template
-  description: |
-    Tie Stage 1 + Stage 2 into `run_discover(config_root, project_filter, concurrency, apply)`. Writes `<config-dir>/discover-proposals.yaml`. See `docs/r7-related-projects-discovery-plan.md` § Task 8.
-  results: |
-    Expanded `src/discover/mod.rs` with the top-level orchestrator:
-    - `RunDiscoverOptions { project_filter, concurrency, apply }` and `pub async fn run_discover(config_root, options)` gluing Stage 1 → Stage 2.
-    - `save_proposals_atomic`, `load_proposals`, `proposals_path` file I/O for `<config-dir>/discover-proposals.yaml` (tmp-then-rename; schema_version-guarded on load).
-    - Constants: `PROPOSALS_FILE = "discover-proposals.yaml"`, `DEFAULT_CONCURRENCY = 4`, `DEFAULT_DISCOVER_MODEL = "claude-sonnet-4-6"`.
-    - Private `load_prompt` helper (raw `read_to_string`, no token substitution — the plan-time note on `substitute_tokens` was resolved in favour of raw read).
-    - One round-trip test: `save_then_load_proposals_round_trips`.
-
-    Also added a minimal R7.9-deferred stub at `src/discover/apply.rs` so `apply::run_discover_apply` resolves at compile time; R7.9 replaced it in full.
-
-    **Plan-time resolution worth recording:** `src/prompt.rs::substitute_tokens` hard-errors on any unresolved `{{NAME}}`. It only knows phase-prompt tokens driven by `PlanContext`. Discover prompts use module-private tokens (`{{PROPOSALS_OUTPUT_PATH}}`, `{{SURFACE_RECORDS_YAML}}`, `{{SURFACE_OUTPUT_PATH}}`) not in that vocabulary, so routing through it would hard-error. The local raw-read + per-stage `.replace()` pattern established by Stage 1 is the right choice.
-
-    **Review outcomes:** Spec-compliant on first pass. Code-quality review: APPROVE with zero required changes. Minor observations (run_discover length near upper bound, eprintln hygiene, late-bail-after-writeback ordering) all judged acceptable as-is.
-
-    **Suggests next:** R7.9, R7.10, R7.11 (all landed in this session).
-- id: r7-9-apply-merge-proposals-into-related-projects-yaml
-  title: R7.9 — Apply merge proposals into related-projects yaml
-  category: enhancement
-  status: done
-  dependencies: []
-  description: |
-    Create `src/discover/apply.rs`. Read `discover-proposals.yaml`, merge each proposed edge via `RelatedProjectsFile::add_edge`, report and reject kind-conflicts without aborting. See `docs/r7-related-projects-discovery-plan.md` § Task 9.
-  results: |
-    Replaced the R7.8 stub at `src/discover/apply.rs` with the real apply logic: `ApplyReport`, `KindConflict`, `run_discover_apply` (prints tallies + per-conflict lines), `apply_proposals` (validates each proposal, runs `find_conflicting_kind`, falls through to `RelatedProjectsFile::add_edge`, tallies added/already-present/kind-conflicts). `save_atomic` is gated on `added > 0` so no-op reruns don't churn the file. Three unit tests cover: fresh add, idempotency across two apply runs, kind-conflict rejection with "continues" (non-conflicting proposal in the same batch still lands).
-
-    **What worked:** `find_conflicting_kind` returns `Option<&'a Edge>` by reference so no surplus clones until the caller records a conflict. Idempotency is end-to-end — the second-run test re-reads the on-disk file, not just the in-memory report.
-
-    **Review outcomes:** Spec-compliant on first pass. Code-quality review surfaced one real spec gap worth propagating (not a deviation from the plan):
-
-    **Spec gap discovered (recommend promoting to backlog):** `find_conflicting_kind` flags sibling-vs-parent-of conflicts on the same unordered pair, but does NOT flag `parent-of(A,B)` vs proposed `parent-of(B,A)`. Both have kind == ParentOf, so the `kind != proposed.kind` filter lets the proposal through. `add_edge`'s canonical key for ParentOf preserves order (by design — direction is semantic), so both edges coexist — a contradictory graph state (A is parent of B and B is parent of A). The plan's apply-layer policy is silent on this case. Fix would be ~3 lines in `find_conflicting_kind`: when kinds are both ParentOf and sorted pairs match but raw pairs differ, treat as directional conflict.
-
-    **Suggests next:** R7.10 (CLI wiring) — landed in this session. A new backlog task: "apply-layer directional conflict check for parent-of reversals".
-- id: r7-10-cli-wiring-for-discover-and-discover-apply-subcommands
-  title: R7.10 — CLI wiring for discover and discover-apply subcommands
-  category: enhancement
-  status: done
-  dependencies:
-  - r7-8-top-level-run-discover-orchestrator-with-proposals-writeback
-  - r7-9-apply-merge-proposals-into-related-projects-yaml
-  description: |
-    Extend `RelatedProjectsCommands` in `src/main.rs` with `Discover` and `DiscoverApply` variants; route via `dispatch_related_projects`. See `docs/r7-related-projects-discovery-plan.md` § Task 10.
-  results: |
-    Wired `state related-projects discover` and `state related-projects discover-apply` into the CLI via `src/main.rs`.
-
-    **Plan-time fixes applied (note for future similar tasks):**
-    1. Used `crate::discover::...` paths (binary-crate tree) instead of the plan's `ravel_lite::discover::...` (lib-crate tree). `main.rs` consistently routes through its own `crate::` tree — mixing the two was an unnecessary inconsistency.
-    2. Made `dispatch_related_projects` and `dispatch_state` `async fn` rather than using `tokio::runtime::Handle::current().block_on(...)`. The latter panics when called from inside an existing Tokio runtime — which is our exact context under `#[tokio::main] async fn main`. The plan offered both options and preferred async-all-the-way when the chain is already under tokio::main; that's the correct path here. Other sibling dispatchers (`dispatch_backlog`, `dispatch_memory`, `dispatch_session_log`, `dispatch_projects`) remain sync — only the one arm that needs async propagates up.
-    3. Removed `#[allow(dead_code)] mod discover;` from main.rs (with its "suppress until CLI plumbing lands" doc comment). This task IS that plumbing; the attribute's justification no longer applies.
-
-    **Verification:** `cargo build`, `cargo build --release`, `cargo clippy --all-targets` all clean. `state related-projects discover --help` and `discover-apply --help` both exit 0 and document the expected flags.
-
-    **Suggests next:** R7.11 end-to-end integration test (landed in this session).
-- id: r7-11-end-to-end-integration-test-with-fake-claude-shim
-  title: R7.11 — End-to-end integration test with fake-claude shim
-  category: enhancement
-  status: done
-  dependencies:
-  - r7-10-cli-wiring-for-discover-and-discover-apply-subcommands
-  description: |
-    Create `tests/discover.rs` running the real `ravel-lite` binary end-to-end with a fake `claude` on PATH that writes canned surface YAML and canned proposals YAML. Validates cache writes, proposals file contents, and apply behaviour. See `docs/r7-related-projects-discovery-plan.md` § Task 11.
-  results: |
-    Created `tests/discover.rs` — one end-to-end test `discover_writes_proposals_and_apply_merges_them` that exercises the full pipeline through the real `ravel-lite` binary with a fake `claude` bash shim on PATH. The shim inspects the `-p <prompt>` argument, distinguishes Stage 1 vs Stage 2 by the prompt header (`grep 'Extract Interaction Surface'`), extracts the first `.yaml` path from the prompt (the injected output-path placeholder), and writes canned YAML there. Test asserts: proposals file content contains the proposed `parent-of` edge; per-project cache files exist; `discover-apply` merges the proposal into `related-projects.yaml`.
-
-    **Three plan-time fixes applied:**
-    1. **`config.yaml` needs `headroom`.** `SharedConfig` requires both `agent: String` AND `headroom: usize` — neither has a serde default. The plan's `"agent: claude-code\n"` alone would fail deserialization. Test now writes `"agent: claude-code\nheadroom: 0\n"`.
-    2. **`#![cfg(unix)]` inner attribute at top of file.** `std::os::unix::fs::PermissionsExt` is needed to mark the shim executable; the cfg gate keeps the test contained to Unix-like targets rather than failing the build on Windows.
-    3. **Brittleness comment** above `write_fake_claude` documenting that the shim's `grep | head -n1` assumes `{{PROPOSALS_OUTPUT_PATH}}` appears in the Stage 2 prompt before any data paths inlined via `{{SURFACE_RECORDS_YAML}}`. True today because Output-format precedes Input in the template; a future prompt edit that reorders those sections would break the shim.
-
-    **What worked:** Test passed on the first run after the three fixes. Scaffolded monorepo (git-initialised with a clean commit) + catalogued two subtree projects via the real `state projects add` CLI + copied real prompt templates + wrote a minimal valid config → everything Stage 1's `compute_project_tree_sha` and `run_discover`'s config loader needed. No intermediate writes between scaffold and test invocation, so the working tree stayed clean for Stage 1's dirty-tree check.
-
-    **Post-ship state:** 450 total tests across lib + 6 integration binaries, all passing. clippy --all-targets clean.
-
-    **Suggests next:** Follow-up backlog candidates surfaced during this session — (a) apply-layer directional-conflict check for parent-of reversals (from R7.9 review); (b) optional extraction of `spawn_claude_*` helpers if a third stage or module appears (currently two copies — acceptable); (c) a smoke-test run against the real project catalog to exercise the pipeline with a live model, per plan § Task 12 Step 3.
 - id: apply-layer-directional-conflict-check-for-parent-of-reversals
   title: Apply-layer directional conflict check for parent-of reversals
   category: enhancement
@@ -139,3 +43,20 @@ tasks:
     **Reference:** `src/discover/apply.rs` — `find_conflicting_kind` function (written in R7.9, session 19). The existing kind-mismatch branch handles all non-ParentOf cases correctly; only the ParentOf-vs-reversed-ParentOf case leaks through.
 
     **Dependencies:** None. Standalone fix inside `apply.rs`; no schema changes needed.
+- id: smoke-test-discover-pipeline-against-real-project-catalog
+  title: Smoke-test discover pipeline against real project catalog
+  category: validation
+  status: not_started
+  dependencies: []
+  description: |
+    Perform a live end-to-end smoke-test of the `state related-projects discover` + `discover-apply` pipeline against the real project catalog, as specified in `docs/r7-related-projects-discovery-plan.md` § Task 12 Step 3.
+
+    **Steps:**
+    1. Run `ravel-lite state related-projects discover` against the real config root (with the actual `claude` binary).
+    2. Inspect `discover-proposals.yaml` — confirm proposals are structurally valid and semantically plausible.
+    3. Run `ravel-lite state related-projects discover-apply` and confirm `related-projects.yaml` is updated as expected.
+    4. Re-run discover and confirm the cache is hit (no fresh claude invocations for unchanged projects).
+
+    **Why:** Unit and integration tests use a fake-claude shim. This step validates the prompt templates, Stage 1 surface extraction, Stage 2 global reasoning, and apply merge against a live model and real codebase.
+
+    **Cannot be done headlessly** — requires a real `claude` binary on PATH and a populated project catalog. A human must verify the semantic quality of proposals.
