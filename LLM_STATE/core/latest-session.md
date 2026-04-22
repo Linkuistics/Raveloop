@@ -1,15 +1,14 @@
-### Session 10 (2026-04-22T06:14:36Z) — Implement state memory verb surface (R2)
+### Session 11 (2026-04-22T06:46:49Z) — session-log YAML verbs + Rust task-count injection
 
-- Implemented `src/state/memory/` module with `schema.rs` (`MemoryFile { entries: Vec<MemoryEntry { id, title, body }> }` + `#[serde(flatten)] extra`), `yaml_io.rs` (atomic temp-file rename), `parse_md.rs` (strict `^## ` heading splitter, errors on empty-body entries), `verbs.rs` (list/show/add/init/set-body/set-title/delete). `allocate_id` and `slug_from_title` reused from `state::backlog::schema`.
-- Refactored `migrate.rs` from a flat single-path function into a two-phase planner: `plan_backlog_migration` and `plan_memory_migration` each return `Option<PendingMigration>`; the top-level `run_migrate` collects both, errors if the set is empty, then writes all targets only after all parses succeed. Parse failure on either file aborts before any disk write.
-- Wired `MemoryCommands` enum and `dispatch_memory` through `main.rs`; `parse_memory_format` mirrors `parse_output_format`.
-- Added 4 end-to-end CLI integration tests in `tests/state_memory.rs` and 9 lib unit tests in `state::migrate` (both files, idempotency, force, parse-failure atomicity, empty-plan error). Total suite: 342 tests, 0 failures.
-- `cargo run -- state migrate LLM_STATE/core --dry-run` reports 7 records (backlog) + 63 records (memory) — the live core plan migrates cleanly.
-- R2 task was already marked `done` in backlog.md with a full Results block; no safety-net flip required.
+- Implemented R3: `src/state/session_log/` module (schema.rs, yaml_io.rs, parse_md.rs, verbs.rs, mod.rs) providing `SessionRecord` / `SessionLogFile` types, id-based idempotent `append_record`, and full CLI verb surface (`state session-log list/show/append/set-latest/show-latest`).
+- Rewired `phase_loop::append_session_log` to use `session_log::append_latest_to_log`; missing `latest-session.yaml` is a graceful no-op; crash-retry idempotency via session id (strictly stronger than prior tail-string check).
+- Extended `state migrate` with two new `PendingMigration` variants (`SessionLog`, `LatestSession`) via `plan_session_log_migration` / `plan_latest_session_migration`; parse-all-then-write-all invariant preserved. Dry-run against live `LLM_STATE/core/` parsed 7 backlog + 65 memory + 10 sessions + 1 latest cleanly.
+- Implemented "Move per-plan task-count extraction from LLM survey prompt into Rust": added `TaskCounts { total, not_started, in_progress, done, blocked }` to `state::backlog::schema` with `BacklogFile::task_counts()`; wired through `PlanSnapshot.task_counts`, `PlanRow.task_counts`, `inject_task_counts` in `survey/schema.rs`, and both cold and incremental survey invoke paths via `collect_task_counts`. Both `defaults/survey.md` and `defaults/survey-incremental.md` updated to forbid LLM from emitting `task_counts`.
+- Fixed pre-existing `iter_cloned_collect` clippy lint in `backlog/parse_md.rs:227` (replaced with `body_lines.join("\n")`).
+- All 347 lib + 27 integration + 13 CLI tests pass; `clippy --all-targets -- -D warnings` clean.
 
-What worked:
-- The R1 module pattern (schema / yaml_io / parse_md / verbs) transferred directly to memory with minimal adaptation.
-- Two-phase planner (`plan_*` → `PendingMigration` enum) cleanly separates parse from write; extending to R3 session-log adds a third variant with no structural change.
+What worked: additive `task_counts` field on `PlanRow` (rather than replacing LLM-inferred `unblocked`/`blocked`/`done`) preserved backward compatibility — downstream renderers migrate at their leisure. Session-id idempotency for `append_record` is cleaner than tail-string check.
 
-What this suggests next:
-- R3 (`state session-log`) slots straight in: add `plan_session_log_migration` returning a `PendingMigration::SessionLog` variant; the parse-all-then-write-all contract extends without surgery.
+What didn't: no issues encountered; both features shipped as designed.
+
+Suggests next: R5 (global `state related-projects` edge list) is the next unblocked task. Manual migration of `LLM_STATE/core/{session-log,latest-session}.{md→yaml}` is a 1-command step (`ravel-lite state migrate`) safe to run any time.
