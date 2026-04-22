@@ -152,3 +152,15 @@ Lines matching `^\s*→\s*(.*)` immediately after an action marker are re-indent
 
 ## Dream output uses label + `→` continuation format
 `defaults/phases/dream.md` specifies a two-line entry layout (label line + `→ detail` continuation) matching the continuation-line renderer in `format_result_text`.
+
+## `related-plans` stored as global name-indexed edge list
+Project-level (not plan-level) edge list, keyed by plan name. Plans reference each other by name; the global list is shareable across all plans in a project.
+
+## `latest-session.md` redesigned as structured YAML
+The structured plan-state design replaces the prose `latest-session.md` format with structured YAML. R1 implements this change.
+
+## Plan-state migration requires atomicity, idempotency, dry-run, validation
+Any plan-state migration tool must apply changes atomically, be safe to re-run (idempotent), support `--dry-run` preview, and validate round-trip fidelity.
+
+## Structured plan-state design at `docs/structured-plan-state-design.md`
+Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. See also: R1 implementation plan at `docs/structured-backlog-r1-plan.md` (13-task TDD-by-task, covers `state backlog` verb surface and backlog-scoped migrate).
