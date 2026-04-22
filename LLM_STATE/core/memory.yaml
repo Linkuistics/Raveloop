@@ -218,7 +218,7 @@ entries:
 - id: read-related-plans-markdown-centralises-related-plans-md-access
   title: '`read_related_plans_markdown` centralises `related-plans.md` access'
   body: |
-    `src/related_projects.rs::read_related_plans_markdown(plan_dir)` is the single access point for plan-local `related-plans.md` prose. Both `src/main.rs` and `src/multi_plan.rs` route through it. Future swap to rendering from `related-projects.yaml` is a one-function change.
+    `src/related_projects.rs::read_related_plans_markdown(plan_dir)` is the single access point for plan-local `related-plans.md` prose. Returns `""` gracefully on absent file; `{{RELATED_PLANS}}` token substitutes to an empty block. Both `src/main.rs` and `src/multi_plan.rs` route through it. Future swap to rendering from `related-projects.yaml` is a one-function change.
 - id: related-plans-stored-as-global-name-indexed-edge-list
   title: '`related-plans` stored as global name-indexed edge list'
   body: |
@@ -228,9 +228,9 @@ entries:
   body: |
     In `src/related_projects.rs`, sibling edge identity is order-insensitive (participants sorted before dedup); parent-of edge identity preserves participant order. Reversing this rule silently creates duplicate or missing edges.
 - id: plan-state-md-readers-fully-migrated
-  title: Plan-state `.md` readers fully migrated
+  title: LLM_STATE/core plan-state migrated to typed YAML
   body: |
-    `src/dream.rs` and `src/survey/discover.rs` use the typed YAML API. `src/multi_plan.rs` and `src/main.rs` access only `related-plans.md` (not a `--delete-originals` target) and `phase.md`; neither breaks on original deletion. `--delete-originals` is safe to run against `LLM_STATE/core`.
+    `src/dream.rs` and `src/survey/discover.rs` use the typed YAML API; `.md` originals deleted from `LLM_STATE/core` via `state migrate --force --delete-originals`. `related-plans.md` deleted manually (was empty — no active sibling edges). `src/multi_plan.rs` and `src/main.rs` access only `related-plans.md` and `phase.md`; neither breaks on `.md` absence.
 - id: state-migrate-takes-plan-dir-as-positional-argument
   title: '`state migrate` takes `PLAN_DIR` as positional argument'
   body: |
@@ -299,3 +299,7 @@ entries:
   title: 'R7 design: LLM-driven related-projects discovery'
   body: |
     `state related-projects discover` fans out one subagent per project (two-stage pipeline: per-project interaction-surface extraction then global edge proposal) and writes `discover-proposals.yaml`; `discover-apply` merges after human review. Subtree-scoped git tree SHA is the cache key. Full design at `docs/r7-related-projects-discovery-design.md`; 12-task TDD plan at `docs/r7-related-projects-discovery-plan.md`.
+- id: state-migrate-force-required-when-yaml-predates-md
+  title: state migrate --force required when .yaml predates .md
+  body: |
+    When pre-existing `.yaml` files are stale relative to the authoritative `.md` originals, `state migrate` aborts without `--force`. `--force` re-derives from `.md` and overwrites `.yaml`. `.md` is the authoritative source; `.yaml` is a derived cache.
