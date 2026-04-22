@@ -2,34 +2,6 @@
 
 ## Tasks
 
-### R6 — Migrate all phase prompts to use CLI verbs
-
-**Category:** `enhancement`
-**Status:** `not_started`
-**Dependencies:** R1, R2, R3, R4, R5 (all verbs now exist — all done)
-
-**Description:**
-
-Replace direct `Read` / `Edit` of plan-state files with `ravel-lite state <verb>`
-calls across `defaults/phases/work.md`, `analyse-work.md`, `reflect.md`,
-`dream.md`, `triage.md`, `create-plan.md`, `defaults/survey.md`,
-`defaults/survey-incremental.md`. ~5–15 instruction rewrites per file. Prompts
-keep the `{{RELATED_PLANS}}` token (projection shape preserves plan paths).
-
-Also wire cascade from `projects::run_rename` into `related-projects.yaml`
-(currently catalog-only; fits naturally alongside related-projects rewiring).
-
-**Atomicity caveat:** `.yaml` plan-state files diverge from `.md` files between
-migration time and the prompt cutover — `.md` remains the operational data source
-until R6 lands. Before rewriting phase prompts, run
-`ravel-lite state migrate <plan-dir> --force --delete-originals` so the `.yaml`
-files reflect the latest `.md` state at the moment of cutover. The re-migration
-and the prompt rewrite must land in the same commit.
-
-**Results:** _pending_
-
----
-
 ### R7-design — Design spike for LLM-driven related-projects discovery
 
 **Category:** `research`
@@ -50,6 +22,32 @@ Conduct a brainstorm → spec → plan cycle covering:
 - Conflict / duplication handling when multiple subagents propose the same edge
 
 Output: a written spec and implementation plan for R7.
+
+**Results:** _pending_
+
+---
+
+### R8 — Migrate four Rust readers to plan-state CLI
+
+**Category:** `enhancement`
+**Status:** `not_started`
+**Dependencies:** R6 (done)
+
+**Description:**
+
+Four Rust call sites still read `.md` plan-state files directly, bypassing
+`Phase::parse` validation and the structured YAML layer:
+
+- `src/dream.rs`
+- `src/survey/discover.rs`
+- `src/multi_plan.rs`
+- `src/main.rs`
+
+Migrate each to use `ravel-lite state <verb>` (or the equivalent in-process
+Rust API via `src/state/`) so all plan-state access is routed through the
+canonical path. Once complete, `ravel-lite state migrate --delete-originals`
+can safely remove `.md` originals; running it before R8 is complete would
+break these readers.
 
 **Results:** _pending_
 
