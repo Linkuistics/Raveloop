@@ -6,6 +6,8 @@
 
 use anyhow::{Context, Result};
 
+use crate::state::backlog::TaskCounts;
+
 /// Canonical schema version for emitted and consumed YAML. Bumped only
 /// when a struct-level change would make prior YAML deserialise into a
 /// subtly-different meaning. Prior YAML with a mismatched explicit
@@ -69,6 +71,16 @@ pub struct PlanRow {
     /// detection.
     #[serde(default)]
     pub input_hash: String,
+    /// Per-status task tally computed from the plan's parsed
+    /// `backlog.md` by `BacklogFile::task_counts`. Injected after the
+    /// LLM's response is parsed so the model never has to count tasks
+    /// itself — mechanical work belongs in Rust.
+    ///
+    /// `None` when `backlog.md` is absent or the legacy markdown parse
+    /// fails; the survey notes surface that as "backlog.md missing" or
+    /// "backlog.md unparseable".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_counts: Option<TaskCounts>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
@@ -167,6 +179,28 @@ pub fn inject_input_hashes(
         );
     }
     Ok(injected)
+}
+
+/// Inject Rust-computed `task_counts` into every `PlanRow` that has a
+/// matching entry in `counts_by_plan_key`. Rows whose key is absent
+/// from the map are left with `task_counts = None` — this is the
+/// missing-/unparseable-backlog case, surfaced via the LLM's `notes`
+/// rather than as a hard error.
+///
+/// Unlike `inject_input_hashes`, this is NOT a drift check: the map
+/// only carries entries for plans whose `backlog.md` parsed
+/// successfully, so a missing key is an expected state rather than a
+/// contract violation.
+pub fn inject_task_counts(
+    response: &mut SurveyResponse,
+    counts_by_plan_key: &std::collections::HashMap<String, TaskCounts>,
+) {
+    for row in &mut response.plans {
+        let key = plan_key(&row.project, &row.plan);
+        if let Some(counts) = counts_by_plan_key.get(&key) {
+            row.task_counts = Some(*counts);
+        }
+    }
 }
 
 /// Canonical `project/plan` key string used to match discovered plans
@@ -331,6 +365,60 @@ plans:
     #[test]
     fn plan_key_joins_project_and_plan_with_slash() {
         assert_eq!(plan_key("Ravel", "sub-A"), "Ravel/sub-A");
+    }
+
+    #[test]
+    fn inject_task_counts_populates_matching_rows_and_skips_unmatched() {
+        let mut resp = parse_survey_response(sample_yaml()).unwrap();
+        let mut counts = std::collections::HashMap::new();
+        counts.insert(
+            "Ravel/sub-A-global-store".to_string(),
+            TaskCounts {
+                total: 16,
+                not_started: 15,
+                in_progress: 0,
+                done: 1,
+                blocked: 0,
+            },
+        );
+        inject_task_counts(&mut resp, &counts);
+        let injected = resp.plans[0].task_counts.unwrap();
+        assert_eq!(injected.total, 16);
+        assert_eq!(injected.not_started, 15);
+        assert_eq!(injected.done, 1);
+
+        // Unmatched map entries are silently ignored; absence is not a
+        // hard error (unlike `inject_input_hashes`).
+        let mut unrelated = std::collections::HashMap::new();
+        unrelated.insert(
+            "Other/plan".to_string(),
+            TaskCounts { total: 1, ..Default::default() },
+        );
+        let mut resp2 = parse_survey_response(sample_yaml()).unwrap();
+        inject_task_counts(&mut resp2, &unrelated);
+        assert!(resp2.plans[0].task_counts.is_none());
+    }
+
+    #[test]
+    fn task_counts_round_trip_through_emitted_survey_yaml() {
+        let mut resp = parse_survey_response(sample_yaml()).unwrap();
+        let mut counts = std::collections::HashMap::new();
+        counts.insert(
+            "Ravel/sub-A-global-store".to_string(),
+            TaskCounts {
+                total: 3,
+                not_started: 1,
+                in_progress: 1,
+                done: 1,
+                blocked: 0,
+            },
+        );
+        inject_task_counts(&mut resp, &counts);
+        let emitted = emit_survey_yaml(&resp).unwrap();
+        assert!(emitted.contains("task_counts:"), "emitted: {emitted}");
+        let reparsed = parse_survey_response(&emitted).unwrap();
+        assert_eq!(reparsed.plans[0].task_counts.unwrap().total, 3);
+        assert_eq!(reparsed.plans[0].task_counts.unwrap().in_progress, 1);
     }
 
     #[test]

@@ -52,6 +52,42 @@ pub struct BacklogFile {
     pub extra: IndexMap<String, serde_yaml::Value>,
 }
 
+/// Per-status tally of a backlog's tasks. Computed from a parsed
+/// `BacklogFile` via `BacklogFile::task_counts` so survey (and any
+/// other caller) never has to ask an LLM to count — mechanical work
+/// belongs in Rust.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskCounts {
+    pub total: usize,
+    pub not_started: usize,
+    pub in_progress: usize,
+    pub done: usize,
+    pub blocked: usize,
+}
+
+impl BacklogFile {
+    /// Tally tasks by status. `total` is the length of the task list;
+    /// the per-status fields are exact counts of tasks with that
+    /// `Status`. A task always contributes to exactly one per-status
+    /// field, so the sum of `not_started + in_progress + done + blocked`
+    /// equals `total`.
+    pub fn task_counts(&self) -> TaskCounts {
+        let mut counts = TaskCounts {
+            total: self.tasks.len(),
+            ..TaskCounts::default()
+        };
+        for task in &self.tasks {
+            match task.status {
+                Status::NotStarted => counts.not_started += 1,
+                Status::InProgress => counts.in_progress += 1,
+                Status::Done => counts.done += 1,
+                Status::Blocked => counts.blocked += 1,
+            }
+        }
+        counts
+    }
+}
+
 /// Derive a slug from a task title. Lowercase, non-alphanumerics → `-`,
 /// collapse repeats, trim leading/trailing `-`. Used at task creation;
 /// the slug is persisted as `Task::id` and never recomputed on read.
@@ -161,6 +197,56 @@ mod tests {
         let decoded: Task = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(decoded.id, task.id);
         assert_eq!(decoded.status, task.status);
+    }
+
+    #[test]
+    fn task_counts_tallies_every_status_and_sums_to_total() {
+        fn task(status: Status) -> Task {
+            Task {
+                id: format!("t-{status:?}").to_lowercase(),
+                title: "t".into(),
+                category: "maintenance".into(),
+                status,
+                blocked_reason: if status == Status::Blocked {
+                    Some("upstream".into())
+                } else {
+                    None
+                },
+                dependencies: vec![],
+                description: "body\n".into(),
+                results: None,
+                handoff: None,
+            }
+        }
+        let backlog = BacklogFile {
+            tasks: vec![
+                task(Status::NotStarted),
+                task(Status::NotStarted),
+                task(Status::InProgress),
+                task(Status::Done),
+                task(Status::Blocked),
+            ],
+            extra: Default::default(),
+        };
+        let counts = backlog.task_counts();
+        assert_eq!(counts.total, 5);
+        assert_eq!(counts.not_started, 2);
+        assert_eq!(counts.in_progress, 1);
+        assert_eq!(counts.done, 1);
+        assert_eq!(counts.blocked, 1);
+        assert_eq!(
+            counts.not_started + counts.in_progress + counts.done + counts.blocked,
+            counts.total,
+            "per-status sum must equal total"
+        );
+    }
+
+    #[test]
+    fn task_counts_on_empty_backlog_is_all_zero() {
+        let backlog = BacklogFile::default();
+        let counts = backlog.task_counts();
+        assert_eq!(counts, TaskCounts::default());
+        assert_eq!(counts.total, 0);
     }
 
     #[test]

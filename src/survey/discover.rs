@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 use crate::git::project_root_for_plan;
+use crate::state::backlog::{parse_backlog_markdown, TaskCounts};
 
 /// A single plan's state, bundled for inclusion in the survey prompt.
 /// `input_hash` is a SHA-256 over the four state files
@@ -27,6 +28,12 @@ pub struct PlanSnapshot {
     pub backlog: Option<String>,
     pub memory: Option<String>,
     pub input_hash: String,
+    /// Per-status task tally computed from the plan's `backlog.md`
+    /// via `parse_backlog_markdown` + `BacklogFile::task_counts`.
+    /// `None` when the file is absent or the strict markdown parser
+    /// rejects it; callers inject this into the survey's `PlanRow`
+    /// so the LLM never has to count tasks itself.
+    pub task_counts: Option<TaskCounts>,
 }
 
 /// Derive the project name for a plan by deriving the subtree root
@@ -77,6 +84,10 @@ pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
         related_plans.as_deref(),
     );
 
+    let task_counts = backlog
+        .as_deref()
+        .and_then(|raw| parse_backlog_markdown(raw).ok().map(|b| b.task_counts()));
+
     Ok(PlanSnapshot {
         project,
         plan,
@@ -84,6 +95,7 @@ pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
         backlog,
         memory,
         input_hash,
+        task_counts,
     })
 }
 
@@ -304,6 +316,125 @@ mod tests {
             hash_absent, hash_empty,
             "absent and empty should hash differently so change detection can tell them apart"
         );
+    }
+
+    #[test]
+    fn load_plan_populates_task_counts_from_parseable_backlog_md() {
+        // A backlog.md with one task in each status. `load_plan`'s
+        // Rust-side parse must populate `task_counts` so the survey
+        // prompt no longer has to tally them.
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_dir = project.join("plan-a");
+        let backlog_md = "\
+### Not started task
+
+**Category:** `maintenance`
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+Body.
+
+**Results:** _pending_
+
+---
+
+### In progress task
+
+**Category:** `maintenance`
+**Status:** `in_progress`
+**Dependencies:** none
+
+**Description:**
+
+Body.
+
+**Results:** _pending_
+
+---
+
+### Done task
+
+**Category:** `maintenance`
+**Status:** `done`
+**Dependencies:** none
+
+**Description:**
+
+Body.
+
+**Results:**
+
+Done successfully.
+
+---
+
+### Blocked task
+
+**Category:** `maintenance`
+**Status:** `blocked (reason: upstream)`
+**Dependencies:** none
+
+**Description:**
+
+Body.
+
+**Results:** _pending_
+
+---
+";
+        write_plan_files(&plan_dir, "work\n", Some(backlog_md), None, None);
+
+        let snapshot = load_plan(&plan_dir).unwrap();
+        let counts = snapshot.task_counts.expect("backlog parsed; counts populated");
+        assert_eq!(counts.total, 4);
+        assert_eq!(counts.not_started, 1);
+        assert_eq!(counts.in_progress, 1);
+        assert_eq!(counts.done, 1);
+        assert_eq!(counts.blocked, 1);
+    }
+
+    #[test]
+    fn load_plan_leaves_task_counts_none_when_backlog_md_absent() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_dir = project.join("plan-a");
+        write_plan_files(&plan_dir, "work\n", None, None, None);
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert!(snapshot.task_counts.is_none());
+    }
+
+    #[test]
+    fn load_plan_leaves_task_counts_none_when_backlog_md_is_unparseable() {
+        // Not a hard error — survey carries on with `task_counts: None`
+        // so a malformed backlog.md doesn't take the whole survey down.
+        // The strict parser rejects a task block that omits the required
+        // `**Category:**` field.
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("p");
+        mark_as_git_project(&project);
+        let plan_dir = project.join("plan-a");
+        let malformed = "\
+### Task with no category
+
+**Status:** `not_started`
+**Dependencies:** none
+
+**Description:**
+
+Body.
+
+**Results:** _pending_
+
+---
+";
+        write_plan_files(&plan_dir, "work\n", Some(malformed), None, None);
+        let snapshot = load_plan(&plan_dir).unwrap();
+        assert!(snapshot.task_counts.is_none());
     }
 
     #[test]

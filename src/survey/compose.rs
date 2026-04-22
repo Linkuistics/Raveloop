@@ -128,6 +128,7 @@ mod tests {
             backlog: backlog.map(|s| s.into()),
             memory: memory.map(|s| s.into()),
             input_hash: String::new(),
+            task_counts: None,
         }
     }
 

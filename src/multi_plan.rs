@@ -374,6 +374,7 @@ mod tests {
                 received: 0,
                 notes: String::new(),
                 input_hash: String::new(),
+                task_counts: None,
             }],
             cross_plan_blockers: vec![],
             parallel_streams: vec![],

@@ -170,6 +170,7 @@ mod tests {
             backlog: None,
             memory: None,
             input_hash: hash.into(),
+            task_counts: None,
         }
     }
 
@@ -184,6 +185,7 @@ mod tests {
             received: 0,
             notes: String::new(),
             input_hash: hash.into(),
+            task_counts: None,
         }
     }
 

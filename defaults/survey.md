@@ -26,11 +26,17 @@ plans:
   - project: <string>             # project basename, as provided above
     plan: <string>                # plan directory basename
     phase: <string>               # raw contents of phase.md, trimmed
-    unblocked: <int>              # count of backlog tasks: not_started with no unmet deps
-    blocked: <int>                # count of backlog tasks: status=blocked OR not_started with unmet deps
-    done: <int>                   # count of backlog tasks: status=done
+    unblocked: <int>              # backlog tasks that are not_started AND have no unmet deps
+    blocked: <int>                # backlog tasks with status=blocked OR not_started with unmet deps
+    done: <int>                   # see note below — prefer pre-populated task_counts.done
     received: <int>               # count of dispatches under `## Received` NOT yet promoted to numbered tasks
     notes: <string>               # short free-text cell; leave empty if nothing worth noting
+    # NOTE: a `task_counts` object (total / not_started / in_progress /
+    # done / blocked) is populated by the calling tool in Rust after
+    # your response is parsed. You do NOT need to tally those raw
+    # per-status totals yourself — the tool fills them in from each
+    # plan's parsed `backlog.md`. Do not emit `task_counts` in your
+    # response; the tool injects it post-parse.
 
 cross_plan_blockers:
   - blocked: <project>/<plan>     # plan that is blocked

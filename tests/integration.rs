@@ -816,6 +816,18 @@ impl Agent for ContractMockAgent {
                     "### Session 1 (2026-04-18T00:00:00Z) — contract test\n\
                      - mock analyse-work output\n",
                 )?;
+                // R3: analyse-work also emits latest-session.yaml (the
+                // typed surface). GitCommitWork will parse this and
+                // append to session-log.yaml via the programmatic
+                // `append_latest_to_log` entry point.
+                fs::write(
+                    plan.join("latest-session.yaml"),
+                    "id: 2026-04-18-contract-test\n\
+                     timestamp: 2026-04-18T00:00:00Z\n\
+                     phase: work\n\
+                     body: |\n  \
+                       - mock analyse-work output\n",
+                )?;
                 fs::write(
                     plan.join("commit-message.md"),
                     "analyse-work: contract test session\n\n\
@@ -1119,7 +1131,17 @@ async fn phase_contract_round_trip_writes_expected_files() {
         "expected phase.md to advance to 'work' after git-commit-triage"
     );
 
-    // Contract assertion 6: each audit-trail commit was produced. The
+    // Contract assertion 6 (R3): GitCommitWork appended latest-session.yaml
+    // to session-log.yaml. The record is identified by its session id,
+    // not a tail-string match — the new append is idempotent on id.
+    let session_log_yaml = fs::read_to_string(plan_dir.join("session-log.yaml"))
+        .expect("session-log.yaml should exist after git-commit-work");
+    assert!(
+        session_log_yaml.contains("id: 2026-04-18-contract-test"),
+        "session-log.yaml should contain the appended session id, got:\n{session_log_yaml}"
+    );
+
+    // Contract assertion 7: each audit-trail commit was produced. The
     // analyse-work commit message is the one the mock wrote; reflect
     // and triage fall back to the default message shape.
     let log = Command::new("git")

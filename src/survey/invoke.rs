@@ -27,9 +27,10 @@ use super::delta::{merge_delta, PlanClassification};
 use super::discover::{load_plan, PlanSnapshot};
 use super::render::render_survey_output;
 use super::schema::{
-    emit_survey_yaml, inject_input_hashes, parse_survey_response, plan_key, SurveyResponse,
-    SCHEMA_VERSION,
+    emit_survey_yaml, inject_input_hashes, inject_task_counts, parse_survey_response, plan_key,
+    SurveyResponse, SCHEMA_VERSION,
 };
+use crate::state::backlog::TaskCounts;
 
 /// Fallback model when neither `--model` nor `models.survey` is
 /// configured. A cheap, fast model is appropriate: survey is a
@@ -186,11 +187,28 @@ async fn run_cold_survey(
         .map(|p| (plan_key(&p.project, &p.plan), p.input_hash.clone()))
         .collect();
     inject_input_hashes(&mut response, &hashes)?;
+    inject_task_counts(&mut response, &collect_task_counts(all_plans.iter()));
     // Cold-path response carries whatever schema_version the LLM
     // emitted (or the default); pin it to the binary's current value
     // so persisted YAML is always labelled with the producer version.
     response.schema_version = SCHEMA_VERSION;
     Ok(response)
+}
+
+/// Collect `(plan_key, TaskCounts)` entries for snapshots whose
+/// `backlog.md` parsed successfully. Snapshots with `task_counts: None`
+/// are skipped; downstream `inject_task_counts` leaves their rows'
+/// counts as `None` so the LLM's `notes` can explain the gap.
+fn collect_task_counts<'a, I>(snapshots: I) -> HashMap<String, TaskCounts>
+where
+    I: Iterator<Item = &'a PlanSnapshot>,
+{
+    snapshots
+        .filter_map(|p| {
+            p.task_counts
+                .map(|counts| (plan_key(&p.project, &p.plan), counts))
+        })
+        .collect()
 }
 
 async fn run_incremental_survey(
@@ -246,6 +264,19 @@ async fn run_incremental_survey(
         .map(|s| (plan_key(&s.project, &s.plan), s.input_hash.clone()))
         .collect();
     inject_input_hashes(&mut delta_response, &delta_hashes)?;
+    // Inject task counts for the delta rows from their snapshots;
+    // unchanged rows carry their task_counts forward from `prior`
+    // verbatim via `merge_delta`, so no injection is needed there.
+    inject_task_counts(
+        &mut delta_response,
+        &collect_task_counts(
+            classification
+                .changed
+                .iter()
+                .chain(classification.added.iter())
+                .copied(),
+        ),
+    );
 
     let mut merged = merge_delta(classification, delta_response)?;
     merged.schema_version = SCHEMA_VERSION;

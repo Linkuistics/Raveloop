@@ -224,7 +224,7 @@ fn take_section<'a>(
         }
     }
     let body_lines = &lines[first_content..end_index];
-    let joined = body_lines.iter().copied().collect::<Vec<_>>().join("\n");
+    let joined = body_lines.join("\n");
     let remaining = lines[end_index..].to_vec();
     (joined.trim_start_matches('\n').to_string(), remaining)
 }

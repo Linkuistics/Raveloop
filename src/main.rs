@@ -222,8 +222,17 @@ enum StateCommands {
         #[command(subcommand)]
         command: MemoryCommands,
     },
+    /// Session-log verbs. `latest-session.yaml` is a single-record file
+    /// written by analyse-work; `session-log.yaml` is the append-only
+    /// history. `phase_loop::GitCommitWork` appends latest → log
+    /// programmatically between phases.
+    SessionLog {
+        #[command(subcommand)]
+        command: SessionLogCommands,
+    },
     /// Single-plan conversion of legacy .md files into typed .yaml
-    /// siblings. Covers backlog.md and memory.md (both written when present).
+    /// siblings. Covers backlog.md, memory.md, session-log.md and
+    /// latest-session.md (each written when present).
     Migrate {
         plan_dir: PathBuf,
         #[arg(long)]
@@ -399,6 +408,62 @@ enum MemoryCommands {
 }
 
 #[derive(Subcommand)]
+enum SessionLogCommands {
+    /// List sessions from session-log.yaml (id + timestamp + phase + body).
+    List {
+        plan_dir: PathBuf,
+        /// Truncate output to the last N sessions (newest-kept).
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long, default_value = "yaml")]
+        format: String,
+    },
+    /// Show a single session record by id.
+    Show {
+        plan_dir: PathBuf,
+        id: String,
+        #[arg(long, default_value = "yaml")]
+        format: String,
+    },
+    /// Append a session record to session-log.yaml. Idempotent on id:
+    /// a record with the same id already present is a no-op.
+    Append {
+        plan_dir: PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        timestamp: String,
+        #[arg(long)]
+        phase: Option<String>,
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<PathBuf>,
+        #[arg(long)]
+        body: Option<String>,
+    },
+    /// Overwrite latest-session.yaml with a new single record. Used by
+    /// analyse-work to hand the session to git-commit-work.
+    SetLatest {
+        plan_dir: PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        timestamp: String,
+        #[arg(long)]
+        phase: Option<String>,
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<PathBuf>,
+        #[arg(long)]
+        body: Option<String>,
+    },
+    /// Emit latest-session.yaml's record.
+    ShowLatest {
+        plan_dir: PathBuf,
+        #[arg(long, default_value = "yaml")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum ProjectsCommands {
     /// Emit the catalog as YAML on stdout (empty catalog is valid output).
     List {
@@ -532,6 +597,7 @@ fn dispatch_state(command: StateCommands) -> Result<()> {
         },
         StateCommands::Backlog { command } => dispatch_backlog(command),
         StateCommands::Memory { command } => dispatch_memory(command),
+        StateCommands::SessionLog { command } => dispatch_session_log(command),
         StateCommands::Migrate {
             plan_dir,
             dry_run,
@@ -700,6 +766,64 @@ fn dispatch_memory(command: MemoryCommands) -> Result<()> {
         }
         MemoryCommands::Delete { plan_dir, id } => {
             memory::run_delete(&plan_dir, &id)
+        }
+    }
+}
+
+fn parse_session_log_format(input: &str) -> Result<crate::state::session_log::OutputFormat> {
+    crate::state::session_log::OutputFormat::parse(input)
+        .ok_or_else(|| anyhow::anyhow!("invalid --format value {input:?}; expected `yaml` or `json`"))
+}
+
+fn dispatch_session_log(command: SessionLogCommands) -> Result<()> {
+    use crate::state::session_log;
+
+    match command {
+        SessionLogCommands::List { plan_dir, limit, format } => {
+            let fmt = parse_session_log_format(&format)?;
+            session_log::run_list(&plan_dir, limit, fmt)
+        }
+        SessionLogCommands::Show { plan_dir, id, format } => {
+            let fmt = parse_session_log_format(&format)?;
+            session_log::run_show(&plan_dir, &id, fmt)
+        }
+        SessionLogCommands::Append {
+            plan_dir,
+            id,
+            timestamp,
+            phase,
+            body_file,
+            body,
+        } => {
+            let body = resolve_body(body_file, body)?;
+            let record = session_log::build_record_for_append(
+                Some(id),
+                Some(timestamp),
+                phase,
+                &body,
+            )?;
+            session_log::run_append(&plan_dir, &record)
+        }
+        SessionLogCommands::SetLatest {
+            plan_dir,
+            id,
+            timestamp,
+            phase,
+            body_file,
+            body,
+        } => {
+            let body = resolve_body(body_file, body)?;
+            let record = session_log::build_record_for_append(
+                Some(id),
+                Some(timestamp),
+                phase,
+                &body,
+            )?;
+            session_log::run_set_latest(&plan_dir, &record)
+        }
+        SessionLogCommands::ShowLatest { plan_dir, format } => {
+            let fmt = parse_session_log_format(&format)?;
+            session_log::run_show_latest(&plan_dir, fmt)
         }
     }
 }

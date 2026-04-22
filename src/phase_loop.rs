@@ -166,43 +166,34 @@ fn warn_if_project_tree_dirty(ui: &UI, project_dir: &Path, plan_dir: &Path) {
     }
 }
 
-/// Append the freshly-written `latest-session.md` entry to `session-log.md`
-/// so each cycle's narrative accumulates as a durable audit trail.
+/// Append the freshly-written `latest-session.yaml` record to
+/// `session-log.yaml` so each cycle's narrative accumulates as a durable
+/// audit trail.
 ///
-/// `latest-session.md` is overwritten by analyse-work every cycle; without
-/// this mirror write, prior sessions are lost. Runner-side on purpose —
-/// mechanical file plumbing belongs here, not in a phase prompt.
+/// `latest-session.yaml` is overwritten by analyse-work every cycle;
+/// without this mirror write, prior sessions are lost. Runner-side on
+/// purpose — mechanical file plumbing belongs here, not in a phase
+/// prompt.
 ///
-/// Idempotent: if the entry is already the tail of the log (e.g. a crash
-/// between this call and `write_phase` forced a retry of `GitCommitWork`),
-/// the second call is a no-op.
+/// Idempotent on session id: if the log already contains a record whose
+/// id matches `latest-session.yaml`'s id (e.g. a crash between this
+/// call and `write_phase` forced a retry of `GitCommitWork`), the
+/// second call is a no-op. This is strictly stronger than the earlier
+/// tail-string check: a later manual edit to the log can't regress
+/// the invariant.
+///
+/// Missing `latest-session.yaml` is also a no-op — the first work
+/// cycle of a fresh plan has no session record to propagate. Analyse-
+/// work is expected to produce the file on every real cycle.
 fn append_session_log(plan_dir: &Path) -> Result<()> {
-    let latest_path = plan_dir.join("latest-session.md");
-    let log_path = plan_dir.join("session-log.md");
-
-    let entry = fs::read_to_string(&latest_path).unwrap_or_default();
-    let entry = entry.trim();
-    if entry.is_empty() {
-        return Ok(());
-    }
-
-    let existing = fs::read_to_string(&log_path)
-        .unwrap_or_else(|_| String::from("# Session Log\n"));
-
-    if existing.trim_end().ends_with(entry) {
-        return Ok(());
-    }
-
-    let mut updated = existing;
-    if !updated.ends_with('\n') {
-        updated.push('\n');
-    }
-    updated.push('\n');
-    updated.push_str(entry);
-    updated.push('\n');
-
-    fs::write(&log_path, updated)
-        .with_context(|| format!("Failed to append session-log.md at {}", log_path.display()))
+    crate::state::session_log::append_latest_to_log(plan_dir)
+        .with_context(|| {
+            format!(
+                "Failed to append latest-session.yaml to session-log.yaml at {}",
+                plan_dir.display()
+            )
+        })?;
+    Ok(())
 }
 
 async fn handle_script_phase(

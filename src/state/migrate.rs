@@ -18,6 +18,10 @@ use crate::state::backlog::{
 use crate::state::memory::{
     parse_memory_markdown, read_memory, write_memory, MemoryFile,
 };
+use crate::state::session_log::{
+    parse_latest_session_markdown, parse_session_log_markdown, read_latest_session,
+    read_session_log, write_latest_session, write_session_log, SessionLogFile, SessionRecord,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum OriginalPolicy {
@@ -58,6 +62,18 @@ enum PendingMigration {
         parsed: MemoryFile,
         needs_write: bool,
     },
+    SessionLog {
+        source: PathBuf,
+        target: PathBuf,
+        parsed: SessionLogFile,
+        needs_write: bool,
+    },
+    LatestSession {
+        source: PathBuf,
+        target: PathBuf,
+        parsed: SessionRecord,
+        needs_write: bool,
+    },
 }
 
 impl PendingMigration {
@@ -65,6 +81,8 @@ impl PendingMigration {
         match self {
             PendingMigration::Backlog { source, .. } => source,
             PendingMigration::Memory { source, .. } => source,
+            PendingMigration::SessionLog { source, .. } => source,
+            PendingMigration::LatestSession { source, .. } => source,
         }
     }
 
@@ -72,6 +90,8 @@ impl PendingMigration {
         match self {
             PendingMigration::Backlog { target, .. } => target,
             PendingMigration::Memory { target, .. } => target,
+            PendingMigration::SessionLog { target, .. } => target,
+            PendingMigration::LatestSession { target, .. } => target,
         }
     }
 
@@ -79,6 +99,8 @@ impl PendingMigration {
         match self {
             PendingMigration::Backlog { needs_write, .. } => *needs_write,
             PendingMigration::Memory { needs_write, .. } => *needs_write,
+            PendingMigration::SessionLog { needs_write, .. } => *needs_write,
+            PendingMigration::LatestSession { needs_write, .. } => *needs_write,
         }
     }
 
@@ -86,6 +108,8 @@ impl PendingMigration {
         match self {
             PendingMigration::Backlog { parsed, .. } => parsed.tasks.len(),
             PendingMigration::Memory { parsed, .. } => parsed.entries.len(),
+            PendingMigration::SessionLog { parsed, .. } => parsed.sessions.len(),
+            PendingMigration::LatestSession { .. } => 1,
         }
     }
 }
@@ -97,6 +121,12 @@ pub fn run_migrate(plan_dir: &Path, options: &MigrateOptions) -> Result<()> {
         pending.push(mig);
     }
     if let Some(mig) = plan_memory_migration(plan_dir, options)? {
+        pending.push(mig);
+    }
+    if let Some(mig) = plan_session_log_migration(plan_dir, options)? {
+        pending.push(mig);
+    }
+    if let Some(mig) = plan_latest_session_migration(plan_dir, options)? {
         pending.push(mig);
     }
 
@@ -144,6 +174,28 @@ pub fn run_migrate(plan_dir: &Path, options: &MigrateOptions) -> Result<()> {
                 if !memories_equivalent(&validated, parsed) {
                     bail!(
                         "validation mismatch: memory.yaml re-read does not match parse result."
+                    );
+                }
+            }
+            PendingMigration::SessionLog { parsed, .. } => {
+                write_session_log(plan_dir, parsed)?;
+                let validated = read_session_log(plan_dir).with_context(|| {
+                    "validation round-trip read failed after session-log write"
+                })?;
+                if !session_logs_equivalent(&validated, parsed) {
+                    bail!(
+                        "validation mismatch: session-log.yaml re-read does not match parse result."
+                    );
+                }
+            }
+            PendingMigration::LatestSession { parsed, .. } => {
+                write_latest_session(plan_dir, parsed)?;
+                let validated = read_latest_session(plan_dir).with_context(|| {
+                    "validation round-trip read failed after latest-session write"
+                })?;
+                if !session_records_equivalent(&validated, parsed) {
+                    bail!(
+                        "validation mismatch: latest-session.yaml re-read does not match parse result."
                     );
                 }
             }
@@ -242,6 +294,111 @@ fn plan_memory_migration(
     }))
 }
 
+fn plan_session_log_migration(
+    plan_dir: &Path,
+    options: &MigrateOptions,
+) -> Result<Option<PendingMigration>> {
+    let source = plan_dir.join("session-log.md");
+    let target = plan_dir.join("session-log.yaml");
+    if !source.exists() {
+        return Ok(None);
+    }
+
+    let text = std::fs::read_to_string(&source)
+        .with_context(|| format!("failed to read {}", source.display()))?;
+    let parsed = parse_session_log_markdown(&text).with_context(|| {
+        format!(
+            "failed to parse {} as legacy session-log markdown",
+            source.display()
+        )
+    })?;
+
+    let needs_write = if target.exists() {
+        let existing = read_session_log(plan_dir)
+            .with_context(|| "failed to read existing session-log.yaml for idempotency check")?;
+        if session_logs_equivalent(&existing, &parsed) {
+            false
+        } else if options.force {
+            true
+        } else {
+            bail!(
+                "{} already exists and differs from the re-migration output. Rerun with --force to overwrite.",
+                target.display()
+            );
+        }
+    } else {
+        true
+    };
+
+    Ok(Some(PendingMigration::SessionLog {
+        source,
+        target,
+        parsed,
+        needs_write,
+    }))
+}
+
+fn plan_latest_session_migration(
+    plan_dir: &Path,
+    options: &MigrateOptions,
+) -> Result<Option<PendingMigration>> {
+    let source = plan_dir.join("latest-session.md");
+    let target = plan_dir.join("latest-session.yaml");
+    if !source.exists() {
+        return Ok(None);
+    }
+
+    let text = std::fs::read_to_string(&source)
+        .with_context(|| format!("failed to read {}", source.display()))?;
+    let parsed = parse_latest_session_markdown(&text).with_context(|| {
+        format!(
+            "failed to parse {} as legacy latest-session markdown",
+            source.display()
+        )
+    })?;
+
+    let needs_write = if target.exists() {
+        let existing = read_latest_session(plan_dir).with_context(|| {
+            "failed to read existing latest-session.yaml for idempotency check"
+        })?;
+        if session_records_equivalent(&existing, &parsed) {
+            false
+        } else if options.force {
+            true
+        } else {
+            bail!(
+                "{} already exists and differs from the re-migration output. Rerun with --force to overwrite.",
+                target.display()
+            );
+        }
+    } else {
+        true
+    };
+
+    Ok(Some(PendingMigration::LatestSession {
+        source,
+        target,
+        parsed,
+        needs_write,
+    }))
+}
+
+fn session_logs_equivalent(a: &SessionLogFile, b: &SessionLogFile) -> bool {
+    if a.sessions.len() != b.sessions.len() {
+        return false;
+    }
+    for (sa, sb) in a.sessions.iter().zip(b.sessions.iter()) {
+        if !session_records_equivalent(sa, sb) {
+            return false;
+        }
+    }
+    true
+}
+
+fn session_records_equivalent(a: &SessionRecord, b: &SessionRecord) -> bool {
+    a.id == b.id && a.timestamp == b.timestamp && a.phase == b.phase && a.body == b.body
+}
+
 fn backlogs_equivalent(a: &BacklogFile, b: &BacklogFile) -> bool {
     if a.tasks.len() != b.tasks.len() {
         return false;
@@ -327,12 +484,39 @@ Beta body.
 Multi-paragraph.
 ";
 
+    const TWO_SESSION_LOG: &str = "\
+# Session Log
+
+### Session 1 (2026-04-21T08:03:01Z) — First migrated session
+
+- Bullet one.
+- Bullet two.
+
+### Session 2 (2026-04-22T06:14:36Z) — Second migrated session
+
+Paragraph body.
+";
+
+    const LATEST_SESSION_MD: &str = "\
+### Session 11 (2026-04-22T12:00:00Z) — Fresh latest session
+
+- Body bullet.
+";
+
     fn write_backlog_md(plan: &Path, content: &str) {
         std::fs::write(plan.join("backlog.md"), content).unwrap();
     }
 
     fn write_memory_md(plan: &Path, content: &str) {
         std::fs::write(plan.join("memory.md"), content).unwrap();
+    }
+
+    fn write_session_log_md(plan: &Path, content: &str) {
+        std::fs::write(plan.join("session-log.md"), content).unwrap();
+    }
+
+    fn write_latest_session_md(plan: &Path, content: &str) {
+        std::fs::write(plan.join("latest-session.md"), content).unwrap();
     }
 
     #[test]
@@ -472,5 +656,129 @@ Multi-paragraph.
         let err = run_migrate(tmp.path(), &MigrateOptions::default()).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("no migratable"), "error must explain the empty-plan case: {msg}");
+    }
+
+    #[test]
+    fn migrate_writes_session_log_yaml_from_session_log_md() {
+        let tmp = TempDir::new().unwrap();
+        write_session_log_md(tmp.path(), TWO_SESSION_LOG);
+
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+
+        assert!(tmp.path().join("session-log.yaml").exists());
+        assert!(tmp.path().join("session-log.md").exists(), "default is keep-originals");
+
+        let log = read_session_log(tmp.path()).unwrap();
+        assert_eq!(log.sessions.len(), 2);
+        assert_eq!(log.sessions[0].id, "2026-04-21-first-migrated-session");
+    }
+
+    #[test]
+    fn migrate_writes_latest_session_yaml_from_latest_session_md() {
+        let tmp = TempDir::new().unwrap();
+        write_latest_session_md(tmp.path(), LATEST_SESSION_MD);
+
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+
+        let latest = read_latest_session(tmp.path()).unwrap();
+        assert_eq!(latest.id, "2026-04-22-fresh-latest-session");
+        assert_eq!(latest.timestamp, "2026-04-22T12:00:00Z");
+        assert!(latest.body.contains("Body bullet."));
+    }
+
+    #[test]
+    fn migrate_converts_all_four_files_in_one_run() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog_md(tmp.path(), TWO_TASK_MARKDOWN);
+        write_memory_md(tmp.path(), TWO_ENTRY_MEMORY);
+        write_session_log_md(tmp.path(), TWO_SESSION_LOG);
+        write_latest_session_md(tmp.path(), LATEST_SESSION_MD);
+
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+
+        assert_eq!(read_backlog(tmp.path()).unwrap().tasks.len(), 2);
+        assert_eq!(read_memory(tmp.path()).unwrap().entries.len(), 2);
+        assert_eq!(read_session_log(tmp.path()).unwrap().sessions.len(), 2);
+        assert_eq!(
+            read_latest_session(tmp.path()).unwrap().id,
+            "2026-04-22-fresh-latest-session"
+        );
+    }
+
+    #[test]
+    fn migrate_session_log_is_idempotent_on_second_run() {
+        let tmp = TempDir::new().unwrap();
+        write_session_log_md(tmp.path(), TWO_SESSION_LOG);
+
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+
+        assert_eq!(read_session_log(tmp.path()).unwrap().sessions.len(), 2);
+    }
+
+    #[test]
+    fn migrate_session_log_refuses_overwrite_without_force() {
+        let tmp = TempDir::new().unwrap();
+        write_session_log_md(tmp.path(), TWO_SESSION_LOG);
+        run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
+
+        let mut log = read_session_log(tmp.path()).unwrap();
+        log.sessions[0].phase = "tampered".into();
+        write_session_log(tmp.path(), &log).unwrap();
+
+        let err = run_migrate(tmp.path(), &MigrateOptions::default()).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("already exists"), "error must mention existence: {msg}");
+        assert!(msg.contains("--force"), "error must cite --force: {msg}");
+
+        let opts = MigrateOptions { force: true, ..MigrateOptions::default() };
+        run_migrate(tmp.path(), &opts).unwrap();
+        let log = read_session_log(tmp.path()).unwrap();
+        assert_eq!(log.sessions[0].phase, "work");
+    }
+
+    #[test]
+    fn migrate_session_log_parse_failure_leaves_nothing_untouched() {
+        let tmp = TempDir::new().unwrap();
+        // Valid backlog, malformed session-log — the whole run must abort
+        // before writing any target, honouring parse-all-then-write-all.
+        write_backlog_md(tmp.path(), TWO_TASK_MARKDOWN);
+        write_session_log_md(
+            tmp.path(),
+            "### Session 1 (2026-04-21T08:03:01Z) — Empty body\n",
+        );
+
+        let err = run_migrate(tmp.path(), &MigrateOptions::default()).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("session") || msg.contains("no body"),
+            "error must name the session-log failure: {msg}"
+        );
+        assert!(
+            !tmp.path().join("backlog.yaml").exists(),
+            "no write must occur when any parse fails"
+        );
+        assert!(
+            !tmp.path().join("session-log.yaml").exists(),
+            "no write must occur when any parse fails"
+        );
+    }
+
+    #[test]
+    fn migrate_with_delete_originals_removes_session_log_md_files() {
+        let tmp = TempDir::new().unwrap();
+        write_session_log_md(tmp.path(), TWO_SESSION_LOG);
+        write_latest_session_md(tmp.path(), LATEST_SESSION_MD);
+
+        let opts = MigrateOptions {
+            original_policy: OriginalPolicy::Delete,
+            ..MigrateOptions::default()
+        };
+        run_migrate(tmp.path(), &opts).unwrap();
+
+        assert!(!tmp.path().join("session-log.md").exists());
+        assert!(!tmp.path().join("latest-session.md").exists());
+        assert!(tmp.path().join("session-log.yaml").exists());
+        assert!(tmp.path().join("latest-session.yaml").exists());
     }
 }

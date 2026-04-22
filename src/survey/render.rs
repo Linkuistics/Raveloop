@@ -274,6 +274,7 @@ mod tests {
             received: r,
             notes: notes.into(),
             input_hash: String::new(),
+            task_counts: None,
         }
     }
 
