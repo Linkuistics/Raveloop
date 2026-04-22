@@ -1,14 +1,35 @@
-### Session 11 (2026-04-22T06:46:49Z) — session-log YAML verbs + Rust task-count injection
+### Session 12 (2026-04-22T07:14:29Z) — Migrate plan-state files to YAML
 
-- Implemented R3: `src/state/session_log/` module (schema.rs, yaml_io.rs, parse_md.rs, verbs.rs, mod.rs) providing `SessionRecord` / `SessionLogFile` types, id-based idempotent `append_record`, and full CLI verb surface (`state session-log list/show/append/set-latest/show-latest`).
-- Rewired `phase_loop::append_session_log` to use `session_log::append_latest_to_log`; missing `latest-session.yaml` is a graceful no-op; crash-retry idempotency via session id (strictly stronger than prior tail-string check).
-- Extended `state migrate` with two new `PendingMigration` variants (`SessionLog`, `LatestSession`) via `plan_session_log_migration` / `plan_latest_session_migration`; parse-all-then-write-all invariant preserved. Dry-run against live `LLM_STATE/core/` parsed 7 backlog + 65 memory + 10 sessions + 1 latest cleanly.
-- Implemented "Move per-plan task-count extraction from LLM survey prompt into Rust": added `TaskCounts { total, not_started, in_progress, done, blocked }` to `state::backlog::schema` with `BacklogFile::task_counts()`; wired through `PlanSnapshot.task_counts`, `PlanRow.task_counts`, `inject_task_counts` in `survey/schema.rs`, and both cold and incremental survey invoke paths via `collect_task_counts`. Both `defaults/survey.md` and `defaults/survey-incremental.md` updated to forbid LLM from emitting `task_counts`.
-- Fixed pre-existing `iter_cloned_collect` clippy lint in `backlog/parse_md.rs:227` (replaced with `body_lines.join("\n")`).
-- All 347 lib + 27 integration + 13 CLI tests pass; `clippy --all-targets -- -D warnings` clean.
+- Ran `ravel-lite state migrate` against `LLM_STATE/core/` to convert all
+  markdown plan-state files to structured YAML (`backlog.md → backlog.yaml`,
+  `memory.md → memory.yaml`, `session-log.md → session-log.yaml`,
+  `latest-session.md → latest-session.yaml`).
+- Dry-run confirmed identical parse counts before committing: 6 backlog, 68
+  memory, 11 sessions, 1 latest. Round-tripped each area via `state <area>
+  list` / `show-latest` to verify end-to-end integrity.
+- Created annotated tag `pre-structured-state` at `8ce34ba` and pushed it plus
+  41 pending commits to `origin` before writing any YAML.
+- Backlog reorganised: completed tasks archived, R7 split into R7-design (new
+  research task) + R7 implementation (now depends on R7-design), one stale
+  task removed.
 
-What worked: additive `task_counts` field on `PlanRow` (rather than replacing LLM-inferred `unblocked`/`blocked`/`done`) preserved backward compatibility — downstream renderers migrate at their leisure. Session-id idempotency for `append_record` is cleaner than tail-string check.
+What worked: `state migrate` parsed all production markdown cleanly. The
+`--keep-originals` default left `.md` files in place, which is the correct
+choice given that phase prompts still read/write `.md` directly.
 
-What didn't: no issues encountered; both features shipped as designed.
+What didn't / caveat: the YAML files are **preview data, not operational data**
+until R6 lands. Phase prompts continue to mutate the `.md` files; the `.yaml`
+files are frozen at migration-time content and will diverge. Triage should
+annotate R6's description: either re-migrate immediately before the prompt
+rewrite or run `state migrate --force --delete-originals` atomically as part
+of R6.
 
-Suggests next: R5 (global `state related-projects` edge list) is the next unblocked task. Manual migration of `LLM_STATE/core/{session-log,latest-session}.{md→yaml}` is a 1-command step (`ravel-lite state migrate`) safe to run any time.
+Also noted: the task's deliverable documented `--plan-dir` as a named flag, but
+the real CLI takes `PLAN_DIR` as a positional argument — `--plan-dir` fails.
+Docs should be corrected.
+
+What to try next: R5 (global `related-projects` edge list) unblocked; R6
+(migrate phase prompts to CLI verbs) waiting on R1–R5.
+
+No uncommitted source-file paths. All changes are plan-state files inside
+`LLM_STATE/core/` reserved for the plan-state commit.

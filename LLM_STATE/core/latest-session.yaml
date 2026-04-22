@@ -1,0 +1,18 @@
+id: 2026-04-22-session-log-yaml-verbs-rust-task-count-injection
+timestamp: 2026-04-22T06:46:49Z
+phase: work
+body: |
+  **session-log YAML verbs + Rust task-count injection**
+
+  - Implemented R3: `src/state/session_log/` module (schema.rs, yaml_io.rs, parse_md.rs, verbs.rs, mod.rs) providing `SessionRecord` / `SessionLogFile` types, id-based idempotent `append_record`, and full CLI verb surface (`state session-log list/show/append/set-latest/show-latest`).
+  - Rewired `phase_loop::append_session_log` to use `session_log::append_latest_to_log`; missing `latest-session.yaml` is a graceful no-op; crash-retry idempotency via session id (strictly stronger than prior tail-string check).
+  - Extended `state migrate` with two new `PendingMigration` variants (`SessionLog`, `LatestSession`) via `plan_session_log_migration` / `plan_latest_session_migration`; parse-all-then-write-all invariant preserved. Dry-run against live `LLM_STATE/core/` parsed 7 backlog + 65 memory + 10 sessions + 1 latest cleanly.
+  - Implemented "Move per-plan task-count extraction from LLM survey prompt into Rust": added `TaskCounts { total, not_started, in_progress, done, blocked }` to `state::backlog::schema` with `BacklogFile::task_counts()`; wired through `PlanSnapshot.task_counts`, `PlanRow.task_counts`, `inject_task_counts` in `survey/schema.rs`, and both cold and incremental survey invoke paths via `collect_task_counts`. Both `defaults/survey.md` and `defaults/survey-incremental.md` updated to forbid LLM from emitting `task_counts`.
+  - Fixed pre-existing `iter_cloned_collect` clippy lint in `backlog/parse_md.rs:227` (replaced with `body_lines.join("\n")`).
+  - All 347 lib + 27 integration + 13 CLI tests pass; `clippy --all-targets -- -D warnings` clean.
+
+  What worked: additive `task_counts` field on `PlanRow` (rather than replacing LLM-inferred `unblocked`/`blocked`/`done`) preserved backward compatibility — downstream renderers migrate at their leisure. Session-id idempotency for `append_record` is cleaner than tail-string check.
+
+  What didn't: no issues encountered; both features shipped as designed.
+
+  Suggests next: R5 (global `state related-projects` edge list) is the next unblocked task. Manual migration of `LLM_STATE/core/{session-log,latest-session}.{md→yaml}` is a 1-command step (`ravel-lite state migrate`) safe to run any time.

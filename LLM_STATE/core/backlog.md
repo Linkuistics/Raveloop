@@ -5,7 +5,7 @@
 ### Migrate `LLM_STATE/core/` plan-state files to YAML
 
 **Category:** `maintenance`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** R3 (done — `state migrate` now covers session-log + latest-session)
 
 **Description:**
@@ -26,7 +26,37 @@ memory + 10 sessions + 1 latest cleanly — production format is fully covered.
 2. Verify the plan tree is clean after migration.
 3. Commit the migrated files.
 
-**Results:** _pending_
+**Results:**
+
+Migration executed successfully with `--keep-originals` default. Dry-run and
+real run parsed identical record counts: 6 backlog, 68 memory, 11 sessions, 1
+latest. Round-trip verified by listing each file via `state <area> list` and
+`show-latest`; counts match end-to-end.
+
+Pre-migration safety point: annotated tag `pre-structured-state` pushed to
+`origin` at `8ce34ba` before any YAML write. 41 prior commits were also pushed
+(main was that far ahead of upstream).
+
+Baseline-drift note: R3's dry-run recorded 7/65/10/1; production is now
+6/68/11/1. Backlog dropped by one (a task completed and not archived — or the
+prior dry-run double-counted an in-progress block). Memory grew by 3, session
+log grew by 1. All drift is consistent with normal cycle activity since R3.
+
+Integration caveat worth flagging for triage: the plan-state phase prompts
+still `Read`/`Edit` the `.md` files directly (R6 is the task that rewrites them
+to use `state <verb>`). While both files co-exist, mutations go to `.md`
+(via phase-prompt edits) and the `.yaml` stays frozen at migration-time
+content. The `.yaml` is therefore **preview data, not operational data**, until
+R6 lands — a fact the backlog task wording ("safe to execute at any time")
+glossed over. R6 will need to either re-migrate immediately before the prompt
+rewrite or ensure the prompt rewrite is atomic with a fresh `state migrate
+--force --delete-originals`. Recommend triage add a note to R6's description.
+
+Observed CLI wording bug: the task's deliverable says
+`ravel-lite state migrate --plan-dir LLM_STATE/core`, but the actual CLI takes
+`PLAN_DIR` as a positional argument; `--plan-dir` fails with
+`unexpected argument`. Not worth a separate backlog item — just surface in the
+session log so future docs can fix it.
 
 ---
 
