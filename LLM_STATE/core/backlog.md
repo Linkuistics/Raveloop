@@ -2,6 +2,32 @@
 
 ## Tasks
 
+### Run `state migrate --delete-originals` to remove legacy `.md` plan-state files
+
+**Category:** `maintenance`
+**Status:** `not_started`
+**Dependencies:** R8 (done)
+
+**Description:**
+
+R8 is complete: all four Rust readers that formerly accessed `.md` plan-state
+files directly have been migrated. `src/dream.rs` and `src/survey/discover.rs`
+use the typed YAML API; `src/multi_plan.rs` and `src/main.rs` access only
+`related-plans.md` (not a `--delete-originals` target) and `phase.md`.
+
+Run:
+
+```
+ravel-lite state migrate --delete-originals LLM_STATE/core
+```
+
+Verify no `.md` plan-state originals remain and that `ravel-lite run` still
+operates correctly against `LLM_STATE/core` after deletion.
+
+**Results:** _pending_
+
+---
+
 ### R7-design — Design spike for LLM-driven related-projects discovery
 
 **Category:** `research`
@@ -22,32 +48,6 @@ Conduct a brainstorm → spec → plan cycle covering:
 - Conflict / duplication handling when multiple subagents propose the same edge
 
 Output: a written spec and implementation plan for R7.
-
-**Results:** _pending_
-
----
-
-### R8 — Migrate four Rust readers to plan-state CLI
-
-**Category:** `enhancement`
-**Status:** `not_started`
-**Dependencies:** R6 (done)
-
-**Description:**
-
-Four Rust call sites still read `.md` plan-state files directly, bypassing
-`Phase::parse` validation and the structured YAML layer:
-
-- `src/dream.rs`
-- `src/survey/discover.rs`
-- `src/multi_plan.rs`
-- `src/main.rs`
-
-Migrate each to use `ravel-lite state <verb>` (or the equivalent in-process
-Rust API via `src/state/`) so all plan-state access is routed through the
-canonical path. Once complete, `ravel-lite state migrate --delete-originals`
-can safely remove `.md` originals; running it before R8 is complete would
-break these readers.
 
 **Results:** _pending_
 
