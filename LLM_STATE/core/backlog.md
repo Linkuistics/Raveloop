@@ -5,7 +5,7 @@
 ### R5 — Implement global `state related-projects` edge list + `migrate-related-projects`
 
 **Category:** `enhancement`
-**Status:** `not_started`
+**Status:** `done`
 **Dependencies:** R4 (done — catalog exists; names ↔ paths resolution is now available)
 
 **Description:**
@@ -16,7 +16,57 @@ list [--plan <path>]`, `add-edge`, `remove-edge`. `state migrate-related-project
 <plan-dir>` one-shot merges a plan's legacy `related-plans.md` into the global
 file, creating it on first call and deduping by (kind, participants).
 
-**Results:** _pending_
+**Results:**
+
+New module `src/related_projects.rs` + integration test
+`tests/state_related_projects.rs`; `main.rs` gains two subcommand trees.
+
+- File lives at `<config_root>/related-projects.yaml`
+  (`schema_version: 1`). Schema: a flat `edges:` list with
+  `kind: sibling | parent-of` and a uniform `participants: [A, B]` pair.
+  Dedup key is kind-aware — sibling uses sorted participants
+  (order-insensitive), parent-of keeps participant order (direction is
+  part of the identity). `Edge::validate` rejects self-loops and
+  non-pair participant counts.
+- CLI surface:
+  - `state related-projects list [--plan <path>] [--config <path>]` —
+    emits YAML; `--plan` filters to edges that involve the project
+    derived as `<plan>/../..`.
+  - `state related-projects add-edge <kind> <a> <b>` — refuses unknown
+    project names and points at `state projects add` in the error.
+  - `state related-projects remove-edge <kind> <a> <b>` — errors if the
+    edge is absent; sibling removal honours order-insensitivity.
+- `state migrate-related-projects <plan-dir> [--config] [--dry-run]
+  [--delete-original]` parses the legacy `related-plans.md` (sections
+  `## Siblings`, `## Parents`, `## Children`, bullet lines with
+  ` — description` tail), substitutes `{{DEV_ROOT}}` / `{{PROJECT}}` /
+  `{{PLAN}}` tokens, resolves each bullet path to a project (auto-add
+  via `projects::auto_add`, bails on `NameCollision` with actionable
+  `state projects add` guidance), and merges the derived edges into the
+  global file with the same dedup semantics. Directionality: "Parents"
+  → `parent-of [peer, me]`; "Children" → `parent-of [me, peer]`;
+  "Siblings" → `sibling [me, peer]`. Parse-all-then-write-all: the
+  catalog and the edge file are touched only after every peer has
+  resolved. Idempotent on re-run (every edge comes back as
+  `already present`).
+- 27 unit tests in `src/related_projects.rs` + 4 end-to-end tests in
+  `tests/state_related_projects.rs` (using `CARGO_BIN_EXE_ravel-lite`).
+  `cargo test` (all 418 tests) and `cargo clippy --all-targets` both
+  green.
+
+Not done (deliberate, per memory and R6's description):
+- Phase prompts still read `related-plans.md` — `multi_plan.rs`,
+  `survey/discover.rs`, and the `{{RELATED_PLANS}}` token expansion in
+  `prompt.rs` remain unchanged. The operational data source for the
+  prompts stays `.md` until R6 migrates them over.
+- `projects::run_rename` still does not cascade into
+  `related-projects.yaml` (documented caveat already in main.rs;
+  follow-up is minor and fits naturally alongside R6 rewiring).
+
+Next suggested task: **R6** (migrate all phase prompts to use CLI
+verbs). R7-design and R7 also unblock, but R6 is the higher-leverage
+follow-up because it closes the `.md`/`.yaml` divergence gap the memory
+flags.
 
 ---
 
