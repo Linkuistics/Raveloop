@@ -496,15 +496,20 @@ enum ProjectsCommands {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Add an entry mapping `--name` to an absolute `--path`. Rejects
+    /// Add an entry mapping `--name` to `--path`. Relative paths are
+    /// resolved against the current working directory. If `--name` is
+    /// omitted, the basename of the resolved path is used. Rejects
     /// duplicate names and duplicate paths.
     Add {
         /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
         /// default location at <dirs::config_dir()>/ravel-lite/.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Project name. Defaults to the basename of `--path`.
         #[arg(long)]
-        name: String,
+        name: Option<String>,
+        /// Project directory. Absolute, or relative to the current
+        /// working directory.
         #[arg(long)]
         path: PathBuf,
     },
@@ -646,7 +651,7 @@ fn dispatch_state(command: StateCommands) -> Result<()> {
             }
             ProjectsCommands::Add { config, name, path } => {
                 let config_root = resolve_config_dir(config)?;
-                projects::run_add(&config_root, &name, &path)
+                projects::run_add(&config_root, name.as_deref(), &path)
             }
             ProjectsCommands::Remove { config, name } => {
                 let config_root = resolve_config_dir(config)?;

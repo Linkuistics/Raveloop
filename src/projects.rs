@@ -72,20 +72,26 @@ pub enum AutoAddOutcome {
     },
 }
 
-/// Attempt to add `project_path` to `catalog` using its directory
-/// basename as the default name. Does not persist; caller saves on
-/// `Added`.
-pub fn auto_add(catalog: &mut ProjectsCatalog, project_path: &Path) -> Result<AutoAddOutcome> {
-    let name = project_path
+/// Extract a project's directory basename as a usable name. Used by
+/// `auto_add` and by `run_add` when no explicit `--name` is supplied.
+fn basename_as_name(project_path: &Path) -> Result<String> {
+    project_path
         .file_name()
         .and_then(|n| n.to_str())
+        .map(String::from)
         .with_context(|| {
             format!(
                 "project path {} has no directory basename usable as a project name",
                 project_path.display()
             )
-        })?
-        .to_string();
+        })
+}
+
+/// Attempt to add `project_path` to `catalog` using its directory
+/// basename as the default name. Does not persist; caller saves on
+/// `Added`.
+pub fn auto_add(catalog: &mut ProjectsCatalog, project_path: &Path) -> Result<AutoAddOutcome> {
+    let name = basename_as_name(project_path)?;
 
     if let Some(existing) = catalog.find_by_path(project_path) {
         return Ok(AutoAddOutcome::AlreadyCatalogued {
@@ -181,15 +187,23 @@ pub fn run_list(config_root: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn run_add(config_root: &Path, name: &str, project_path: &Path) -> Result<()> {
-    if !project_path.is_absolute() {
-        bail!(
-            "project path must be absolute so the catalog can be copied between working directories; got {}",
+/// Add a project to the catalog. `project_path` may be relative — it is
+/// resolved against the current working directory via `std::path::absolute`
+/// (pure path math; no disk access, no symlink resolution). `name` is
+/// optional; when `None`, the path's basename is used.
+pub fn run_add(config_root: &Path, name: Option<&str>, project_path: &Path) -> Result<()> {
+    let absolute_path = std::path::absolute(project_path).with_context(|| {
+        format!(
+            "Failed to resolve project path {} to an absolute path",
             project_path.display()
-        );
-    }
+        )
+    })?;
+    let resolved_name = match name {
+        Some(n) => n.to_string(),
+        None => basename_as_name(&absolute_path)?,
+    };
     let mut catalog = load_or_empty(config_root)?;
-    try_add_named(&mut catalog, name, project_path)?;
+    try_add_named(&mut catalog, &resolved_name, &absolute_path)?;
     save_atomic(config_root, &catalog)
 }
 
@@ -448,7 +462,7 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let project = mk_project_dir(tmp.path(), "abs-proj");
 
-        run_add(&cfg, "abs-proj", &project).unwrap();
+        run_add(&cfg, Some("abs-proj"), &project).unwrap();
 
         let loaded = load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.projects.len(), 1);
@@ -456,15 +470,57 @@ mod tests {
     }
 
     #[test]
-    fn run_add_rejects_relative_path() {
+    fn run_add_canonicalises_relative_path_against_cwd() {
+        // `std::path::absolute` resolves relative paths against the
+        // process CWD. Test CWDs are unstable when running in parallel,
+        // so we assert on the canonicalisation property rather than a
+        // specific resolved path: stored path must be absolute.
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
 
-        let err = run_add(&cfg, "relish", Path::new("relative/path")).unwrap_err();
-        assert!(format!("{err:#}").contains("absolute"));
-        // No file should have been written.
-        assert!(!cfg.join(CATALOG_FILE).exists());
+        run_add(&cfg, Some("rel-proj"), Path::new("some/relative/path")).unwrap();
+
+        let loaded = load_or_empty(&cfg).unwrap();
+        assert_eq!(loaded.projects.len(), 1);
+        assert!(
+            loaded.projects[0].path.is_absolute(),
+            "stored path must be absolute, got {}",
+            loaded.projects[0].path.display()
+        );
+        assert!(
+            loaded.projects[0].path.ends_with("some/relative/path"),
+            "absolute path must end with the relative input, got {}",
+            loaded.projects[0].path.display()
+        );
+    }
+
+    #[test]
+    fn run_add_with_no_name_defaults_to_basename() {
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg");
+        std::fs::create_dir_all(&cfg).unwrap();
+        let project = mk_project_dir(tmp.path(), "SomeProject");
+
+        run_add(&cfg, None, &project).unwrap();
+
+        let loaded = load_or_empty(&cfg).unwrap();
+        assert_eq!(loaded.projects.len(), 1);
+        assert_eq!(loaded.projects[0].name, "SomeProject");
+        assert_eq!(loaded.projects[0].path, project);
+    }
+
+    #[test]
+    fn run_add_with_no_name_and_relative_path_derives_basename_from_resolved_path() {
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg");
+        std::fs::create_dir_all(&cfg).unwrap();
+
+        run_add(&cfg, None, Path::new("parent/BasenameTarget")).unwrap();
+
+        let loaded = load_or_empty(&cfg).unwrap();
+        assert_eq!(loaded.projects.len(), 1);
+        assert_eq!(loaded.projects[0].name, "BasenameTarget");
     }
 
     #[test]
@@ -474,7 +530,7 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let project = mk_project_dir(tmp.path(), "target");
 
-        run_add(&cfg, "target", &project).unwrap();
+        run_add(&cfg, Some("target"), &project).unwrap();
         run_remove(&cfg, "target").unwrap();
 
         let loaded = load_or_empty(&cfg).unwrap();
@@ -498,7 +554,7 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let project = mk_project_dir(tmp.path(), "old-name");
 
-        run_add(&cfg, "old-name", &project).unwrap();
+        run_add(&cfg, Some("old-name"), &project).unwrap();
         run_rename(&cfg, "old-name", "new-name").unwrap();
 
         let loaded = load_or_empty(&cfg).unwrap();
@@ -514,8 +570,8 @@ mod tests {
         let a = mk_project_dir(tmp.path(), "a");
         let b = mk_project_dir(tmp.path(), "b");
 
-        run_add(&cfg, "a", &a).unwrap();
-        run_add(&cfg, "b", &b).unwrap();
+        run_add(&cfg, Some("a"), &a).unwrap();
+        run_add(&cfg, Some("b"), &b).unwrap();
 
         let err = run_rename(&cfg, "a", "b").unwrap_err();
         assert!(format!("{err:#}").contains("already in use"));
@@ -534,8 +590,8 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let a = mk_project_dir(tmp.path(), "OldName");
         let b = mk_project_dir(tmp.path(), "Other");
-        run_add(&cfg, "OldName", &a).unwrap();
-        run_add(&cfg, "Other", &b).unwrap();
+        run_add(&cfg, Some("OldName"), &a).unwrap();
+        run_add(&cfg, Some("Other"), &b).unwrap();
 
         let mut file = related_projects::RelatedProjectsFile::default();
         file.add_edge(Edge::sibling("OldName", "Other")).unwrap();
@@ -559,8 +615,8 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let parent = mk_project_dir(tmp.path(), "Parent");
         let child = mk_project_dir(tmp.path(), "Child");
-        run_add(&cfg, "Parent", &parent).unwrap();
-        run_add(&cfg, "Child", &child).unwrap();
+        run_add(&cfg, Some("Parent"), &parent).unwrap();
+        run_add(&cfg, Some("Child"), &child).unwrap();
 
         let mut file = related_projects::RelatedProjectsFile::default();
         // Parent is first in participants; direction is semantic.
@@ -588,9 +644,9 @@ mod tests {
         let a = mk_project_dir(tmp.path(), "Alpha");
         let b = mk_project_dir(tmp.path(), "Beta");
         let c = mk_project_dir(tmp.path(), "Gamma");
-        run_add(&cfg, "Alpha", &a).unwrap();
-        run_add(&cfg, "Beta", &b).unwrap();
-        run_add(&cfg, "Gamma", &c).unwrap();
+        run_add(&cfg, Some("Alpha"), &a).unwrap();
+        run_add(&cfg, Some("Beta"), &b).unwrap();
+        run_add(&cfg, Some("Gamma"), &c).unwrap();
 
         let mut file = related_projects::RelatedProjectsFile::default();
         file.add_edge(Edge::sibling("Beta", "Gamma")).unwrap();
@@ -610,7 +666,7 @@ mod tests {
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
         let a = mk_project_dir(tmp.path(), "Solo");
-        run_add(&cfg, "Solo", &a).unwrap();
+        run_add(&cfg, Some("Solo"), &a).unwrap();
 
         // No related-projects.yaml at all: rename must succeed.
         run_rename(&cfg, "Solo", "SoloRenamed").unwrap();
@@ -649,7 +705,7 @@ mod tests {
         let project_b = mk_project_dir(tmp_b.path(), "collide");
 
         // Pre-seed the collision.
-        run_add(&cfg, "collide", &project_a).unwrap();
+        run_add(&cfg, Some("collide"), &project_a).unwrap();
 
         let mut out = Vec::<u8>::new();
         let mut input = std::io::Cursor::new(b"collide-two\n".to_vec());
@@ -675,7 +731,7 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         let project_a = mk_project_dir(tmp_a.path(), "collide");
         let project_b = mk_project_dir(tmp_b.path(), "collide");
-        run_add(&cfg, "collide", &project_a).unwrap();
+        run_add(&cfg, Some("collide"), &project_a).unwrap();
 
         let mut out = Vec::<u8>::new();
         let mut input = std::io::Cursor::new(b"\n".to_vec());

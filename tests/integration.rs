@@ -2519,24 +2519,62 @@ fn state_projects_add_list_rename_remove_via_binary() {
     assert!(remaining.is_empty(), "projects list should be empty after remove: {remaining:?}");
 }
 
-/// `state projects add` refuses relative paths because the catalog is
-/// path-anchored and a relative path would resolve differently from
-/// different CWDs. Asserting this at the binary level pins the guard
-/// to the user-facing CLI, not just the internal helper.
+/// `state projects add` accepts a relative path and stores it as
+/// absolute, resolved against the child process's CWD. Pins the
+/// canonicalisation at the user-facing CLI, not just the internal
+/// helper. `Command::current_dir` scopes the CWD change to the child
+/// so this test is safe under parallel execution.
 #[test]
-fn state_projects_add_rejects_relative_path_via_binary() {
+fn state_projects_add_canonicalises_relative_path_via_binary() {
     let tmp = TempDir::new().unwrap();
     let cfg = tmp.path().join("cfg");
     fs::create_dir_all(&cfg).unwrap();
+    // Target project directory must exist relative to the spawn CWD.
+    let workdir = tmp.path().join("workdir");
+    fs::create_dir_all(workdir.join("rel-target")).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ravel-lite"))
+        .current_dir(&workdir)
+        .args(["state", "projects", "add", "--config"])
+        .arg(&cfg)
+        .args(["--name", "rel", "--path", "rel-target"])
+        .output()
+        .expect("binary must spawn");
+    assert!(out.status.success(), "add failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let catalog: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(cfg.join("projects.yaml")).unwrap()).unwrap();
+    let stored_path = catalog["projects"][0]["path"].as_str().unwrap();
+    assert!(
+        stored_path.starts_with('/'),
+        "stored path must be absolute, got {stored_path}"
+    );
+    assert!(
+        stored_path.ends_with("workdir/rel-target"),
+        "stored path must reflect CWD resolution, got {stored_path}"
+    );
+}
+
+/// `state projects add` accepts `--path` with no `--name`, defaulting
+/// the name to the resolved path's basename.
+#[test]
+fn state_projects_add_defaults_name_to_basename_via_binary() {
+    let tmp = TempDir::new().unwrap();
+    let cfg = tmp.path().join("cfg");
+    fs::create_dir_all(&cfg).unwrap();
+    let project = tmp.path().join("derived-name");
+    fs::create_dir_all(&project).unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_ravel-lite"))
         .args(["state", "projects", "add", "--config"])
         .arg(&cfg)
-        .args(["--name", "rel", "--path", "not/absolute"])
+        .arg("--path")
+        .arg(&project)
         .output()
         .expect("binary must spawn");
-    assert!(!out.status.success(), "relative path should exit non-zero");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("absolute"), "stderr should mention absolute: {stderr}");
-    assert!(!cfg.join("projects.yaml").exists(), "file should not be created on failure");
+    assert!(out.status.success(), "add failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let catalog: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(cfg.join("projects.yaml")).unwrap()).unwrap();
+    assert_eq!(catalog["projects"][0]["name"].as_str().unwrap(), "derived-name");
 }
