@@ -234,3 +234,14 @@ follow-up; it closes the .md/.yaml divergence. R7-design is also unblocked.
 - **Scope narrowing (deliberate):** `src/multi_plan.rs` and `src/main.rs` only read `related-plans.md` (not deleted by `--delete-originals`) and check `phase.md` existence (not a migration target). Neither breaks when originals are deleted; they were consolidated behind `read_related_plans_markdown` for canonical-path hygiene, not for correctness.
 - **What this suggests next:** Run `ravel-lite state migrate --delete-originals` against `LLM_STATE/core` to retire the legacy `.md` files and verify the full cycle. The remaining `related-plans.md`-to-`related-projects.yaml` rendering swap is a future task.
 - **Key learnings:** Swapping `backlog.md` content for YAML-serialised `backlog.yaml` changes the LLM payload layout — visible to the LLM on first run (one-time behavioural shift). Existing `dream-baseline` values differ slightly under the new counting rule (titles + bodies, no markdown punctuation); `update_dream_baseline` self-corrects after the first successful dream.
+
+### Session 16 (2026-04-22T10:14:10Z) — R7-design: spec and implementation plan for LLM-driven related-projects discovery
+
+- Executed the R7-design task: brainstorm → spec → implementation plan for LLM-driven related-projects discovery
+- Wrote `docs/r7-related-projects-discovery-design.md` (architectural spec with settled design decisions)
+- Wrote `docs/r7-related-projects-discovery-plan.md` (12-task TDD execution plan with file paths, code, and test commands)
+- Settled all key design decisions: entry-point as `state related-projects discover/discover-apply`, one-subagent-per-project fanout, two-stage pipeline (per-project interaction-surface extraction + global edge proposal), subtree-scoped git tree SHA cache key, review-gate merge policy via `discover-proposals.yaml`
+- R7 is now unblocked; user elected to defer execution to a separate work phase rather than execute inline
+- New maintenance task added to backlog: run `state migrate --delete-originals` to remove legacy `.md` plan-state files (R8 complete, this is the follow-through step)
+- R8 task removed from backlog (completed in prior session); replaced by the `--delete-originals` maintenance task
+- R7-design status correctly flipped to `done` by the work phase; safety-net step is a no-op

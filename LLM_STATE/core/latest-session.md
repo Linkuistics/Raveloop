@@ -1,14 +1,10 @@
-### Session 15 (2026-04-22T08:46:52Z) — R8: Rust plan-state readers migrated from .md to .yaml
+### Session 16 (2026-04-22T10:14:10Z) — R7-design: spec and implementation plan for LLM-driven related-projects discovery
 
-- **Attempted:** Migrate all four Rust readers of legacy `.md` plan-state files to the typed YAML API so `ravel-lite state migrate --delete-originals` becomes safe to run.
-- **What worked:**
-  - `src/dream.rs`: `memory.md` word-count read replaced with `state::memory::read_memory`; word count now sums titles + bodies across parsed entries. New regression test `update_baseline_counts_entry_titles_and_bodies` pins the double-field contract.
-  - `src/survey/discover.rs`: `backlog.md` and `memory.md` reads replaced with `read_backlog` / `read_memory`; `task_counts` now derived from the already-parsed `BacklogFile`, eliminating the redundant `parse_backlog_markdown` round-trip. `PlanSnapshot::backlog` / `.memory` now carry re-serialised YAML strings.
-  - `src/survey/compose.rs`: section headers updated from `backlog.md`/`memory.md` to `backlog.yaml`/`memory.yaml`; content wrapped in ```yaml fences so the LLM receives structured input with explicit framing.
-  - `defaults/survey.md` + `defaults/survey-incremental.md`: prose updated to match new YAML-labelled payload and code-fence wrapping.
-  - `src/related_projects.rs`: added `read_related_plans_markdown(plan_dir)` — the single canonical access point for plan-local `related-plans.md` prose. `src/main.rs` and `src/multi_plan.rs` both route through it (was duplicated `fs::read_to_string(...).unwrap_or_default()`). Future swap to rendering from `related-projects.yaml` is now a one-function change.
-  - `tests/integration.rs`: added `write_memory_yaml_with_word_count` and `write_backlog_yaml_with_marker` helpers; migrated dream and survey integration tests from raw `.md` writes to typed-YAML writes via the state API.
-  - All tests pass: 379 unit + 27 integration + 17 state-focused = 423 total.
-- **Scope narrowing (deliberate):** `src/multi_plan.rs` and `src/main.rs` only read `related-plans.md` (not deleted by `--delete-originals`) and check `phase.md` existence (not a migration target). Neither breaks when originals are deleted; they were consolidated behind `read_related_plans_markdown` for canonical-path hygiene, not for correctness.
-- **What this suggests next:** Run `ravel-lite state migrate --delete-originals` against `LLM_STATE/core` to retire the legacy `.md` files and verify the full cycle. The remaining `related-plans.md`-to-`related-projects.yaml` rendering swap is a future task.
-- **Key learnings:** Swapping `backlog.md` content for YAML-serialised `backlog.yaml` changes the LLM payload layout — visible to the LLM on first run (one-time behavioural shift). Existing `dream-baseline` values differ slightly under the new counting rule (titles + bodies, no markdown punctuation); `update_dream_baseline` self-corrects after the first successful dream.
+- Executed the R7-design task: brainstorm → spec → implementation plan for LLM-driven related-projects discovery
+- Wrote `docs/r7-related-projects-discovery-design.md` (architectural spec with settled design decisions)
+- Wrote `docs/r7-related-projects-discovery-plan.md` (12-task TDD execution plan with file paths, code, and test commands)
+- Settled all key design decisions: entry-point as `state related-projects discover/discover-apply`, one-subagent-per-project fanout, two-stage pipeline (per-project interaction-surface extraction + global edge proposal), subtree-scoped git tree SHA cache key, review-gate merge policy via `discover-proposals.yaml`
+- R7 is now unblocked; user elected to defer execution to a separate work phase rather than execute inline
+- New maintenance task added to backlog: run `state migrate --delete-originals` to remove legacy `.md` plan-state files (R8 complete, this is the follow-through step)
+- R8 task removed from backlog (completed in prior session); replaced by the `--delete-originals` maintenance task
+- R7-design status correctly flipped to `done` by the work phase; safety-net step is a no-op
