@@ -26,7 +26,7 @@ entries:
 - id: work-phase-must-not-commit-source-files
   title: Work phase must not commit source files
   body: |
-    `work.md` step 8 explicitly tells the work phase to leave non-plan paths dirty; source-commit authority belongs to analyse-work. A session that commits source in work is a contract violation.
+    `work.md` step 8 requires the work phase to leave non-plan paths dirty; source-commit authority belongs to analyse-work.
 - id: analyse-work-commits-all-non-plan-paths
   title: Analyse-work commits all non-plan paths
   body: |
@@ -78,7 +78,7 @@ entries:
 - id: gitcommitwork-appends-latest-session-yaml-to-session-log-yaml
   title: '`GitCommitWork` appends `latest-session.yaml` to `session-log.yaml`'
   body: |
-    `append_session_log` in `phase_loop.rs` delegates to `session_log::append_latest_to_log`. Idempotency is via session id (strictly stronger than the former tail-string check); missing `latest-session.yaml` is a graceful no-op.
+    `append_session_log` in `phase_loop.rs` delegates to `session_log::append_latest_to_log`. Idempotent by session id; missing `latest-session.yaml` is a graceful no-op.
 - id: write-phase-precedes-git-commit-plan-in-all-commit-handlers
   title: '`write_phase` precedes `git_commit_plan` in all commit handlers'
   body: |
@@ -90,7 +90,7 @@ entries:
 - id: llmphase-work-does-not-delete-latest-session-yaml
   title: '`LlmPhase::Work` does not delete `latest-session.yaml`'
   body: |
-    Analyse-work overwrites `latest-session.yaml` unconditionally on entry; a deletion in the Work handler is decorative and was removed.
+    Analyse-work overwrites `latest-session.yaml` unconditionally on entry; the Work handler does not delete it.
 - id: plan-tree-cleanliness-asserted-via-git-status-porcelain
   title: Plan-tree cleanliness asserted via `git status --porcelain`
   body: |
@@ -114,11 +114,11 @@ entries:
 - id: phase-prompts-use-ravel-lite-state-cli-verbs
   title: Phase prompts use `ravel-lite state` CLI verbs
   body: |
-    All `defaults/phases/*.md` and `create-plan.md` use `ravel-lite state <verb>` for plan-state operations (R6 complete). Direct writes to plan-state files bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` refuses to create a plan dir that does not already exist.
+    All `defaults/phases/*.md` and `create-plan.md` use `ravel-lite state <verb>` for plan-state operations. Direct writes to plan-state files bypass `Phase::parse` validation; LLM phases must use the CLI. `run_set_phase` refuses to create a plan dir that does not already exist.
 - id: cli-integration-tests-use-cargo-bin-exe-ravel-lite
   title: CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
   body: |
-    `tests/integration.rs` shells out to the binary via the `CARGO_BIN_EXE_ravel-lite` env var and asserts on-disk effects. This is the Cargo-idiomatic pattern for end-to-end CLI testing without `std::process::Command` hardcoding.
+    `tests/integration.rs` shells out via `CARGO_BIN_EXE_ravel-lite` and asserts on-disk effects; the Cargo-idiomatic pattern for end-to-end CLI testing.
 - id: build-rs-emits-timestamp-git-describe-and-sha
   title: '`build.rs` emits timestamp, git-describe, and SHA'
   body: |
@@ -134,7 +134,7 @@ entries:
 - id: reflect-phase-runs-automatically-after-git-commit-work
   title: Reflect phase runs automatically after git-commit-work
   body: |
-    The runner proceeds from `GitCommitWork` to reflect without user confirmation. No pre-reflect gate exists; reflect is unconditional after work commit.
+    The runner proceeds from `GitCommitWork` to reflect without user confirmation; no pre-reflect gate exists.
 - id: fake-pi-script-must-be-phase-aware
   title: Fake-pi script must be phase-aware
   body: |
@@ -170,7 +170,7 @@ entries:
 - id: src-multi-plan-rs-owns-survey-driven-multi-plan-routing
   title: '`src/multi_plan.rs` owns survey-driven multi-plan routing'
   body: |
-    `src/multi_plan.rs` implements `build_plan_dir_map`, `options_from_response`, `select_plan_interactive`, and `run_multi_plan`. `ravel-lite run` accepts 1..N plan dirs; `--survey-state` is required when N > 1. Routes to the next plan via `dispatch_one_cycle`; the dispatch loop replaced the former LLM-authored coordinator-plan concept.
+    `src/multi_plan.rs` implements `build_plan_dir_map`, `options_from_response`, `select_plan_interactive`, and `run_multi_plan`. `ravel-lite run` accepts 1..N plan dirs; `--survey-state` is required when N > 1. Routes to the next plan via `dispatch_one_cycle`.
 - id: ravel-lite-survey-emits-structured-yaml
   title: '`ravel-lite survey` emits structured YAML'
   body: |
@@ -222,7 +222,7 @@ entries:
 - id: related-plans-stored-as-global-name-indexed-edge-list
   title: '`related-plans` stored as global name-indexed edge list'
   body: |
-    Implemented in `src/related_projects.rs`. Edge kinds: `sibling` and `parent-of`. Project-level (not plan-level), keyed by plan name; shareable across all plans in a project. Full CRUD, `Edge::validate` (rejects self-loops and non-pair counts), and `run_migrate_related_projects` (parses legacy `related-plans.md`, merges derived edges idempotently on re-run).
+    `src/related_projects.rs` stores project-level (not plan-level) edges keyed by plan name, shareable across all plans in a project. Edge kinds: `sibling` and `parent-of`. Full CRUD, `Edge::validate` (rejects self-loops and non-pair counts), and `run_migrate_related_projects` (parses legacy `related-plans.md`, merges derived edges idempotently on re-run).
 - id: sibling-edges-dedup-by-sorted-participants-parent-of-by-order
   title: Sibling edges dedup by sorted participants; parent-of by order
   body: |
@@ -230,11 +230,11 @@ entries:
 - id: plan-state-md-readers-fully-migrated
   title: LLM_STATE/core plan-state migrated to typed YAML
   body: |
-    `src/dream.rs` and `src/survey/discover.rs` use the typed YAML API; `.md` originals deleted from `LLM_STATE/core` via `state migrate --force --delete-originals`. `related-plans.md` deleted manually (was empty — no active sibling edges). `src/multi_plan.rs` and `src/main.rs` access only `related-plans.md` and `phase.md`; neither breaks on `.md` absence.
+    `src/dream.rs` and `src/survey/discover.rs` use the typed YAML API; `.md` originals deleted from `LLM_STATE/core`. `src/multi_plan.rs` and `src/main.rs` tolerate absent `.md` files.
 - id: state-migrate-takes-plan-dir-as-positional-argument
   title: '`state migrate` takes `PLAN_DIR` as positional argument'
   body: |
-    `--plan-dir` is not a valid flag; the CLI expects `PLAN_DIR` positionally. Correct usage: `ravel-lite state migrate <PLAN_DIR>`. Task deliverable documentation incorrectly described it as `--plan-dir`.
+    `--plan-dir` is not a valid flag; the CLI expects `PLAN_DIR` positionally. Correct usage: `ravel-lite state migrate <PLAN_DIR>`.
 - id: plan-state-migration-requires-atomicity-idempotency-dry-run-validation
   title: Plan-state migration requires atomicity, idempotency, dry-run, validation
   body: |
@@ -242,7 +242,7 @@ entries:
 - id: migrate-rs-uses-parse-all-then-write-all-planner
   title: '`migrate.rs` uses parse-all-then-write-all planner'
   body: |
-    `plan_backlog_migration`, `plan_memory_migration`, `plan_session_log_migration`, and `plan_latest_session_migration` each return `Option<PendingMigration>`; `run_migrate` collects all, errors if set is empty, then writes only after all parses succeed. Parse failure on any file aborts before any disk write.
+    `plan_backlog_migration`, `plan_memory_migration`, `plan_session_log_migration`, and `plan_latest_session_migration` each return `Option<PendingMigration>`; `run_migrate` errors if set is empty, then writes all only after all parses succeed.
 - id: state-memory-parses-headings-empty-body-is-an-error
   title: '`state::memory` parses `^## ` headings; empty body is an error'
   body: |
@@ -250,7 +250,7 @@ entries:
 - id: structured-plan-state-design-at-docs-structured-plan-state-design-md
   title: Structured plan-state design at `docs/structured-plan-state-design.md`
   body: |
-    Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. R1–R6 complete. See: `Four Rust readers bypass plan-state CLI`.
+    `docs/structured-plan-state-design.md` holds Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. See: `Four Rust readers bypass plan-state CLI`.
 - id: src-projects-rs-holds-projectscatalog
   title: '`src/projects.rs` holds `ProjectsCatalog`'
   body: |
@@ -258,7 +258,7 @@ entries:
 - id: state-projects-add-rejects-relative-paths
   title: state projects add resolves relative paths against CWD
   body: |
-    `state projects add` resolves relative paths against the caller's CWD via `std::path::absolute`. The catalog stores the absolute form; no filesystem access required. Rejection of relative paths was removed in R7.1.
+    `state projects add` resolves relative paths against the caller's CWD via `std::path::absolute`; stores the absolute form. No filesystem access required.
 - id: state-projects-rename-cascades-into-related-projects-yaml
   title: '`state projects rename` cascades into `related-projects.yaml`'
   body: |
@@ -282,7 +282,7 @@ entries:
 - id: planrow-carries-duplicate-count-fields-pending-migration
   title: '`PlanRow` carries duplicate count fields pending migration'
   body: |
-    `PlanRow` has both Rust-injected `task_counts: Option<TaskCounts>` and LLM-inferred `unblocked`/`blocked`/`done`/`received` fields. The latter require dep-traversal reasoning that is genuine LLM work, so they were left intact. Once all downstream consumers migrate to `task_counts`, the LLM-inferred count fields can be removed. Not urgent — track as a cleanup opportunity.
+    `PlanRow` has both Rust-injected `task_counts: Option<TaskCounts>` and LLM-inferred `unblocked`/`blocked`/`done`/`received` fields. The LLM fields require dep-traversal reasoning; keep until downstream consumers migrate to `task_counts`.
 - id: state-session-log-provides-full-verb-surface
   title: '`state session-log` provides full verb surface'
   body: |
@@ -298,7 +298,7 @@ entries:
 - id: r7-design-llm-driven-related-projects-discovery
   title: 'R7 design: LLM-driven related-projects discovery'
   body: |
-    `state related-projects discover` fans out one subagent per project (two-stage pipeline: per-project interaction-surface extraction then global edge proposal) and writes `discover-proposals.yaml`; `discover-apply` merges after human review. Subtree-scoped git tree SHA is the cache key. Full design at `docs/r7-related-projects-discovery-design.md`; 12-task TDD plan at `docs/r7-related-projects-discovery-plan.md`.
+    `state related-projects discover` fans out one subagent per project (two-stage pipeline: per-project interaction-surface extraction then global edge proposal) and writes `discover-proposals.yaml`; `discover-apply` merges after human review. Subtree-scoped git tree SHA is the cache key. Full design at `docs/r7-related-projects-discovery-design.md`; TDD plan at `docs/r7-related-projects-discovery-plan.md`.
 - id: state-migrate-force-required-when-yaml-predates-md
   title: state migrate --force required when .yaml predates .md
   body: |
@@ -306,13 +306,13 @@ entries:
 - id: std-path-absolute-does-pure-path-math-anchored-to-cwd
   title: std::path::absolute does pure path math anchored to CWD
   body: |
-    `std::path::absolute` (stabilised Rust 1.79) performs pure path math anchored to the process CWD without touching the filesystem or resolving symlinks. Use it when recording a user-stated path without requiring the directory to exist.
+    `std::path::absolute` performs pure path math anchored to the process CWD without touching the filesystem or resolving symlinks; use when recording a user-stated path without requiring the directory to exist.
 - id: projects-add-name-optional-defaults-to-basename
   title: projects add --name optional; defaults to basename
   body: |
     `projects add --name` is optional; omitting it defaults the catalog name to the directory basename via `basename_as_name`. `basename_as_name` is a shared helper called by both `auto_add` and `run_add`.
 - id: src-discover-schema-surfacefile-and-surfacerecord-r7-1
-  title: 'src/discover/ schema: SurfaceFile and SurfaceRecord (R7.1)'
+  title: '`SurfaceFile` and `SurfaceRecord` schema in `src/discover/`'
   body: |
     `src/discover/schema.rs` defines `SurfaceFile` (identity fields: `plan_name`, `tree_sha`) and `SurfaceRecord` (data fields). Two round-trip YAML tests guard the schema. Module wired at `src/lib.rs` as `pub mod discover`.
 - id: discover-schema-serde-default-on-data-fields-only
@@ -330,29 +330,19 @@ entries:
 - id: multi-stage-llm-pipeline-uses-run-config-outcome-submodule-shape
   title: Multi-stage LLM pipeline uses run/Config/Outcome submodule shape
   body: |
-    Each stage in `src/discover/` exposes `run_<stage>`, `<Stage>Config`, and `<Stage>Outcome`. Internal shape: `Config` → `pub async run` fn → helper `spawn` fn → unit tests. Stages mirror each other structurally; reviewers can navigate a new stage immediately. This is the reusable template for adding new stages to multi-stage LLM pipelines in this codebase.
+    Each stage in `src/discover/` exposes `run_<stage>`, `<Stage>Config`, and `<Stage>Outcome`. Internal shape: `Config` → `pub async run` fn → helper `spawn` fn → unit tests. Stages mirror each other; reuse this template for new stages.
 - id: rename-cascade-registry-design-consideration
-  title: Rename cascade registry design consideration
+  title: '`run_rename` needs a Trait registry before fourth cascade'
   body: |
-    ---
-    name: Rename cascade registry design consideration
-    description: Design note on when to introduce a Trait-based cascade registry for project rename operations
-    type: project
-    originSessionId: cffa02ce-72ae-4ad6-a1ac-39e9d8b54231
-    ---
-    `run_rename` in `src/projects.rs` currently cascades manually into three places: the catalog, `related-projects.yaml`, and `<config-dir>/discover-cache/<name>.yaml`. If a fourth surface is added (e.g. survey state, dream state), the pattern should be extracted into a Trait-based cascade registry rather than threaded in ad-hoc.
-
-    **Why:** R7.5 completed the third cascade point. The R7.5 author noted that a Trait-based registry is warranted if a third surface is added — that threshold is now met.
-
-    **How to apply:** Before adding any new rename cascade point, evaluate whether to introduce a `RenameHook` trait (or similar) and register all cascade handlers at startup. Three cascade points in `run_rename` is already approaching the boundary where manual threading becomes error-prone.
+    `run_rename` in `src/projects.rs` cascades into three places: catalog, `related-projects.yaml`, and `<config-dir>/discover-cache/<name>.yaml`. Before adding a fourth cascade point, extract into a `RenameHook` Trait registry rather than threading in ad-hoc.
 - id: find-conflicting-kind-misses-parent-of-direction-reversals
   title: find_conflicting_kind misses parent-of direction reversals
   body: |
-    `parent-of(A,B)` and `parent-of(B,A)` are not flagged as conflicts; both have `kind == ParentOf`, so the kind-mismatch filter passes them through. A dedicated directional check is needed. Tracked as a backlog task.
+    `parent-of(A,B)` and `parent-of(B,A)` are not flagged as conflicts; both have `kind == ParentOf`, so the kind-mismatch filter passes them through. A dedicated directional check is needed.
 - id: discover-e2e-uses-a-fake-claude-bash-shim-per-stage
   title: Discover e2e uses a fake-claude bash shim per stage
   body: |
-    Discover e2e tests use a fake-claude bash shim. The shim distinguishes Stage1 vs Stage2 invocations by grepping the prompt header; extracts the injected YAML surface-file path from the prompt body; writes a canned YAML response matching the expected schema. Pattern for testing multi-stage discover pipelines without a live model.
+    Discover e2e tests use a fake-claude bash shim that distinguishes Stage1 vs Stage2 by grepping the prompt header, extracts the YAML surface-file path from the prompt body, and writes a canned YAML response matching the expected schema.
 - id: sharedconfig-headroom-has-no-serde-default-tests-must-supply-it
   title: SharedConfig.headroom has no serde default; tests must supply it
   body: |
