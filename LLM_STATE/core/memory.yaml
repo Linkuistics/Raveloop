@@ -107,10 +107,6 @@ entries:
   title: '`dream-baseline` seeded from three call sites'
   body: |
     `seed_dream_baseline_if_missing` in `src/dream.rs` is called from `run_create` (post-session scaffolding), `run_set_phase` (every LLM phase transition including coordinators), and `GitCommitReflect`. Seeds to 0 ("never dreamed"), not current word count; seeding to current count silently delays the first dream by `headroom` words on populated plans.
-- id: claude-code-tui-requires-debug-file-workaround-for-2-1-116
-  title: --debug-file workaround removed; TUI correctness pending verification
-  body: |
-    The two `args.push` lines and 24-line comment block were deleted from `invoke_interactive` in `src/agent/claude_code.rs`. Task remains blocked: fix is empirical, requires human watching a live Work-phase TUI on claude ≥2.1.117 (`cargo install --path .` then `ravel-lite run`). If TUI still fails, revert commit 93d0de6.
 - id: phase-prompts-use-ravel-lite-state-cli-verbs
   title: Phase prompts use `ravel-lite state` CLI verbs
   body: |
