@@ -415,3 +415,33 @@ entries:
     **Why:** The ontology v2 doc split rewrote the canonical home for relationship-schema design rationale. The r7 design doc covers the LLM-driven discovery pipeline design, much of which overlaps in motivation with the migration doc.
 
     **How to apply:** After the four ontology-v2 implementation tasks ship, audit `docs/r7-related-projects-discovery-design.md` for sections redundant with `docs/component-ontology.md` or `docs/component-ontology-migration.md`, and prune or redirect them.
+- id: edgekind-has-17-variants-task-briefs-may-cite-16
+  title: EdgeKind has 17 variants; task briefs may cite 16
+  body: |
+    ---
+    name: EdgeKind has 17 variants; task briefs may cite 16
+    description: EdgeKind in ontology v2 has 17 variants; any prose citing 16 is wrong — read from EdgeKind::all() or defaults/ontology.yaml
+    type: project
+    ---
+
+    `EdgeKind::all()` in `src/ontology/schema.rs` defines 17 kebab-case variants. The `conforms-to` family has three members, not two. Prose references (including task briefs) that cite 16 are wrong. Authoritative count: `EdgeKind::all()` or `defaults/ontology.yaml`.
+- id: edge-validate-must-enforce-participant-sort-order
+  title: Edge::validate must enforce participant sort order
+  body: |
+    ---
+    name: Edge::validate must enforce participant sort order
+    description: Symmetric edges with reversed participants silently bypass distinctness checks; validation must enforce sort order
+    type: project
+    ---
+
+    Distinctness checks alone do not catch reversed symmetric-participant pairs; canonical-key dedup silently fails for `[A, B]` vs `[B, A]`. `Edge::validate` must sort participants and reject unsorted input, not merely check uniqueness. See: `Sibling edges dedup by sorted participants; parent-of by order`.
+- id: ontology-and-related-components-schema-versions-are-orthogonal
+  title: Ontology and related-components schema versions are orthogonal
+  body: |
+    ---
+    name: Ontology and related-components schema versions are orthogonal
+    description: related-components.yaml uses SCHEMA_VERSION=2; ontology.yaml uses ONTOLOGY_FILE_SCHEMA_VERSION=1 — two independent version spaces
+    type: project
+    ---
+
+    `related-components.yaml` uses `SCHEMA_VERSION=2`; `defaults/ontology.yaml` uses `ONTOLOGY_FILE_SCHEMA_VERSION=1`. Separate version fields keep the two evolutions independent; a bump in one does not imply a bump in the other.
