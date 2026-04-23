@@ -399,3 +399,19 @@ entries:
   title: Unquoted paths in error messages hide empty-path bugs
   body: |
     Quote all path values in user-facing error messages so an empty path appears as `""` rather than a silent double-space gap. Applies anywhere a path is interpolated into a string literal. An unquoted empty path is indistinguishable from surrounding whitespace, delaying diagnosis.
+- id: project-root-for-plan-uses-canonicalize-latent-catalog-path-mismatch-risk
+  title: project_root_for_plan uses canonicalize; latent catalog-path mismatch risk
+  body: |
+    `project_root_for_plan` in `src/git.rs:153` uses `canonicalize` with a raw-path fallback, while `plan_project_path` (fixed 2026-04-23) and `projects::run_add` both use `std::path::absolute`. On most developer workstations the two agree, but on macOS with symlinks in `/Users` or `/Development`, `canonicalize` introduces `/private/...` prefixes that desynchronise lookup from catalog-stored paths (which are stored via `std::path::absolute`). If any consumer ever directly compares `project_root_for_plan` output against a catalog path without normalising both sides, that comparison will silently fail.
+
+    **Why:** Surfaced during the `plan_project_path` empty-path bug fix (2026-04-23). The fix used `absolute` explicitly to match catalog storage; the same discrepancy was noticed in `git.rs` but left in scope since no current consumer cross-compares.
+
+    **How to apply:** If a future task introduces a comparison between `project_root_for_plan` output and a catalog-stored path, fix `project_root_for_plan` to use `std::path::absolute` at that point. Do not proactively change it now — it is only a latent risk.
+- id: docs-r7-related-projects-discovery-design-md-audit-deferred-post-ontology-v2
+  title: docs/r7-related-projects-discovery-design.md audit deferred post-ontology-v2
+  body: |
+    `docs/r7-related-projects-discovery-design.md` predates the ontology v2 spec split (2026-04-23) and may contain prose that is now redundant with `docs/component-ontology.md` or that should migrate to `docs/component-ontology-migration.md`. Not audited during the split; flagged as low-priority follow-up work. The doc is background material only — no backlog task depends on it — so staleness is tolerable until the ontology migration tasks complete.
+
+    **Why:** The ontology v2 doc split rewrote the canonical home for relationship-schema design rationale. The r7 design doc covers the LLM-driven discovery pipeline design, much of which overlaps in motivation with the migration doc.
+
+    **How to apply:** After the four ontology-v2 implementation tasks ship, audit `docs/r7-related-projects-discovery-design.md` for sections redundant with `docs/component-ontology.md` or `docs/component-ontology-migration.md`, and prune or redirect them.

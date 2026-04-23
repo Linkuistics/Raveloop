@@ -171,144 +171,6 @@ tasks:
     - `list --kind generates --lifecycle codegen` filters correctly.
     - `state related-projects list` still works with a stderr deprecation banner.
     - A fresh discover run populates `interaction_role_hints` for at least one catalog project whose README clearly declares a role (e.g., Ravel-Lite declares itself as an orchestrator).
-- id: extract-component-ontology-to-workspace-crate-phase-b
-  title: Extract component-ontology to workspace crate (Phase B)
-  category: refactor
-  status: not_started
-  dependencies:
-  - extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints
-  description: |
-    **Priority: LOW (deferred).** Phase B of the extraction plan. Do not start until entry criteria below are met.
-
-    **Depends on:** the CLI + Stage 1 hints task.
-
-    ## Entry criteria (from `docs/component-ontology.md` §11.2)
-
-    - Phase A (the v2 ontology in `src/ontology/`) has been stable for ≥1 release.
-    - A second consumer inside Ravel-Lite is on the near horizon (e.g., a phase prompt renderer that walks the graph to inject context about a plan's component neighbours). If no second consumer is imminent, do not extract — the single-consumer crate is unjustified churn.
-
-    ## Scope
-
-    - Move `src/ontology/` → `crates/component-ontology/` in a Cargo workspace.
-    - Convert the root `Cargo.toml` to a workspace manifest if it isn't already.
-    - Update Ravel-Lite's `Cargo.toml` to depend on `component-ontology` via `path = "crates/component-ontology"`.
-    - Verify zero Ravel-Lite-specific concepts in the extracted crate: no `LLM_STATE`, no phases, no plans, no backlog, no subagents. The crate's universe is edges, kinds, lifecycles, components, evidence.
-    - Verify the dependency list is minimal (§11.4): `serde`, `serde_yaml`, `anyhow`, `thiserror` only.
-    - Publish `defaults/ontology.yaml` as a crate-vendored file (include via `include_str!` or ship in the crate root and have Ravel-Lite copy at install).
-    - Ship crate at `0.1.0` with a short README describing the standalone use case.
-    - Verify `cargo build -p component-ontology` succeeds independently.
-    - Verify all Ravel-Lite tests still pass.
-
-    ## Out of scope
-
-    - Publication to crates.io (Phase C; deferred until a second out-of-repo consumer exists).
-    - Renaming the crate. `component-ontology` is intentionally the final name.
-    - Introducing a trait registry for edge kinds — the flat enum suffices; premature.
-
-    ## Exit criteria
-
-    - Workspace builds and tests cleanly.
-    - `component-ontology` crate has a standalone README documenting its public API.
-    - No Ravel-Lite code imports `ravel_lite::ontology::…`; all imports route through `component_ontology::…`.
-    - Semver policy documented in the crate README.
-- id: fix-plan-project-path-empty-path-bug-on-relative-plan-dir-inputs
-  title: Fix plan_project_path empty-path bug on relative plan_dir inputs
-  category: fix
-  status: done
-  dependencies: []
-  description: |
-    User-requested fix outside the planned ontology-v2 work stream.
-
-    **Symptom.** Running `ravel-lite state related-projects list --plan LLM_STATE/core` during the work phase fails with `plan's project  is not in the catalog; run 'ravel-lite run' once or add it with 'ravel-lite state projects add'`. The double-space after "project" is itself a symptom — the derived path renders empty.
-
-    **Root cause.** `plan_project_path` in `src/related_projects.rs:334` does pure `.parent().parent()` arithmetic on whatever path is passed. For a relative input like `LLM_STATE/core`:
-    - `.parent()` → `"LLM_STATE"`
-    - `.parent()` → `""` (empty PathBuf)
-
-    The empty path fails exact-equality lookup against the absolute paths `projects::run_add` stored in the catalog (`<config-root>/projects.yaml`).
-
-    **Fix shape.** Resolve plan_dir via `std::path::absolute` before taking the grandparent. This mirrors exactly what `projects::run_add` (`src/projects.rs:195`) does when it writes catalog entries, so the lookup path is normalised identically to how catalog entries were stored. Deliberately not using `canonicalize` (as sibling `git::project_root_for_plan` does): it follows symlinks and, on macOS, introduces `/private/...` prefixes that desynchronise lookup from the stored path.
-
-    **Scope.** Pure fix. No CLI verbs added. No behaviour change for absolute-path inputs (the existing `plan_project_path_derives_grandparent` test still passes unchanged). Regression test added for relative inputs.
-  results: |
-    **What was done**
-
-    - `src/related_projects.rs:334-350`: `plan_project_path` now resolves its input via `std::path::absolute` before taking the grandparent. Updated the docstring to spell out the catalog-symmetry rationale and the reason for preferring `absolute` over `canonicalize`.
-    - `src/related_projects.rs` tests: added `plan_project_path_resolves_relative_input_against_cwd`, which asserts that a relative `a/b/c` input normalises to the absolute grandparent derived from the process CWD.
-
-    **Verification**
-
-    - Targeted test: `cargo test --lib plan_project_path` — 3 passed (existing absolute-path test, existing shallow-input error test, new regression test).
-    - Full suite: `cargo test` — 466 passed, 0 failed, 0 ignored. No regressions.
-    - End-to-end: `cargo run -- state related-projects list --plan LLM_STATE/core` now emits the expected v1 YAML (three `parent-of` edges) instead of the catalog-miss error.
-
-    **What worked**
-
-    Diagnosis was fast — the error message's double-space ("plan's project  is not in the catalog") pointed directly at an empty-path display. One grep for the error text located the bail site; a second read of `plan_project_path` made the `.parent().parent()` bug immediately visible.
-
-    **What didn't**
-
-    `ravel-lite` on the user's PATH is an older installed binary; a quick sanity run there still reproduces the bug. Users relying on the shell command rather than `cargo run` will only see the fix after a reinstall. Out of scope to install.
-
-    **Suggests next**
-
-    Two drive-by observations during the investigation, worth filing if they come up again:
-    - `src/git.rs:153` (`project_root_for_plan`) uses `canonicalize` with a raw-path fallback. That's subtly divergent from what the catalog stores via `std::path::absolute`. On today's repo the two agree; on a user workstation with symlinks in `/Users` or `/Development`, they could drift. If any consumer ever compares `project_root_for_plan` output against catalog paths directly, that's a latent bug of the same shape as the one fixed here.
-    - The error message in `resolve_plan_project_name` shows the empty path with no quoting — easy to miss the double-space clue. Quoting (`"{}"`) on the displayed path would surface malformed inputs faster.
-- id: split-docs-component-ontology-md-into-reference-and-migration-docs
-  title: Split docs/component-ontology.md into reference and migration docs
-  category: refactor
-  status: done
-  dependencies: []
-  description: |
-    User-requested refactor of the ontology design document, outside the planned ontology-v2 work stream.
-
-    **Problem.** The existing `docs/component-ontology.md` (868 lines) conflates two roles: a forward-looking specification of the ontology, and a migration plan for getting there from the v1 `sibling`/`parent-of` two-kind model. The mix makes the doc less useful in both directions — readers who want the spec wade through migration prose, and triage readers see spec material interleaved with transient migration checklists.
-
-    **Requested split.**
-    - `docs/component-ontology.md` — pure reference spec of the new system. No `v1`, `superseded`, `formerly`, `supersedes`, `replaces`, or other backward-looking language. Reads as if the ontology has always existed.
-    - `docs/component-ontology-migration.md` — migration plan; input to planning; retire and delete once the migration has shipped and bedded in.
-
-    **Constraint.** Three active backlog tasks cite section anchors in the current monolithic doc:
-    - `implement-ontology-v2-types-and-defaults-ontology-yaml-additive` cites §9.4 (Public API sketch) and §9.5 (Invariants) — these live in the reference doc.
-    - `migrate-callers-and-rename-to-related-components-…` cites §12 (Handling pre-v2 files), §14.1 (Consumer audit) — these live in the migration doc.
-    - `rewrite-stage-2-discover-prompt-…` cites §13.2 (Stage 2 prompt rewrite) — migration doc.
-    - `extract-component-ontology-to-workspace-crate-phase-b` cites §11.2 (Phase B entry criteria) — migration doc.
-
-    The backlog CLI has no `set-description` verb, so pre-existing references can't be cleanly refreshed. Preserve §9.4 and §9.5 in the reference doc exactly. Migration-domain references (§12/§13.2/§14.1/§11.2) are allowed to shift into the migration doc's numbering, since those tasks are the migration work itself and will consume the migration doc before it retires.
-  results: |
-    **What was done**
-
-    - Rewrote `docs/component-ontology.md` (868 → 595 lines) as a pure reference spec. Dropped every backward-looking reference — no "v1", no "formerly", no "supersedes", no "replaces", no mention of dropped kinds. The only residual history-flavoured content is `schema_version: 2` in the on-disk schema (§7.1), which is a concrete wire contract, not a historical statement.
-      - §9.4 (Public API sketch) and §9.5 (Invariants) anchors preserved exactly. The Rust library section's ordering was rearranged slightly — "The ontology YAML" moved to §8 so that "Rust library surface" stayed at §9, protecting existing backlog references.
-      - §5.8 ("Out of scope for this ontology") retained but retitled and pruned: lists only design decisions (shares-types, negative edges, numeric confidence, hyperedges). The v1-flavoured "sibling and parent-of — always replaced" entry was moved out.
-
-    - Created `docs/component-ontology-migration.md` (300 lines). Contents:
-      - §1 The problem: current state, v1 schema, Ravel-Lite → Ravel concrete failure case, projects→components naming rationale.
-      - §2 Why there is no migrator.
-      - §3 User-facing upgrade procedure.
-      - §4 Loader behaviour for pre-v2 files.
-      - §5 Discover pipeline delta (Stage 1 addition, Stage 2 prompt rewrite, Apply phase updates).
-      - §6 Consumer audit and rename policy (the full direct-consumers table, indirect consumers, filename map, rename policy).
-      - §7 Extraction plan (Phase A / B / C).
-      - §8 Acceptance checklist.
-      - §9 Sunset conditions.
-
-    - Cross-references: every `§X` reference in both docs audited for resolvability. Internal references use bare `§X`; the migration doc uses "reference doc §X" when pointing into `component-ontology.md`.
-
-    **What worked**
-
-    Preserving §9.4 / §9.5 by reordering "Ontology YAML" before "Rust library surface" kept the backlog entries' anchors live without any doc-structure contortion. The reorder reads naturally — the YAML is a data source, the library consumes it, so it makes sense for the YAML section to come first.
-
-    **What didn't**
-
-    Three backlog tasks still cite §11.2, §12, §13.2, §14.1 by their old monolithic-doc numbers. After the split those sections live in `component-ontology-migration.md` at §7.2, §4, §5.2, §6.1 respectively. The backlog CLI has no `set-description` verb, so I couldn't refresh the pointers cleanly. Left as a triage concern rather than hacked around — the tasks in question are the migration work itself and will consume the migration doc before it retires, so the staleness is tolerable. See Suggests next.
-
-    **Suggests next**
-
-    - Triage can decide whether to (a) leave the stale §-refs in the backlog entries (tolerable: the migration-doc will be deleted after those tasks ship, so the pointers die with the doc), (b) hand-edit `backlog.yaml` directly to refresh the pointers, or (c) add a `set-description` / `set-body` verb to the backlog CLI and use it. (c) is the general-purpose answer if this pattern ("user-requested refactor invalidates backlog prose") is expected to recur.
-    - Companion doc `docs/r7-related-projects-discovery-design.md` is referenced from the migration doc as background. Untouched in this session but worth auditing post-split — it may contain prose that's now redundant with the reference doc, or that should also migrate to the migration doc for symmetry.
-    - If an `Acceptance checklist` were ever to appear in the *reference* doc (analogue to the migration doc's §8), it'd be bounded to a stable, spec-compliance-style checklist — distinct from the migration one. Not suggesting this now; just flagging that the reference doc is deliberately checklist-free.
 - id: add-set-description-verb-to-backlog-cli
   title: Add set-description verb to backlog CLI
   category: feature
@@ -350,3 +212,43 @@ tasks:
     - All five integration tests above pass.
     - No regression in the existing backlog test suite.
     - Documentation (if any exists — check `docs/structured-backlog-r1-plan.md`) updated to mention the new verb.
+- id: extract-component-ontology-to-workspace-crate-phase-b
+  title: Extract component-ontology to workspace crate (Phase B)
+  category: refactor
+  status: not_started
+  dependencies:
+  - extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints
+  description: |
+    **Priority: LOW (deferred).** Phase B of the extraction plan. Do not start until entry criteria below are met.
+
+    **Depends on:** the CLI + Stage 1 hints task.
+
+    ## Entry criteria (from `docs/component-ontology.md` §11.2)
+
+    - Phase A (the v2 ontology in `src/ontology/`) has been stable for ≥1 release.
+    - A second consumer inside Ravel-Lite is on the near horizon (e.g., a phase prompt renderer that walks the graph to inject context about a plan's component neighbours). If no second consumer is imminent, do not extract — the single-consumer crate is unjustified churn.
+
+    ## Scope
+
+    - Move `src/ontology/` → `crates/component-ontology/` in a Cargo workspace.
+    - Convert the root `Cargo.toml` to a workspace manifest if it isn't already.
+    - Update Ravel-Lite's `Cargo.toml` to depend on `component-ontology` via `path = "crates/component-ontology"`.
+    - Verify zero Ravel-Lite-specific concepts in the extracted crate: no `LLM_STATE`, no phases, no plans, no backlog, no subagents. The crate's universe is edges, kinds, lifecycles, components, evidence.
+    - Verify the dependency list is minimal (§11.4): `serde`, `serde_yaml`, `anyhow`, `thiserror` only.
+    - Publish `defaults/ontology.yaml` as a crate-vendored file (include via `include_str!` or ship in the crate root and have Ravel-Lite copy at install).
+    - Ship crate at `0.1.0` with a short README describing the standalone use case.
+    - Verify `cargo build -p component-ontology` succeeds independently.
+    - Verify all Ravel-Lite tests still pass.
+
+    ## Out of scope
+
+    - Publication to crates.io (Phase C; deferred until a second out-of-repo consumer exists).
+    - Renaming the crate. `component-ontology` is intentionally the final name.
+    - Introducing a trait registry for edge kinds — the flat enum suffices; premature.
+
+    ## Exit criteria
+
+    - Workspace builds and tests cleanly.
+    - `component-ontology` crate has a standalone README documenting its public API.
+    - No Ravel-Lite code imports `ravel_lite::ontology::…`; all imports route through `component_ontology::…`.
+    - Semver policy documented in the crate README.
