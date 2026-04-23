@@ -41,7 +41,7 @@ tasks:
 - id: audit-docs-r7-related-projects-discovery-design-md-post-ontology-v2
   title: Audit docs/r7-related-projects-discovery-design.md post-ontology-v2
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     **Priority: LOW.** `docs/r7-related-projects-discovery-design.md` predates the ontology v2 spec split and may contain prose now redundant with `docs/component-ontology.md` or that belongs in `docs/component-ontology-migration.md`.
@@ -65,3 +65,108 @@ tasks:
     - `docs/r7-related-projects-discovery-design.md` does not contradict `docs/component-ontology.md` on any point.
     - Sections describing the v1 vocabulary (`sibling`, `parent-of`) either removed or clearly marked as historical.
     - Cross-references to the ontology docs added where appropriate.
+  results: |
+    ## What was done
+
+    Audited `docs/r7-related-projects-discovery-design.md` against the
+    post-ontology-v2 reality. The doc predated the schema split
+    (2026-04-23); three classes of drift were present.
+
+    ### 1. File name / CLI verb drift
+    The edge store moved from `related-projects.yaml` →
+    `related-components.yaml`, and the CLI verb root from
+    `state related-projects` → `state related-components` (with a
+    one-release deprecation alias). All body-text references were updated
+    in-place; every historical mention is now inside an explicit
+    `> _Historical note._` block or framed as "what changed".
+
+    ### 2. v1 edge-kind vocabulary
+    The original R7 spec described only two kinds (`sibling`,
+    `parent-of`) and a v1 proposal schema lacking `lifecycle`,
+    `evidence_grade`, and `evidence_fields`. That vocabulary is now
+    superseded by the 17-kind ontology.
+
+    Treatment:
+    - **§Stage 2 — Prompt contract / Proposal schema**: replaced the v1
+      enumeration with a concise v2 summary plus pointers to
+      `component-ontology.md` §§3.2, 5, 6, 7 (the authoritative locations)
+      and `component-ontology-migration.md` §5.2 (Stage 2 delta). Rather
+      than duplicate 17 kinds here, the doc now defers and cross-refs.
+    - **§Merge-Apply Policy — Apply semantics**: rewrote the kind-conflict
+      description to match the v2 narrower rule (directional conflict at
+      same `(kind, lifecycle)` only; cross-kind is expected per §3.5).
+    - **§Testing Strategy**: updated the former "kind-conflict apply test"
+      bullet to the v2 directional shape.
+
+    ### 3. Behavioral drift (pipeline architecture)
+    Two non-vocabulary changes landed during implementation that the spec
+    didn't anticipate.
+
+    - **Dirty-tree handling.** Spec said "bail on dirty subtree". Shipped
+      implementation folds dirty state into a `dirty_hash` alongside
+      `tree_sha`; the cache invalidates cleanly and Stage 1 runs against
+      the working tree. Updated §Cache, §Preconditions, and the Scope
+      "Out of scope" bullet (which now carries a strike-through plus
+      "shipped after all" note).
+    - **Agent-trait widening.** The spec's open question about widening
+      `Agent::dispatch_subagent`'s target parameter was resolved during
+      implementation by **not** using the Agent trait at all — Stage 1
+      spawns `claude -p` directly via `spawn_claude_with_cwd`
+      (`src/discover/stage1.rs:185`). The doc's §Rust Module Layout and
+      §Open Questions sections now record that resolution.
+
+    ### 4. Structural updates
+    - Status line: "Proposed. Recommendation: **go**" → "Shipped.
+      Historical design record."
+    - Top-level banner added pointing at `component-ontology.md` and
+      `component-ontology-migration.md` as authoritative for any vocabulary
+      question, with this doc retained for pipeline architecture (two-stage
+      split, cache design, concurrency, failure modes) that the ontology
+      docs do not cover.
+    - §Rust Module Layout rewritten to describe the shipped layout
+      (`src/discover/{mod,cache,stage1,stage2,apply,schema,tree_sha}.rs`
+      plus the separate `src/ontology/`) rather than the spec's
+      single-file-with-split-if-large target.
+    - §Open Questions reframed as "Resolved during implementation" and
+      cross-references `component-ontology-migration.md` for the schema-
+      vocabulary open questions that now own that territory.
+
+    ## Verification
+
+    - `grep -nE "sibling|parent-of|related-projects|source_tree_shas|supporting_surface_fields"`
+      — every remaining match is either inside a `> _Historical note._`
+      block, in prose explaining the v1 → v2 transition, or the technical
+      "sibling subtree" (adjacent-directory) sense unrelated to edge
+      kinds.
+    - Cross-references to `component-ontology.md` §§3.2, 3.5, 5, 6, 7.3,
+      7.4, 8 and `component-ontology-migration.md` §§5.2, 6.1, 6.4, 7 are
+      resolved by section number in each target doc.
+    - Diff stat: `233 insertions(+), 101 deletions(-)` across a single
+      file. No code changes; no generated artifacts; `.gitignore` review
+      trivially satisfied.
+
+    ## What worked
+
+    The existing authoritative docs (`component-ontology.md` +
+    `component-ontology-migration.md`) were thorough enough that the r7
+    edits could prefer cross-references over duplication, which is what
+    the task description asked for. A `> _Historical note._` convention
+    applied consistently let the doc preserve its original design
+    narrative while flagging every superseded claim.
+
+    ## What this suggests next
+
+    - The companion `docs/r7-related-projects-discovery-plan.md` (the
+      implementation plan) has the same kind of v1 drift — `grep` shows
+      ~15 occurrences of `related-projects`, multiple `sibling` / `parent-of`
+      references in Task 9 and Task 10. It's a plan doc, not a spec, so
+      it's more forgivable as a frozen record of implementation steps. But
+      if a future follow-up wants consistency across `docs/`, auditing
+      that plan with the same rubric is a natural extension.
+    - `docs/architecture.md` was not audited as part of this task — worth
+      a glance to confirm it doesn't carry stale v1 vocabulary.
+    - The memory entry about rename-cascade design (three cascade points,
+      introduce a Trait-based registry before a fourth) is now visibly
+      accurate: r7 doc §Rust Module Layout names the two cache-related
+      cascade points (`rename_component_in_edges`, `discover::cache::rename`),
+      confirming the cascade count.
