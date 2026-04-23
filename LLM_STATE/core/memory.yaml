@@ -404,9 +404,9 @@ entries:
   body: |
     `project_root_for_plan` in `src/git.rs:153` uses `canonicalize` with a raw-path fallback; `plan_project_path` and `projects::run_add` both use `std::path::absolute`. On macOS with symlinks in `/Users` or `/Development`, `canonicalize` introduces `/private/...` prefixes that desynchronise lookup from catalog-stored paths. No current consumer cross-compares the two outputs. Fix `project_root_for_plan` to use `std::path::absolute` only if a comparison against a catalog-stored path is introduced.
 - id: docs-r7-related-projects-discovery-design-md-audit-deferred-post-ontology-v2
-  title: docs/r7-related-projects-discovery-design.md audit deferred post-ontology-v2
+  title: docs/r7-related-projects-discovery-design.md is a historical record
   body: |
-    `docs/r7-related-projects-discovery-design.md` may contain prose now redundant with `docs/component-ontology.md` or `docs/component-ontology-migration.md`. No backlog task depends on it; staleness is tolerable until the four ontology-v2 implementation tasks ship. After those land, audit and prune or redirect sections that overlap with the ontology docs.
+    `docs/r7-related-projects-discovery-design.md` has been audited post-ontology-v2. Status is "Shipped. Historical design record."; a top-of-file banner redirects to `docs/component-ontology.md` and `docs/component-ontology-migration.md` as authoritative vocabulary. v1 edge-kind prose is either removed or marked historical.
 - id: edgekind-has-17-variants-task-briefs-may-cite-16
   title: EdgeKind has 17 variants; task briefs may cite 16
   body: |
@@ -451,3 +451,11 @@ entries:
   title: Stage 2 hints-as-priors enforcement is prose-only; hard assertion deferred
   body: |
     Stage 2 `priors-not-verdicts` section is currently prose only. If real discover runs show Stage 2 over-weighting `interaction_role_hints` (e.g., proposing `strong` edges where the only evidence is a hint), consider adding a per-edge hard assertion: "evidence_fields must include at least one non-hint field for strong-grade proposals." Hold off until there is real discover output to judge; the prompt change alone may be sufficient.
+- id: r7-discovery-plan-md-has-stale-v1-vocabulary
+  title: r7-discovery-plan.md has stale v1 vocabulary
+  body: |
+    `docs/r7-related-projects-discovery-plan.md` has ~15 occurrences of `related-projects` and v1 edge-kind references. It is a frozen implementation record; leave as-is unless a consumer references it directly.
+- id: docs-architecture-md-not-audited-for-v1-vocabulary
+  title: docs/architecture.md not audited for v1 vocabulary
+  body: |
+    `docs/architecture.md` was not audited post-ontology-v2 and may carry stale v1 edge-kind vocabulary or `related-projects` references.
