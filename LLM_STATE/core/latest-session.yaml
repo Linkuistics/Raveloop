@@ -1,24 +1,17 @@
-id: session-29
-timestamp: 2026-04-23T08:58:46Z
+id: session-30
+timestamp: 2026-04-23T09:39:50Z
 phase: work
 body: |
-  ### Session 29 (2026-04-23T08:58:46Z) — Migrate related-projects to related-components with ontology v2
+  ### Session 30 (2026-04-23T09:39:50Z) — Wire {{ONTOLOGY_KINDS}} token into Stage 2 prompt
 
-  - Completed task `migrate-callers-and-rename-to-related-components-no-migrator-delete-and-regenerate`: swapped all internal consumers from v1 `RelatedProjectsFile` / `EdgeKind::{Sibling, ParentOf}` onto the v2 ontology types already living in `src/ontology/`.
-  - Deleted `src/related_projects.rs` (1102 lines); added `src/related_components.rs` with host-aware load/save/rename wrappers, legacy-v1-file hard-error guard, and updated CLI handlers.
-  - Renamed `tests/state_related_projects.rs` → `tests/state_related_components.rs`, rewritten end-to-end for v2 shapes (symmetric-kind canonicalisation, deprecated-alias forwarding with stderr warning, legacy-v1-file hard-error path).
-  - Bumped proposals schema to v2 in `src/discover/schema.rs`: `ProposalRecord` gains `lifecycle`, `evidence_grade`, `evidence_fields`, `rationale`; `PROPOSALS_SCHEMA_VERSION = 2`.
-  - Updated `src/discover/apply.rs` to construct v2 `Edge` values from v2 proposals; narrowed `find_directional_conflict` to directed-kind + same-lifecycle + reversed-participants only.
-  - Updated `src/main.rs`: added `mod ontology`; new `StateCommands::RelatedComponents` variant; old `RelatedProjects` variant retained as a deprecated alias with stderr warning; `MigrateRelatedProjects` / `print_migration_report` deleted.
-  - Updated `src/projects.rs` rename cascade to call `related_components::rename_component_in_edges`; four cascade tests rewritten for v2 edge kinds.
-  - Updated `defaults/discover-stage2.md` to emit v2 proposal shape (9-kind transitional subset; full vocabulary swap is next task).
-  - Updated `defaults/phases/work.md` and `defaults/create-plan.md` to reference `state related-components` and `discover --apply`.
-  - Changed LICENSE from MIT to Apache 2.0.
-  - All 500 tests pass.
+  - **What was attempted:** Complete task `rewrite-stage-2-discover-prompt-for-ontology-v2-vocabulary` — replace the hard-coded edge-kinds section in `defaults/discover-stage2.md` with a `{{ONTOLOGY_KINDS}}` template token rendered at launch time from `defaults/ontology.yaml`, wire the substitution into `src/discover/stage2.rs`, and add drift tests asserting bijection between the rendered block and `EdgeKind::all()`.
 
-  - Worked well: the v2 types in `src/ontology/` were already complete, making the migration primarily mechanical caller-by-caller substitution. The legacy-v1-file hard-error path and deprecated-alias test coverage were straightforward to add.
-  - Surprises: the fake-claude shim in `tests/discover.rs` extracts the output path via `grep -oE '/[^[:space:]]+\.yaml'`, which greedily matches any `.yaml` filename in the prompt — a mention of `defaults/ontology.yaml` in the Stage 2 prompt would have hijacked it. Worked around by omitting that filename from the prompt; the next task's prompt rewrite should harden the shim to extract from a dedicated marker.
-  - Linting surprise: `src/ontology/mod.rs` pub-re-exports are consumed only by lib-side `#[cfg(test)]` drift tests; main.rs sees them as unused. Resolved with targeted `#[allow(unused_imports)]` / `#[allow(dead_code)]` — worth removing when the next task's prompt-rendering code uses those symbols.
+  - **What worked:** All deliverables shipped. `defaults/discover-stage2.md` now has `{{ONTOLOGY_KINDS}}` where the static kind list was, plus a new nine-step "Decision tree" section and a rewritten "Insufficient signals" section repositioned as the `weak` evidence-grade threshold. `src/ontology/defaults.rs` gained `render_kinds_for_prompt(&OntologyYaml) -> String` and `render_embedded_kinds_for_prompt() -> Result<String>`; both re-exported from `src/ontology/mod.rs`. `src/discover/stage2.rs` calls `render_embedded_kinds_for_prompt()` first (before `{{PROPOSALS_OUTPUT_PATH}}`), then runs `assert_no_dangling_tokens`. Four drift tests in `src/discover/stage2.rs::tests` and six unit tests in `src/ontology/defaults.rs::tests` and `src/ontology/mod.rs::drift_tests` were added. `cargo build` clean; `cargo test --lib` 453 passed; `cargo test --tests` all suites green.
 
-  - Unblocked: `rewrite-stage-2-discover-prompt-for-ontology-v2-vocabulary` (next task). Its prompt rewrite should also harden the fake-claude shim.
-  - Latent design question: `find_directional_conflict` uses the narrow reading of §7.4 (same lifecycle only for reversed-pair conflicts). Whether cross-lifecycle reversals should also be flagged is not settled; surfaced in the task results for the next triage cycle.
+  - **What this suggests trying next:** Task `extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints` is now unblocked. It adds `interaction_role_hints` to Stage 1 surface records and extends the CLI for v2 `lifecycle`/`evidence-grade` arguments. The Stage 2 decision tree should have a paragraph added explaining how to consume hints as priors once Stage 1 starts emitting them.
+
+  - **Key learnings / notes:**
+    - The `{{ONTOLOGY_KINDS}}` substitution must happen *before* `{{PROPOSALS_OUTPUT_PATH}}` to prevent the fake-claude shim's `grep -oE '/[^[:space:]]+\.yaml'` extractor in `tests/discover.rs` from latching onto a `.yaml` mention that might appear in the rendered ontology block. Ordering substitutions defensively is the correct pattern.
+    - Task brief references to `docs/component-ontology.md §13.2/§14.1` do not exist; those numbers belong to the migration companion doc (`docs/component-ontology-migration.md §5.2`). Triage should update the sibling task `extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints` description to cite the correct section.
+    - Golden-file test deferred: structural drift tests + existing e2e cover the shape; a golden file for LLM output would be non-deterministic to regenerate and duplicate what's already pinned.
+    - Manual smoke test (`ravel-lite state related-components discover --apply` against a real catalog) still outstanding; requires a live claude subagent and a v2-ready catalog. Deferred to user execution.
