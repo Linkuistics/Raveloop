@@ -2,8 +2,7 @@ tasks:
 - id: remove-claude-code-debug-file-workaround-once-version-exceeds-2-1-116
   title: Remove Claude Code `--debug-file` workaround once version exceeds 2.1.116
   category: maintenance
-  status: blocked
-  blocked_reason: code deletion applied; awaiting human TUI-render verification on next work cycle after ravel-lite rebuild
+  status: done
   dependencies: []
   description: |
     `invoke_interactive` in `src/agent/claude_code.rs` passes
@@ -32,36 +31,28 @@ tasks:
     but the TUI verification step cannot be done by a subagent (no tty) and was
     not done by a human.
   results: |
-    **Status: blocked on cross-session TUI verification.** Code change is applied but verification gate has not yet been passed; status is intentionally NOT `done`.
+    **Status: done.** Verified 2026-04-23.
 
-    **What was done (2026-04-23):**
+    **Verification outcome:** User ran a rebuilt `ravel-lite` against `claude 2.1.117` without `--debug-file /tmp/claude-debug.log` and observed the Work-phase TUI rendering normally. The empirical bug that motivated the workaround (stuck-pilot / blank / non-responsive render on claude 2.1.113–2.1.116) does not reproduce on 2.1.117. The code deletion in commit `93d0de6` stands; no revert needed.
 
-    - Verified installed `claude` binary is `2.1.117` (past the 2.1.116 threshold).
-    - Removed from `src/agent/claude_code.rs::invoke_interactive`:
-      - The two `args.push` lines adding `--debug-file /tmp/claude-debug.log` (was lines 205-206).
-      - The 24-line WORKAROUND comment block preceding them (was lines 181-204). The forensic detail in that comment (ruled-out hypotheses: termios state, isatty, process-group leadership, foreground tty ownership, signal mask, O_NONBLOCK, etc.) is preserved in git blame; recoverable via `git log -S "WORKAROUND" -- src/agent/claude_code.rs` if the bug resurfaces.
-    - `cargo check`: clean compile.
-    - `cargo test`: 406 lib tests + all integration suites pass (no regressions). No test pinned the `--debug-file` args, so deletion is behaviourally free at the test layer.
-    - No `.gitignore` change needed; `/tmp/claude-debug.log` lives outside the repo.
-    - `tests/state_backlog.rs` references "remove-claude-code-debug-file-workaround" in a synthetic backlog fixture (not coupled to the real task) — unaffected.
+    **What was done across both work cycles (combined history):**
 
-    **Why `blocked`, not `done`:**
+    - **2026-04-23, cycle 1** — Verified `claude` 2.1.117 installed. Removed from `src/agent/claude_code.rs::invoke_interactive`:
+      - The two `args.push` lines adding `--debug-file /tmp/claude-debug.log` (was lines 205–206).
+      - The 24-line WORKAROUND comment block preceding them (was lines 181–204). Ruled-out-hypothesis forensic detail (termios state, isatty, process-group leadership, foreground tty ownership, signal mask, O_NONBLOCK, etc.) is preserved in git blame; recoverable via `git log -S "WORKAROUND" -- src/agent/claude_code.rs` if the bug resurfaces.
+      - `cargo check` clean; `cargo test` 406 lib tests + all integration suites pass. No test pinned the `--debug-file` args.
+      - `.gitignore` unchanged; `/tmp/claude-debug.log` lives outside the repo.
+      - Status set to `blocked` pending human TUI verification (the step a subagent cannot perform — no tty).
 
-    The task description is explicit: "a version bump alone is insufficient" — the fix is empirical (debug mode masks the bug via an unknown upstream mechanism, not a documented patch). Declaring `done` based on a clean compile + passing test suite would repeat the prior attempt's mistake. The prior 2.1.117 attempt was also a trivial 27-line deletion; it was rolled back unverified because the TUI-render verification cannot be done by a subagent or headlessly — it requires a human watching a real work-phase TUI rendered by a freshly-built `ravel-lite` binary invoking a `claude` subprocess without the flag.
+    - **2026-04-23, cycle 2 (this cycle)** — Human operator rebuilt `ravel-lite` and drove a live Work-phase TUI against `claude 2.1.117` without `--debug-file`. TUI rendered normally. Verification gate passed. Status flipped to `done`.
 
-    **Verification protocol for the next work cycle (human-in-the-loop):**
+    **Follow-up housekeeping (handed off, not done here):**
 
-    1. After this cycle's git-commit-work commits the source change, rebuild: `cargo install --path .` (or however `ravel-lite` is deployed on this machine).
-    2. Start a fresh `ravel-lite run` against any real plan.
-    3. Observe the Work-phase TUI on claude 2.1.117 without `--debug-file`:
-       - **If it renders normally** → the upstream bug is fixed. Unblock the task: `ravel-lite state backlog set-status LLM_STATE/core remove-claude-code-debug-file-workaround-once-version-exceeds-2-1-116 done` and amend this Results block with a "verified 2026-04-NN" line.
-       - **If the TUI silently fails to render** (the original symptom — stuck-pilot / blank / non-responsive) → the workaround is still needed. `git revert <sha-of-work-commit>` to restore the `args.push` lines, then re-block this task with reason "2.1.117 still reproduces; re-test on future claude version". No re-edit of the comment block needed — the revert restores it verbatim.
+    - Memory entry `claude-code-tui-requires-debug-file-workaround-for-2-1-116` in `LLM_STATE/core/memory.yaml` describes code that no longer exists. It was updated in cycle 1 to describe the pending-verification state but is now also stale — the verification has succeeded. The reflect phase that follows this work cycle should either delete it or rewrite it for historical context (e.g. "bug observed on claude 2.1.113–2.1.116; not reproducible on 2.1.117; workaround removed in commit 93d0de6"). Memory mutation is reflect's job, not work's, so this cycle does not touch it.
 
-    **What this suggests next:**
+    - The other open backlog task (`smoke-test-discover-pipeline-against-real-project-catalog`) remains the sole not-started item and is also human-in-the-loop. Triage may want to surface whether there is any headless-doable work left on this plan, or whether subsequent cycles should expect to be interactive-only until new tasks land.
 
-    - Memory entry `claude-code-tui-requires-debug-file-workaround-for-2-1-116` in `LLM_STATE/core/memory.yaml` now describes code that no longer exists. It is stale pending verification. If verification succeeds, the entry should be deleted or rewritten to document "bug observed on 2.1.113–2.1.116, not reproducible on 2.1.117" for historical context. **Memory updates belong to reflect, not work** — reflect will see the diff and handle it.
-    - The only other open backlog task (`smoke-test-discover-pipeline-against-real-project-catalog`) is independently blocked on human verification of LLM-generated proposals. The plan now has zero tasks that can be completed by a headless subagent alone; subsequent triage may want to surface this observation.
-    - If verification fails and the workaround returns, consider whether a lightweight opt-out mechanism (env var or config key) would be worth the complexity to make future verification attempts possible without source edits. Not a recommendation — just a note for that contingency.
+    **No source or config files were modified this cycle.** Only plan-state files (`LLM_STATE/core/backlog.yaml`) changed, which is owned by the git-commit-work phase that follows analyse-work. The working tree is otherwise clean.
 - id: smoke-test-discover-pipeline-against-real-project-catalog
   title: Smoke-test discover pipeline against real project catalog
   category: validation
