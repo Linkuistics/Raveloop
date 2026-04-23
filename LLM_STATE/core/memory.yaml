@@ -452,4 +452,12 @@ entries:
 - id: fake-claude-stage-2-shim-greedily-extracts-first-yaml-path
   title: Fake-claude Stage 2 shim greedily extracts first `.yaml` path
   body: |
-    The discover e2e fake-claude shim extracts the output path via `grep -oE '/[^[:space:]]+\.yaml'`, which matches any `.yaml` filename in the prompt body. Mentioning a `.yaml` file (e.g. `defaults/ontology.yaml`) in the Stage 2 prompt text hijacks the extracted path. Workaround: omit `.yaml` filenames from Stage 2 prompt prose, or harden the shim to extract from a dedicated marker. See: `Discover e2e uses a fake-claude bash shim per stage`.
+    The discover e2e fake-claude shim extracts the output path via `grep -oE '/[^[:space:]]+\.yaml'`; it matches the first `.yaml` path in the rendered prompt. Stage 2 substitutes `{{ONTOLOGY_KINDS}}` before `{{PROPOSALS_OUTPUT_PATH}}` (content macros first, per `substitute_tokens` ordering); the rendered kind block contains no `.yaml` paths, so the shim's greedy extraction lands on the actual output path. Any new Stage 2 content token that could produce `.yaml` paths must also appear after `{{PROPOSALS_OUTPUT_PATH}}` in the template. See: `Discover e2e uses a fake-claude bash shim per stage`; `substitute_tokens expands content macros before path tokens`.
+- id: render-embedded-kinds-for-prompt-injects-edgekind-vocabulary-into-stage-2
+  title: render_embedded_kinds_for_prompt injects EdgeKind vocabulary into Stage 2
+  body: |
+    `src/ontology/defaults.rs` exposes `render_kinds_for_prompt(&OntologyYaml) -> String` and `render_embedded_kinds_for_prompt() -> Result<String>`. Both are re-exported from `src/ontology/mod.rs`. `src/discover/stage2.rs` calls `render_embedded_kinds_for_prompt()` to substitute `{{ONTOLOGY_KINDS}}` in the Stage 2 prompt. This is the sole injection point for the EdgeKind vocabulary into LLM prompts.
+- id: interaction-role-hints-spec-is-in-migration-doc-5-2-not-ontology-doc
+  title: interaction_role_hints spec is in migration doc §5.2, not ontology doc
+  body: |
+    `docs/component-ontology.md` has no §13.2 or §14.1. The `interaction_role_hints` design lives in `docs/component-ontology-migration.md §5.2`. Task briefs that cite the former section numbers are wrong; use the migration companion doc.
