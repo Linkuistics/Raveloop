@@ -26,11 +26,11 @@ entries:
 - id: work-phase-must-not-commit-source-files
   title: Work phase must not commit source files
   body: |
-    `work.md` step 8 requires the work phase to leave non-plan paths dirty; source-commit authority belongs to analyse-work.
+    The work phase leaves non-plan paths dirty; source-commit authority belongs to `analyse-work`.
 - id: analyse-work-commits-all-non-plan-paths
   title: Analyse-work commits all non-plan paths
   body: |
-    `analyse-work.md` step 6 requires staging and committing every path outside the plan dir, or justifying each skipped path in the session log.
+    Analyse-work stages and commits every path outside the plan dir, or justifies each skipped path in the session log.
 - id: analyse-work-receives-dirty-tree-snapshot-as-work-tree-status
   title: Analyse-work receives dirty-tree snapshot as `{{WORK_TREE_STATUS}}`
   body: |
@@ -38,7 +38,7 @@ entries:
 - id: streamlineoutcome-enum-distinguishes-ignored-vs-malformed-stream-lines
   title: '`StreamLineOutcome` enum distinguishes ignored vs malformed stream lines'
   body: |
-    Replacing `Option<FormattedOutput>` with an enum makes `valid but no display` and `parse failure` distinguishable. Apply this pattern wherever an `Option` return collapses two semantically distinct outcomes into one.
+    `StreamLineOutcome` distinguishes `valid-but-no-display` from parse failure; an `Option` return collapses both into `None`. Apply this enum pattern wherever an `Option` conflates two semantically distinct outcomes.
 - id: survey-stdout-read-has-300s-timeout
   title: Survey stdout read has 300s timeout
   body: |
@@ -264,7 +264,7 @@ entries:
   body: |
     Called in `Commands::Run` before Ratatui alternate-screen takeover so any `NameCollision` prompt reaches a real tty.
 - id: src-state-module-structure
-  title: '`src/state/` module structure'
+  title: '`src/state/` uses module-per-area layout'
   body: |
     `src/state.rs` restructured into `src/state/` with `phase.rs`, `backlog/` (schema, yaml_io, parse_md, verbs, mod), `memory/` (schema, yaml_io, parse_md, verbs, mod), `session_log/` (schema, yaml_io, parse_md, verbs, mod), and `migrate.rs`. New state areas follow this layout.
 - id: find-task-centralises-backlog-id-lookup
@@ -372,9 +372,9 @@ entries:
   body: |
     `--setting-sources project,local` excludes the user's allowlist; Write to a cache dir outside cwd is silently blocked. Stage 1 and Stage 2 spawns require `--allowed-tools "Read,Grep,Glob,Bash,Write,Task"` and `--add-dir <cache-dir>`.
 - id: opportunistic-discover-on-catalog-changes-deferred-idea
-  title: Opportunistic discover on catalog changes (deferred idea)
+  title: Opportunistic discover on catalog changes is a deferred idea
   body: |
-    During the R7 smoke-test cycle, the idea surfaced of teaching analyse-work or triage to run `discover` opportunistically when project composition changes (new projects added, catalog membership shifts). This would keep `related-projects.yaml` fresher without requiring manual invocation. The ontology v2 design is now complete (`docs/component-ontology.md`); revisit trigger conditions after the four additive ontology-v2 implementation tasks land and discover re-runs against the new schema.
+    Analyse-work or triage could run `discover` opportunistically when project composition changes (new projects added, catalog membership shifts), keeping `related-projects.yaml` fresher without manual invocation. The ontology v2 design is complete; revisit trigger conditions after the four additive ontology-v2 implementation tasks land and discover re-runs against the new schema.
 - id: proposalsfile-source-project-states-stores-full-projectstate
   title: ProposalsFile.source_project_states stores full ProjectState
   body: |
@@ -402,48 +402,22 @@ entries:
 - id: project-root-for-plan-uses-canonicalize-latent-catalog-path-mismatch-risk
   title: project_root_for_plan uses canonicalize; latent catalog-path mismatch risk
   body: |
-    `project_root_for_plan` in `src/git.rs:153` uses `canonicalize` with a raw-path fallback, while `plan_project_path` (fixed 2026-04-23) and `projects::run_add` both use `std::path::absolute`. On most developer workstations the two agree, but on macOS with symlinks in `/Users` or `/Development`, `canonicalize` introduces `/private/...` prefixes that desynchronise lookup from catalog-stored paths (which are stored via `std::path::absolute`). If any consumer ever directly compares `project_root_for_plan` output against a catalog path without normalising both sides, that comparison will silently fail.
-
-    **Why:** Surfaced during the `plan_project_path` empty-path bug fix (2026-04-23). The fix used `absolute` explicitly to match catalog storage; the same discrepancy was noticed in `git.rs` but left in scope since no current consumer cross-compares.
-
-    **How to apply:** If a future task introduces a comparison between `project_root_for_plan` output and a catalog-stored path, fix `project_root_for_plan` to use `std::path::absolute` at that point. Do not proactively change it now — it is only a latent risk.
+    `project_root_for_plan` in `src/git.rs:153` uses `canonicalize` with a raw-path fallback; `plan_project_path` and `projects::run_add` both use `std::path::absolute`. On macOS with symlinks in `/Users` or `/Development`, `canonicalize` introduces `/private/...` prefixes that desynchronise lookup from catalog-stored paths. No current consumer cross-compares the two outputs. Fix `project_root_for_plan` to use `std::path::absolute` only if a comparison against a catalog-stored path is introduced.
 - id: docs-r7-related-projects-discovery-design-md-audit-deferred-post-ontology-v2
   title: docs/r7-related-projects-discovery-design.md audit deferred post-ontology-v2
   body: |
-    `docs/r7-related-projects-discovery-design.md` predates the ontology v2 spec split (2026-04-23) and may contain prose that is now redundant with `docs/component-ontology.md` or that should migrate to `docs/component-ontology-migration.md`. Not audited during the split; flagged as low-priority follow-up work. The doc is background material only — no backlog task depends on it — so staleness is tolerable until the ontology migration tasks complete.
-
-    **Why:** The ontology v2 doc split rewrote the canonical home for relationship-schema design rationale. The r7 design doc covers the LLM-driven discovery pipeline design, much of which overlaps in motivation with the migration doc.
-
-    **How to apply:** After the four ontology-v2 implementation tasks ship, audit `docs/r7-related-projects-discovery-design.md` for sections redundant with `docs/component-ontology.md` or `docs/component-ontology-migration.md`, and prune or redirect them.
+    `docs/r7-related-projects-discovery-design.md` may contain prose now redundant with `docs/component-ontology.md` or `docs/component-ontology-migration.md`. No backlog task depends on it; staleness is tolerable until the four ontology-v2 implementation tasks ship. After those land, audit and prune or redirect sections that overlap with the ontology docs.
 - id: edgekind-has-17-variants-task-briefs-may-cite-16
   title: EdgeKind has 17 variants; task briefs may cite 16
   body: |
-    ---
-    name: EdgeKind has 17 variants; task briefs may cite 16
-    description: EdgeKind in ontology v2 has 17 variants; any prose citing 16 is wrong — read from EdgeKind::all() or defaults/ontology.yaml
-    type: project
-    ---
-
     `EdgeKind::all()` in `src/ontology/schema.rs` defines 17 kebab-case variants. The `conforms-to` family has three members, not two. Prose references (including task briefs) that cite 16 are wrong. Authoritative count: `EdgeKind::all()` or `defaults/ontology.yaml`.
 - id: edge-validate-must-enforce-participant-sort-order
   title: Edge::validate must enforce participant sort order
   body: |
-    ---
-    name: Edge::validate must enforce participant sort order
-    description: Symmetric edges with reversed participants silently bypass distinctness checks; validation must enforce sort order
-    type: project
-    ---
-
     Distinctness checks alone do not catch reversed symmetric-participant pairs; canonical-key dedup silently fails for `[A, B]` vs `[B, A]`. `Edge::validate` must sort participants and reject unsorted input, not merely check uniqueness. See: `Sibling edges dedup by sorted participants; parent-of by order`.
 - id: ontology-and-related-components-schema-versions-are-orthogonal
   title: Ontology and related-components schema versions are orthogonal
   body: |
-    ---
-    name: Ontology and related-components schema versions are orthogonal
-    description: related-components.yaml uses SCHEMA_VERSION=2; ontology.yaml uses ONTOLOGY_FILE_SCHEMA_VERSION=1 — two independent version spaces
-    type: project
-    ---
-
     `related-components.yaml` uses `SCHEMA_VERSION=2`; `defaults/ontology.yaml` uses `ONTOLOGY_FILE_SCHEMA_VERSION=1`. Separate version fields keep the two evolutions independent; a bump in one does not imply a bump in the other.
 - id: action-lines-split-title-reason-into-two-row-layout
   title: Action lines split title/reason into two-row layout
@@ -464,9 +438,7 @@ entries:
 - id: prompt-vocab-enum-variant-bijection-tests-guard-llm-code-alignment
   title: Prompt vocab ↔ enum variant bijection tests guard LLM/code alignment
   body: |
-    Prompt vocabulary ↔ enum variant bijection tests guard LLM/code alignment.
-
-    A test that asserts bijection between an enum's variants and a prompt's listed vocabulary (e.g. `InteractionRoleHint` vs `defaults/discover-stage1.md`) will catch prompt-vocabulary drift before any production run. Adding a new enum variant without updating the prompt fails the test; adding a new prompt term without a matching variant also fails. Apply this pattern for any closed-vocabulary enum whose terms appear in an LLM prompt.
+    A test asserting bijection between an enum's variants and a prompt's listed vocabulary (e.g. `InteractionRoleHint` vs `defaults/discover-stage1.md`) catches prompt-vocabulary drift before any production run. Adding a new enum variant without updating the prompt fails the test; adding a new prompt term without a matching variant also fails. Apply for any closed-vocabulary enum whose terms appear in an LLM prompt.
 - id: format-result-text-inserts-blank-line-between-consecutive-action-blocks
   title: '`format_result_text` inserts blank line between consecutive ACTION blocks'
   body: |
