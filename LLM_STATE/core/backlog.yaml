@@ -2,7 +2,7 @@ tasks:
 - id: smoke-test-discover-pipeline-against-real-project-catalog
   title: Smoke-test discover pipeline against real project catalog
   category: validation
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Perform a live end-to-end smoke-test of the `state related-projects discover` + `discover-apply` pipeline against the real project catalog, as specified in `docs/r7-related-projects-discovery-plan.md` § Task 12 Step 3.
@@ -16,3 +16,114 @@ tasks:
     **Why:** Unit and integration tests use a fake-claude shim. This step validates the prompt templates, Stage 1 surface extraction, Stage 2 global reasoning, and apply merge against a live model and real codebase.
 
     **Cannot be done headlessly** — requires a real `claude` binary on PATH and a populated project catalog. A human must verify the semantic quality of proposals.
+  results: |
+    **Result: smoke-test completed successfully on run 5 after four iterations of fixes driven by the live pipeline's behaviour against the real catalog.**
+
+    ## Coverage vs. the spec's four steps
+
+    | # | Step | Outcome |
+    |---|---|---|
+    | 1 | Run discover against real catalog | 7/7 projects analysed, 0 failures, 7 proposals produced |
+    | 2 | Inspect proposals | All 7 were structurally valid and semantically plausible; user approved all for apply |
+    | 3 | Run discover-apply | 7 edges added to `related-projects.yaml` |
+    | 4 | Re-run to verify cache | 6 of 7 cache files untouched (mtime preserved); Ravel-Lite correctly re-analysed because its dirty state had changed between runs |
+
+    ## Bugs uncovered and fixed in the course of the smoke test
+
+    The live run against a real `claude` binary surfaced issues that the fake-claude integration test could not. Each is a commit-worthy code or prompt change, all left uncommitted for analyse-work to bundle.
+
+    1. **Permission-block silently destroyed every Stage 1 run.** `src/discover/stage1.rs` and `src/discover/stage2.rs` spawned claude with `--setting-sources project,local`, which excludes the user's permission allowlist. Survey's spawn gets away with this because it only reads stdout; discover asks claude to *write* a file, which gets silently denied. Fixed by adding explicit `--allowed-tools "Read,Grep,Glob,Bash,Write,Task"` (stage 1) / `"Write"` (stage 2) plus `--add-dir <cache-dir>` so the cross-directory write is sandboxed in.
+
+    2. **Per-project Stage 1 failures were invisible until the final proposals file was written.** Stage 2 running on 0 surfaces would fail before the proposals file existed, leaving the user with just `Error: Stage 2 did not create .tmp-...yaml`. Added `eprintln!` for each `Stage1Outcome::Failed` and a short-circuit that skips Stage 2 entirely when no surfaces are produced, writing a proposals file with just the failures section.
+
+    3. **Stage 1 prompt conflated any project mention with catalog projects.** The LLM listed third-party apps (Raycast) and libraries (swift-lispkit) under `explicit_cross_project_mentions`, which Stage 2 then used as sibling-edge evidence, producing a spurious `sibling(Modaliser-Racket, RacketPro)` edge. Fixed by injecting `{{CATALOG_PROJECTS}}` (catalog minus current project) into the Stage 1 prompt and explicitly forbidding non-catalog entries. Wired up the substitution in `stage1.rs::process_project`.
+
+    4. **Stage 2 prompt treated shared upstream dependencies as sibling evidence.** Added an "Insufficient signals" section explicitly calling out shared-dependency-based reasoning, same-ecosystem reasoning, and trivial glob overlap as inadequate. This killed the last false-positive edge on run 3.
+
+    5. **YAML parse errors from LLM schema drift.** `data_formats[n]: invalid type: map, expected a string` from claude emitting `- EventLogLine (text: "...")` — the `(key: value)` parenthetical trips YAML into parsing a map. Added a "List-item formatting rule" at the top of the Stage 1 schema banning parenthetical annotations on list items.
+
+    6. **Dirty-tree bail prevented analysis of any project with uncommitted work.** This was the biggest UX issue: in a typical working catalog, half the projects have in-progress edits at any moment. Replaced `compute_project_tree_sha` with `compute_project_state { tree_sha, dirty_hash }`. `dirty_hash` is a deterministic SHA-1 (via `git hash-object --stdin`) over `git diff HEAD` plus untracked file contents, scoped to the subtree. Cache key is now `tree_sha + dirty_hash`: clean projects keep their prior cache behaviour (`dirty_hash = ""`), and dirty projects get analysed but with a cache key that invalidates on any working-tree change. Added 5 new tests covering clean/dirty/subtree-scoped behaviour.
+
+    7. **Stage 2 wastefully re-ran on unchanged inputs.** When every Stage 1 outcome is Cached and no failures occurred, Stage 2's input is byte-identical to the previous run — re-running it burns a claude call and (more importantly) overwrites any hand-edits the user made to `discover-proposals.yaml` (e.g. deleting a proposal they rejected). Added a skip: when `!any_fresh && failures.is_empty() && proposals.yaml exists`, load the existing file and preserve it unchanged. User edits survive across re-runs. Added an integration-test extension that writes a marker line into the proposals file, re-runs discover, and asserts the marker is preserved AND the log contains `Stage 2: skipped`.
+
+    ## What's in the uncommitted diff for analyse-work to commit
+
+    - **Prompt templates:** `defaults/discover-stage1.md`, `defaults/discover-stage2.md` — the catalog-scope, insufficient-signals, and bare-list-item rules.
+    - **Source:** `src/discover/tree_sha.rs` (ProjectState + dirty-hash), `src/discover/schema.rs` (+`dirty_hash` field), `src/discover/stage1.rs` (ProjectState + catalog substitution + allowed-tools + add-dir), `src/discover/stage2.rs` (+cwd + allowed-tools + short-circuit), `src/discover/mod.rs` (per-failure log + 0-surface short-circuit + all-cached Stage 2 skip + catalog-names threading), `src/discover/cache.rs` (test-fixture update), `src/projects.rs` (test-fixture update).
+    - **Tests added:** 5 new tests in `tree_sha.rs` (clean hash, dirty hash, tracked-file change invalidation, untracked change invalidation, subtree scoping) + `cache_miss_when_tree_goes_dirty_after_seed` in `stage1.rs` + 2 catalog-renderer tests + integration assertion that Stage 2 is skipped on cache-only re-run. All 44 tests pass (43 lib + 1 integration).
+    - **User config:** `/Users/antony/Development/ravel-lite-config/discover-stage1.md` and `discover-stage2.md` refreshed from defaults. These live outside the project tree so they are not part of the commit — they are the live prompts the user's binary reads.
+
+    ## User-visible state at end of smoke test
+
+    - `<config>/related-projects.yaml` contains 7 edges (1 sibling + 6 parent-of).
+    - `<config>/discover-cache/` contains 7 surface records, one per catalogued project.
+    - `<config>/discover-proposals.yaml` contains the 7 approved proposals.
+
+    ## Follow-up backlog entry added
+
+    `research-richer-ontology-of-inter-project-relationships` (high priority) — user observed that the Ravel-Lite → {Ravel, APIAnyware-MacOS, TestAnyware} edges came out as `parent-of` but that isn't quite right semantically. The existing two-edge model (sibling, parent-of) is too coarse for the real relationship fabric. Task captures the user's initial list of edge kinds (shares-types / shares-protocols / communicates-with / shares-data-formats / invokes / generated-by, plus runtime vs dev-time distinction) and flags the placement question — this ontology likely spans multiple analysis/documentation projects, not just Ravel-Lite.
+
+    ## Suggestions for next steps
+
+    - Execute the ontology research task next — the user explicitly flagged its priority, and its output will inform both discover's edge-kind enum and the cross-project graph schema.
+    - Consider a follow-up task to teach analyse-work or triage to run discover opportunistically when project composition changes.
+    - The `ProposalsFile::source_tree_shas` field is now a slight misnomer (it captures `tree_sha` only, ignoring `dirty_hash`). Cosmetic but worth a minor task; either rename or extend to capture both.
+- id: research-richer-ontology-of-inter-project-relationships
+  title: Research richer ontology of inter-project relationships
+  category: research
+  status: not_started
+  dependencies: []
+  description: |
+    **Priority: HIGH.**
+
+    Design and document a richer ontology of inter-project relationships to replace the current two-edge model (`sibling`, `parent-of`) used by `discover` / `related-projects`.
+
+    ## Why
+
+    The current Stage 2 discover pipeline collapses every relationship onto `sibling` or `parent-of`. Real projects have many kinds of coupling — shared types, shared protocols, runtime-IPC vs build-time-generation vs test-fixture-dependency — and forcing them into two buckets loses information. This surfaced concretely in the R7 smoke test: the proposed edges between Ravel-Lite and its consumer projects (Ravel, APIAnyware-MacOS, TestAnyware) came out as `parent-of`, which semantically isn't quite right — Ravel-Lite generates plan-state YAML *schemas* and *runtime agents*, not artifacts that those projects consume directly in the artifact-flow sense.
+
+    ## Scope
+
+    Produce a written ontology covering (at minimum):
+
+    **Candidate edge kinds:**
+    - `shares-types` — compile-time type compatibility (same struct/class/schema definition in both codebases)
+    - `shares-protocols` — wire-format compatibility (protobuf, msgpack, JSON schema)
+    - `shares-data-formats` — named data shapes without formal schema
+    - `communicates-with` — runtime IPC (HTTP, gRPC, WebSocket, shared memory)
+    - `invokes` — one project spawns the other as a subprocess
+    - `generated-by` — one project's source is emitted by another's codegen
+    - `orchestrated-by` — one project drives the lifecycle/build of another
+    - `tests` — provides test infrastructure for another
+    - `depends-on` (build/runtime) — library-level dependency with direction
+    - `sibling-spec` — parallel implementations of the same external spec
+    - (others emergent from the research)
+
+    **Cross-cutting dimensions:**
+    - **Runtime vs dev-time** — an edge can be active during app execution, during build/codegen, during test, or during development workflow. An edge kind + a lifecycle phase together pin the meaning.
+    - **Direction and symmetry** — which edges are order-sensitive, which are symmetric, which are neither.
+    - **Confidence / evidence grade** — some edges are derivable from static artifacts (type signatures match), others only from prose mentions.
+
+    ## Cross-project concern — where does this live?
+
+    This ontology is not purely a Ravel-Lite concern. Related/affected projects:
+    - **Ravel-Lite** — owns the current `related-projects` graph and `discover` pipeline.
+    - Other analysis/documentation projects the user runs.
+
+    Decide during this research:
+    1. Does the ontology live in a shared doc repo, or embedded in each analysis tool?
+    2. Is there a common graph schema that multiple tools emit into?
+    3. Who maintains the canonical edge-kind list?
+
+    **Starting point for placement:** this task is filed under Ravel-Lite's core plan since that's where the current two-edge model lives, but the deliverable may recommend relocation or the creation of a cross-cutting plan.
+
+    ## Deliverable
+
+    A design doc (initially under `docs/`) that:
+    1. Enumerates edge kinds with one-line definitions + examples.
+    2. Specifies the lifecycle-phase dimension.
+    3. Proposes a concrete YAML schema extending `schema_version` of `related-projects.yaml`.
+    4. Recommends where the ontology + tooling should live across the user's project portfolio.
+    5. Lists migration steps for the current `sibling` / `parent-of` edges.
+
+    No implementation yet — research + design only. Implementation follows in a separate task once the ontology is accepted.

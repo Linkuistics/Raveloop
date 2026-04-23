@@ -1,11 +1,40 @@
-id: session-22
-timestamp: 2026-04-23T00:43:43Z
+id: session-23
+timestamp: 2026-04-23T03:23:56Z
 phase: work
 body: |
-  ### Session 22 (2026-04-23T00:43:43Z) — Verify TUI works without --debug-file, close workaround task
+  ### Session 23 (2026-04-23T03:23:56Z) — R7 smoke-test: discover pipeline live-run fixes
 
-  - **Attempted:** Human operator rebuilt `ravel-lite` after the cycle-1 code deletion (commit `93d0de6`) and ran a live Work-phase TUI against `claude 2.1.117` without `--debug-file /tmp/claude-debug.log`.
-  - **What worked:** TUI rendered normally. The empirical bug (stuck-pilot / blank / non-responsive render on claude ≤2.1.116) does not reproduce on 2.1.117. Verification gate passed; task status flipped from `blocked` to `done`.
-  - **What didn't:** Nothing failed. This was a human-gated verification step that cannot be done headlessly.
-  - **What this suggests next:** Both remaining backlog tasks are human-in-the-loop (`smoke-test-discover-pipeline-against-real-project-catalog` is still `not_started`). Triage should assess whether any headless-doable work remains, or whether the plan is now waiting entirely on interactive sessions. The stale memory entry `claude-code-tui-requires-debug-file-workaround-for-2-1-116` in `LLM_STATE/core/memory.yaml` should be deleted or rewritten by the reflect phase.
-  - **Key learnings:** The `--debug-file` workaround masked a TUI failure on claude 2.1.113–2.1.116 via an unknown upstream mechanism. The bug is not reproducible on 2.1.117 and the workaround has been removed cleanly. No source files changed this cycle — only plan-state bookkeeping (`backlog.yaml` results block and status).
+  - **Attempted:** End-to-end smoke-test of `state related-projects discover` + `discover-apply` against the real project catalog (7 projects) using a real `claude` binary.
+  - **Completed successfully on run 5** after four iterations of fixes driven by live pipeline failures. All 7 projects analysed, 7 proposals produced, all approved and applied. Cache verified on re-run (6 of 7 hits; Ravel-Lite correctly invalidated due to dirty state).
+
+  ### What worked
+
+  1. **Dirty-tree cache key** (`src/discover/tree_sha.rs`): Replaced `compute_project_tree_sha` (which bailed on uncommitted changes) with `compute_project_state { tree_sha, dirty_hash }`. `dirty_hash` is a SHA-1 (via `git hash-object --stdin`) over `git diff HEAD` plus untracked file contents, subtree-scoped. Cache key requires both to match; clean projects use `dirty_hash = ""`. This was the biggest UX fix — without it, half the catalog was unanalysable at any given time.
+
+  2. **`--allowed-tools` + `--add-dir` fix** (`src/discover/stage1.rs`, `src/discover/stage2.rs`): `--setting-sources project,local` excludes the user's allowlist, silently blocking the Write that deposits surface YAML. Adding `--allowed-tools "Read,Grep,Glob,Bash,Write,Task"` and `--add-dir <cache-dir>` unblocked every stage 1 run.
+
+  3. **Catalog scoping** (`defaults/discover-stage1.md`, `src/discover/stage1.rs`): Injected `{{CATALOG_PROJECTS}}` (catalog minus current project) into the Stage 1 prompt with explicit rules forbidding non-catalog entries in `explicit_cross_project_mentions`. Killed spurious third-party-project edges (e.g. Raycast, swift-lispkit appearing as sibling evidence).
+
+  4. **Stage 2 insufficient-signals section** (`defaults/discover-stage2.md`): Added explicit "do NOT propose edges from these alone" guidance covering shared upstream dependencies, same ecosystem, trivial glob overlap, and shared generic tools. Eliminated the last false-positive edge.
+
+  5. **YAML list-item formatting rule** (`defaults/discover-stage1.md`): Banned parenthetical annotations with colons on list items; directed disambiguation to the `notes` field. Fixed `data_formats[n]: invalid type: map` parse errors.
+
+  6. **Stage 2 all-cached skip** (`src/discover/mod.rs`): When every Stage 1 outcome is `Cached` and no failures occurred, skip Stage 2 and preserve the existing `discover-proposals.yaml`. Prevents clobbering user hand-edits and wastes no claude call.
+
+  7. **Zero-surfaces short-circuit** (`src/discover/mod.rs`): When all Stage 1 attempts failed, skip Stage 2 (asking LLM to infer edges from zero surfaces is meaningless), write a failure-only proposals file, and emit `eprintln!` for each `Stage1Outcome::Failed`.
+
+  ### What didn't work / non-obvious findings
+
+  - The `ProposalsFile::source_tree_shas` field is now a slight misnomer — it captures `tree_sha` only, ignoring `dirty_hash`. Cosmetic for now but worth a minor rename/extension task.
+  - Run 4 still produced one false-positive `sibling(Modaliser-Racket, RacketPro)` edge via shared-dependency reasoning before the Stage 2 insufficient-signals section was added.
+
+  ### What this suggests trying next
+
+  - Execute `research-richer-ontology-of-inter-project-relationships` (HIGH priority, already in backlog). The user observed that Ravel-Lite → {Ravel, APIAnyware-MacOS, TestAnyware} edges came out as `parent-of` but that's semantically imprecise — the two-edge model is too coarse. This research task will inform the edge-kind enum and cross-project graph schema.
+  - Consider a minor task to rename/extend `source_tree_shas` to capture `dirty_hash` as well.
+
+  ### Key learnings
+
+  - The memory feedback about `--allowed-tools` + `--add-dir` was correct and directly applicable: any claude spawn that must Write a file outside its cwd needs both flags when using `--setting-sources project,local`.
+  - Subtree-scoped dirty hashing with `git diff HEAD -- <rel>` + `git ls-files --others -- <rel>` gives a reliable cache key without requiring a clean working tree. The NUL-terminated `ls-files -z` output enables safe path parsing.
+  - Stage 2 skip on all-cached is a significant UX improvement for incremental re-runs; it also prevents non-deterministic LLM output from overwriting user-curated proposals.
