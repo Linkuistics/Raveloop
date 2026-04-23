@@ -2,7 +2,7 @@ tasks:
 - id: implement-ontology-v2-types-and-defaults-ontology-yaml-additive
   title: Implement ontology v2 types and defaults/ontology.yaml (additive)
   category: feature
-  status: not_started
+  status: done
   dependencies: []
   description: |
     **Priority: HIGH.** Foundation task — unlocks the ontology-v2 work stream.
@@ -40,6 +40,54 @@ tasks:
     - `cargo build` passes with no warnings touching the new module.
     - `defaults/ontology.yaml` is embedded via the existing `EmbeddedFile` registration pattern if applicable (check `init.rs`).
     - `docs/component-ontology.md` is the truth source; if implementation requires amendments, update the doc in the same task.
+  results: |
+    **Shipped.** Foundation for the ontology-v2 work stream is in place; v1 code is untouched, v2 types compile and carry full test coverage, and `defaults/ontology.yaml` is drift-guarded against the Rust enum surface.
+
+    ## What landed
+
+    ### New module `src/ontology/`
+
+    Four files, matching the shape of `src/state/backlog/`:
+
+    - `schema.rs` — `EdgeKind` (17 kebab-case variants across 7 families), `LifecycleScope` (7 variants), `EvidenceGrade` (3 variants), `Edge`, `RelatedComponentsFile`. `EdgeKind::{is_directed, as_str, parse, all}` per the §9.4 sketch; identical shape on `LifecycleScope` and `EvidenceGrade`. `Edge::validate` enforces the §9.5 invariants (exactly 2 distinct participants; symmetric kinds require sorted participants; `rationale` non-empty; `evidence_fields` non-empty unless `Weak`). `Edge::canonical_key` returns `(kind, lifecycle, participants')` per §7.3, with `participants'` sorted for symmetric kinds and preserved for directed kinds. `RelatedComponentsFile::add_edge` is idempotent by canonical key; `rename_component_in_edges` rewrites every matching participant and re-sorts symmetric edges.
+    - `yaml_io.rs` — `load`, `load_or_default`, `save_atomic`. Hard-errors on `schema_version != 2` with a message that explicitly names the delete-and-regenerate upgrade path (memory entry `generated-derived-artifacts-need-no-migrators-delete-and-regenerate`). Atomic write via temp-file-then-rename on the same filesystem.
+    - `defaults.rs` — `OntologyYaml` / `KindEntry` / `LifecycleEntry` / `EvidenceGradeEntry` types for parsing `defaults/ontology.yaml`. `EMBEDDED_ONTOLOGY_YAML` via `include_str!`. `parse_embedded()` is the drift-guard entry point and the future-`{{ONTOLOGY_KINDS}}` prompt-render entry point.
+    - `mod.rs` — re-exports and a `drift_tests` submodule.
+
+    ### `defaults/ontology.yaml`
+
+    Language-neutral data form of docs §5 + §6 + §3.2. Every `EdgeKind` variant, every `LifecycleScope`, every `EvidenceGrade`, with descriptions. `schema_version: 1` for the ontology file itself (independent of `related-components.yaml`'s `schema_version: 2` — two things that version independently).
+
+    Registered in `init.rs` `EMBEDDED_FILES` so `ravel-lite init` ships it alongside the phase prompts. Wired into `src/lib.rs` as `pub mod ontology`.
+
+    ### Drift tests
+
+    Five bijection tests in `drift_tests`, modelled on `every_default_coding_style_file_is_embedded` in `init.rs` (memory `init-rs-drift-detection-test-guards-coding-style-registration`):
+
+    1. Edge-kind set bijection (YAML ↔ Rust enum) — errors on both "YAML has kind missing in Rust" and "Rust has kind missing in YAML".
+    2. Lifecycle set bijection.
+    3. Evidence-grade set bijection.
+    4. `directed` flag in YAML matches `EdgeKind::is_directed` for each kind.
+    5. Every YAML kind declares at least one lifecycle, and every referenced lifecycle is a known `LifecycleScope`.
+
+    These together would catch any of: adding a kind in Rust without YAML, adding a kind in YAML without Rust, flipping a directed flag in one place, or mistyping a lifecycle name.
+
+    ## What worked
+
+    - **Four-file split along the backlog pattern.** `schema.rs` / `yaml_io.rs` / `defaults.rs` / `mod.rs` mirrors `src/state/backlog/{schema,yaml_io,verbs,mod}.rs` closely enough that a future reader who knows one knows the other. Kept each file small and cohesive per the universal coding-style rule.
+    - **No host-application leakage (§9.6).** `load` / `save_atomic` take a `&Path` directly; no `config_root`, no `plan_dir`, no phases anywhere in `src/ontology/`. Phase B's extraction to a standalone crate becomes a file-move + `Cargo.toml` adjustment, not a decoupling refactor.
+    - **Dual-independent schema versions.** Pinning `related-components.yaml` at `SCHEMA_VERSION = 2` while the ontology file itself is at `ONTOLOGY_FILE_SCHEMA_VERSION = 1` makes the two evolutions orthogonal. Adding a new `EdgeKind` does not bump the on-disk edge-graph schema version; adding a new evidence-field convention would.
+    - **The "unsorted symmetric participants" test.** It caught a real gap in my first draft of `Edge::validate` that only enforced distinctness, not sorting. Symmetric edges that land with reversed participants would have caused silent dedup failures against the `canonical_key` output.
+
+    ## What didn't work first time
+
+    - **Backlog description typo.** The task brief said "16 kebab-case variants"; the canonical spec (§5) and direction table (§6) both list 17. I went with 17 (specification family is `conforms-to`, `co-implements`, `describes` — three, not two). If the next task's prompt rewrite depends on a count, it should read from `ontology.yaml` / `EdgeKind::all()`, not from memory of this description.
+
+    ## What this suggests next
+
+    - Task #2 in the chain (`migrate-callers-and-rename-to-related-components-no-migrator-delete-and-regenerate`) is now unblocked. Its scope note specifically calls out that Stage 2's transitional v1-emission must be swapped at the same time — `src/ontology/` now has everything Stage 2's code will need (`EdgeKind::parse`, `add_edge`, `save_atomic`).
+    - `parse_embedded_ontology_yaml()` is already exported from `ontology::` — task #3's `{{ONTOLOGY_KINDS}}` prompt renderer can call it directly. No helper needs to be invented later.
+    - Tests: 34 new unit tests pass; full workspace is 927 tests green; clippy clean.
 - id: migrate-callers-and-rename-to-related-components-no-migrator-delete-and-regenerate
   title: Migrate callers and rename to related-components (no migrator; delete-and-regenerate)
   category: refactor
@@ -174,7 +222,7 @@ tasks:
 - id: add-set-description-verb-to-backlog-cli
   title: Add set-description verb to backlog CLI
   category: feature
-  status: not_started
+  status: done
   dependencies: []
   description: |
     **Priority: MEDIUM.** Closes a conspicuous gap in the backlog CLI surface: every other mutable task field has a `set-*` verb (`set-status`, `set-title`, `set-results`, `set-handoff`), but the `description` field (the task body markdown, set at `add` time) has none. When a task description references external prose that is later restructured — e.g., a `docs/*.md` section renumber — there is no clean way to refresh the reference, forcing hand-edits of `backlog.yaml` that violate the "mechanical work belongs in Rust" rule.
@@ -212,6 +260,29 @@ tasks:
     - All five integration tests above pass.
     - No regression in the existing backlog test suite.
     - Documentation (if any exists — check `docs/structured-backlog-r1-plan.md`) updated to mention the new verb.
+  results: |
+    **Shipped.** Closes the CLI-surface gap identified in the task's motivation — every mutable task field now has a `set-*` verb.
+
+    ## What landed
+
+    - `run_set_description(plan_dir, id, body)` in `src/state/backlog/verbs.rs`. Mirrors `run_set_results` exactly except for one added invariant: `body.trim().is_empty()` is rejected with a clear error. This subsumes two cases in one check — the "neither `--body` nor `--body-file` supplied" case (which `resolve_body` already collapses to `""`) and the explicit whitespace-only case. One rule, one error path.
+    - Trailing-newline normalisation via the shared `ensure_trailing_newline` helper, so bodies without a terminal `\n` still land as valid markdown.
+    - CLI subcommand `SetDescription` in `src/main.rs`, wired through `dispatch_backlog` the same way `SetResults` / `SetHandoff` are. Help text explicitly disambiguates from `set-results` (what was done) and `set-handoff` (promote/archive hand-off) — the former rewrites the brief; the latter two append task history.
+    - Five unit tests in `verbs.rs` and five integration tests in `tests/state_backlog.rs` covering: happy path via `--body-file`, happy path via `--body -` (stdin), unknown-id error, empty/whitespace rejection, and preservation of every other task field (status, title, results, handoff, id) across a description rewrite.
+
+    ## What worked
+
+    - **Runtime empty-body check over clap `ArgGroup`.** The task description required "exactly one of `--body` / `--body-file`". A simple `body.trim().is_empty()` check in the handler subsumes both "neither provided" (resolve_body → `""`) and "whitespace-only" into a single error message. No clap `ArgGroup`, no `required_unless_present`, no bifurcated error paths.
+    - **The "preserve sibling fields" test.** Rather than asserting the description changed in isolation, the test first mutates four other fields (status, title, results, handoff), then rewrites the description, then asserts all five fields have their expected values after `show`. This is the test that would have caught a blind overwrite that accidentally cleared siblings.
+
+    ## What didn't work first time
+
+    - The first draft of the sibling-fields test used `for args in [...] { args }` with positional-arg ordering that put `plan_dir` after the task id, which `clap` rejected. I briefly left a broken scaffolded version in the file before noticing and replacing it with a `run(&[&str])` closure that orders arguments explicitly per-call. Removed before commit.
+
+    ## What this suggests next
+
+    - The memory entry `rename-cascade-registry-design-consideration` warned about a four-cascade extension point in `run_rename`; the same pressure applies to backlog CLI verbs — this is the fifth `set-*` verb (status / results / handoff / title / description). No refactor needed yet; pattern remains legible. Revisit if a sixth appears.
+    - `set-description` is a blind replace. If a later task needs diff visibility (e.g., triage wants to see what a triage-subagent's description rewrite changed), the caller should run `show` before and after and diff client-side — the task description explicitly scoped out a diff-output variant.
 - id: extract-component-ontology-to-workspace-crate-phase-b
   title: Extract component-ontology to workspace crate (Phase B)
   category: refactor
