@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::tree_sha::ProjectState;
 use crate::related_projects::EdgeKind;
 
 pub const SURFACE_SCHEMA_VERSION: u32 = 1;
@@ -55,8 +56,12 @@ pub const PROPOSALS_SCHEMA_VERSION: u32 = 1;
 pub struct ProposalsFile {
     pub schema_version: u32,
     pub generated_at: String,
+    /// Map from project name to the `ProjectState` (tree_sha + dirty_hash)
+    /// captured at proposal-generation time. The pair is the actual cache
+    /// key used by Stage 1; storing only `tree_sha` here silently omitted
+    /// the dirty_hash half and misrepresented the cache state.
     #[serde(default)]
-    pub source_tree_shas: BTreeMap<String, String>,
+    pub source_project_states: BTreeMap<String, ProjectState>,
     #[serde(default)]
     pub proposals: Vec<ProposalRecord>,
     #[serde(default)]
@@ -125,10 +130,24 @@ mod tests {
         let original = ProposalsFile {
             schema_version: PROPOSALS_SCHEMA_VERSION,
             generated_at: "2026-04-22T12:05:00Z".to_string(),
-            source_tree_shas: [
-                ("Alpha".to_string(), "abc123".to_string()),
-                ("Beta".to_string(), "def456".to_string()),
-            ].into_iter().collect(),
+            source_project_states: [
+                (
+                    "Alpha".to_string(),
+                    ProjectState {
+                        tree_sha: "abc123".to_string(),
+                        dirty_hash: "dirty-alpha".to_string(),
+                    },
+                ),
+                (
+                    "Beta".to_string(),
+                    ProjectState {
+                        tree_sha: "def456".to_string(),
+                        dirty_hash: String::new(),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
             proposals: vec![
                 ProposalRecord {
                     kind: EdgeKind::Sibling,
@@ -145,5 +164,32 @@ mod tests {
         let yaml = serde_yaml::to_string(&original).unwrap();
         let parsed: ProposalsFile = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn proposals_file_reads_legacy_source_tree_shas_as_empty_states() {
+        // A proposals file written before the rename will have
+        // `source_tree_shas:` as its field name. The `source_project_states`
+        // field is purely informational (never consulted for cache
+        // correctness), so the acceptable behaviour is: read succeeds with
+        // an empty map, legacy field silently ignored.
+        let yaml = "schema_version: 1\n\
+                    generated_at: \"2026-04-22T12:05:00Z\"\n\
+                    source_tree_shas:\n\
+                      Alpha: abc123\n\
+                    proposals: []\n";
+        let parsed: ProposalsFile = serde_yaml::from_str(yaml).unwrap();
+        assert!(parsed.source_project_states.is_empty());
+    }
+
+    #[test]
+    fn project_state_reads_without_dirty_hash_as_default() {
+        // Forward-compat for files emitted before dirty_hash existed in
+        // ProjectState's serialised form — deserialise must succeed with
+        // `dirty_hash: ""`.
+        let yaml = "tree_sha: abc123\n";
+        let parsed: ProjectState = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.tree_sha, "abc123");
+        assert!(parsed.dirty_hash.is_empty());
     }
 }

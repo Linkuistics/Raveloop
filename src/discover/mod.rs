@@ -145,7 +145,7 @@ pub async fn run_discover(config_root: &Path, options: RunDiscoverOptions) -> Re
         let proposals = ProposalsFile {
             schema_version: schema::PROPOSALS_SCHEMA_VERSION,
             generated_at: stage1::current_utc_rfc3339(),
-            source_tree_shas: Default::default(),
+            source_project_states: Default::default(),
             proposals: Vec::new(),
             failures,
         };
@@ -237,9 +237,15 @@ mod tests {
         let file = ProposalsFile {
             schema_version: PROPOSALS_SCHEMA_VERSION,
             generated_at: "2026-04-22T00:00:00Z".to_string(),
-            source_tree_shas: [("A".to_string(), "abc".to_string())]
-                .into_iter()
-                .collect(),
+            source_project_states: [(
+                "A".to_string(),
+                super::tree_sha::ProjectState {
+                    tree_sha: "abc".to_string(),
+                    dirty_hash: "dirty-a".to_string(),
+                },
+            )]
+            .into_iter()
+            .collect(),
             proposals: vec![],
             failures: vec![Stage1Failure {
                 project: "B".to_string(),

@@ -11,6 +11,7 @@ use tokio::process::Command as TokioCommand;
 use super::schema::{
     ProposalRecord, ProposalsFile, Stage1Failure, SurfaceFile, PROPOSALS_SCHEMA_VERSION,
 };
+use super::tree_sha::ProjectState;
 
 pub const DEFAULT_STAGE2_TIMEOUT_SECS: u64 = 300;
 
@@ -62,15 +63,23 @@ pub async fn run_stage2(
         .with_context(|| format!("parse Stage 2 output from {}", output_path.display()))?;
     let _ = std::fs::remove_file(&output_path);
 
-    let source_tree_shas = surfaces
+    let source_project_states = surfaces
         .iter()
-        .map(|s| (s.project.clone(), s.tree_sha.clone()))
+        .map(|s| {
+            (
+                s.project.clone(),
+                ProjectState {
+                    tree_sha: s.tree_sha.clone(),
+                    dirty_hash: s.dirty_hash.clone(),
+                },
+            )
+        })
         .collect();
 
     Ok(ProposalsFile {
         schema_version: PROPOSALS_SCHEMA_VERSION,
         generated_at: raw_parsed.generated_at,
-        source_tree_shas,
+        source_project_states,
         proposals: raw_parsed.proposals,
         failures,
     })

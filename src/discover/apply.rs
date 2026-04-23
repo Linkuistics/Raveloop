@@ -130,7 +130,7 @@ mod tests {
         ProposalsFile {
             schema_version: PROPOSALS_SCHEMA_VERSION,
             generated_at: "t".to_string(),
-            source_tree_shas: Default::default(),
+            source_project_states: Default::default(),
             proposals: pairs
                 .iter()
                 .map(|(k, a, b)| ProposalRecord {

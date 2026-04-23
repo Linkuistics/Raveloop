@@ -12,13 +12,17 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
 
 /// Combined state of a project subtree: committed content plus any
 /// uncommitted diff/untracked content. `dirty_hash` is the empty
 /// string when the subtree is clean.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectState {
     pub tree_sha: String,
+    /// Empty string when the subtree was clean. Serde-default preserves
+    /// read-compat with files emitted before this field was added.
+    #[serde(default)]
     pub dirty_hash: String,
 }
 
