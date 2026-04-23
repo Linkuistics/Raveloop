@@ -1,0 +1,235 @@
+# Component Relationship Ontology — data form.
+#
+# Source of truth: docs/component-ontology.md (§5 edge-kind reference,
+# §6 direction table, §3.2 lifecycle scopes). Every kind / lifecycle /
+# evidence grade here is mirrored by the Rust enum surface in
+# src/ontology/schema.rs; a drift test in src/ontology/mod.rs fails the
+# build if the two disagree.
+#
+# This file's schema_version is independent of the schema_version in
+# related-components.yaml. This one versions the ontology definition;
+# the other versions the on-disk edge graph.
+
+schema_version: 1
+
+kinds:
+  # Dependency family — transitive reachability; A needs B.
+  - name: depends-on
+    family: dependency
+    directed: true
+    lifecycles: [build, runtime]
+    spdx: dependsOn
+    description: |
+      A requires B to function at the declared scope. Library-level
+      dependency with a direction (dependent first).
+
+  - name: has-optional-dependency
+    family: dependency
+    directed: true
+    lifecycles: [build, runtime]
+    spdx: hasOptionalDependency
+    description: |
+      A can function without B but gains capability when B is present.
+      Manifest "optional-dependencies" sections; feature flags; plugin
+      discovery.
+
+  - name: provided-by-host
+    family: dependency
+    directed: true
+    lifecycles: [runtime]
+    spdx: hasProvidedDependency
+    description: |
+      A expects B to be present in the execution environment, not
+      bundled. "Expects X in PATH"; servlet-container-provided runtimes.
+
+  # Linkage family — compile/link-time symbol resolution.
+  - name: links-statically
+    family: linkage
+    directed: true
+    lifecycles: [build]
+    spdx: hasStaticLink
+    description: |
+      A embeds B's compiled code in its own artifact. Canonical order:
+      binary first, lib second.
+
+  - name: links-dynamically
+    family: linkage
+    directed: true
+    lifecycles: [runtime]
+    spdx: hasDynamicLink
+    description: |
+      A loads B at runtime (shared object, dylib, plugin). Canonical
+      order: loader first, loaded second.
+
+  # Generation family — one side authors the other side's source.
+  - name: generates
+    family: generation
+    directed: true
+    lifecycles: [codegen]
+    spdx: generates
+    description: |
+      A's tooling emits source that is committed to B (or to a location
+      B consumes as source). Regenerated on change; the coupling is
+      ongoing. Canonical order: generator first, generated second.
+
+  - name: scaffolds
+    family: generation
+    directed: true
+    lifecycles: [dev-workflow]
+    spdx: null
+    description: |
+      A emits a one-shot initial structure for B that is not regenerated
+      on change. The coupling ends at B's first commit. Canonical order:
+      scaffolder first.
+
+  # Communication family — live messages at runtime.
+  - name: communicates-with
+    family: communication
+    directed: false
+    lifecycles: [runtime]
+    spdx: null
+    description: |
+      A and B exchange messages at runtime over a named transport, as
+      peers. Use when no clear client/server split exists. Symmetric:
+      participants stored sorted.
+
+  - name: calls
+    family: communication
+    directed: true
+    lifecycles: [runtime]
+    spdx: null
+    description: |
+      A is the client of an endpoint B serves. Canonical order:
+      client first, server second.
+
+  # Orchestration family — one side drives the other's lifecycle.
+  - name: invokes
+    family: orchestration
+    directed: true
+    lifecycles: [dev-workflow, runtime]
+    spdx: invokedBy
+    description: |
+      A spawns B as a subprocess. Distinguish lifecycle: one-shot CLI
+      invocation is dev-workflow; persistent process management is
+      runtime. Canonical order: parent process first.
+
+  - name: orchestrates
+    family: orchestration
+    directed: true
+    lifecycles: [dev-workflow, runtime]
+    spdx: null
+    description: |
+      Stronger than invokes: A manages B's lifecycle, state, and
+      multi-step workflow. Canonical order: orchestrator first.
+
+  - name: embeds
+    family: orchestration
+    directed: true
+    lifecycles: [runtime]
+    spdx: null
+    description: |
+      A runs B in-process (library embedding, WASM, subprocess-in-pipe).
+      Distinct from links-dynamically: B is a whole program, not a
+      library. Canonical order: host first, embedded second.
+
+  # Testing family — one side exercises the other.
+  - name: tests
+    family: testing
+    directed: true
+    lifecycles: [test]
+    spdx: hasTest
+    description: |
+      A is a test harness for B (A's primary purpose is to exercise B).
+      Canonical order: tester first, tested second.
+
+  - name: provides-fixtures-for
+    family: testing
+    directed: true
+    lifecycles: [test]
+    spdx: null
+    description: |
+      A provides test data, mocks, or fixtures that B's test suite
+      loads. Canonical order: provider first.
+
+  # Specification family — one side defines contracts the other conforms to.
+  - name: conforms-to
+    family: specification
+    directed: true
+    lifecycles: [design]
+    spdx: hasSpecification
+    description: |
+      A implements a spec defined in B (protocol, schema, RFC-internal).
+      Canonical order: implementer first, spec second.
+
+  - name: co-implements
+    family: specification
+    directed: false
+    lifecycles: [design]
+    spdx: null
+    description: |
+      A and B are parallel implementations of the same external spec
+      that neither component owns (two LSP clients; two MCP servers).
+      Symmetric: participants stored sorted.
+
+  - name: describes
+    family: specification
+    directed: true
+    lifecycles: [design]
+    spdx: describes
+    description: |
+      A documents B (docs repo, architecture notes, external user
+      guide). Canonical order: describer first, described second.
+
+lifecycles:
+  - name: design
+    description: |
+      Human authoring, shared specs. Two components implementing the
+      same RFC; an architecture document describing another component.
+
+  - name: codegen
+    description: |
+      Source generation from another source. Protobuf emits structs;
+      a schema-emitter produces YAML definitions consumed as source.
+
+  - name: build
+    description: |
+      Compilation, packaging. Library dep resolved at `cargo build`;
+      statically-linked archive.
+
+  - name: test
+    description: |
+      Test execution. Test fixtures, mocks, integration harness.
+
+  - name: deploy
+    description: |
+      Install / provisioning. Container image; binary packaging; host
+      provisioning.
+
+  - name: runtime
+    description: |
+      Live execution. RPC, shared memory, file-watch IPC, a running
+      parent process that manages a child.
+
+  - name: dev-workflow
+    description: |
+      Developer loop, not shipped. A tool that spawns the component
+      under development; a scaffolder invoked once.
+
+evidence_grades:
+  - name: strong
+    criterion: |
+      Symmetric artifact match (A produces X, B consumes X); a named
+      wire protocol both sides declare; a reciprocated explicit
+      mention.
+
+  - name: medium
+    criterion: |
+      One-sided evidence; shared format name without location; a
+      shared external tool that is clearly one component's bespoke
+      binary.
+
+  - name: weak
+    criterion: |
+      Prose overlap; purpose similarity; shared data-format name
+      without location. Permitted but must declare weakness in
+      evidence_grade.

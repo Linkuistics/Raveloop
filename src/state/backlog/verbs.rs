@@ -216,6 +216,25 @@ pub fn run_set_results(plan_dir: &Path, id: &str, body: &str) -> Result<()> {
     write_backlog(plan_dir, &backlog)
 }
 
+/// Rewrite a task's `description` (the markdown body authored at
+/// creation time). Unlike `run_set_results`, the body is required to be
+/// non-empty — the field has a non-empty invariant enforced at `add`
+/// time and a blind-replace that violated it would poison the task
+/// brief. Whitespace-only bodies are rejected for the same reason.
+pub fn run_set_description(plan_dir: &Path, id: &str, body: &str) -> Result<()> {
+    if body.trim().is_empty() {
+        bail!("description body must not be empty or whitespace-only");
+    }
+    let mut backlog = read_backlog(plan_dir)?;
+    let task = backlog
+        .tasks
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| anyhow::anyhow!("no task with id {id:?} in backlog"))?;
+    task.description = ensure_trailing_newline(body);
+    write_backlog(plan_dir, &backlog)
+}
+
 pub fn run_set_handoff(plan_dir: &Path, id: &str, body: &str) -> Result<()> {
     let mut backlog = read_backlog(plan_dir)?;
     let task = backlog
@@ -551,6 +570,72 @@ mod tests {
         let updated = read_backlog(tmp.path()).unwrap();
         let bar = updated.tasks.iter().find(|t| t.id == "bar").unwrap();
         assert_eq!(bar.blocked_reason, None, "blocked_reason must clear when status leaves blocked");
+    }
+
+    #[test]
+    fn run_set_description_rewrites_body_and_preserves_other_fields() {
+        let tmp = TempDir::new().unwrap();
+        let mut seed = sample_backlog();
+        // Seed `foo` with results + handoff so we can prove they survive.
+        seed.tasks[0].results = Some("keep me\n".into());
+        seed.tasks[0].handoff = Some("keep me too\n".into());
+        write_backlog(tmp.path(), &seed).unwrap();
+
+        run_set_description(tmp.path(), "foo", "Fresh brief.\n").unwrap();
+
+        let updated = read_backlog(tmp.path()).unwrap();
+        let foo = updated.tasks.iter().find(|t| t.id == "foo").unwrap();
+        assert_eq!(foo.description, "Fresh brief.\n");
+        assert_eq!(foo.results.as_deref(), Some("keep me\n"));
+        assert_eq!(foo.handoff.as_deref(), Some("keep me too\n"));
+        assert_eq!(foo.status, Status::Done);
+        assert_eq!(foo.title, "foo");
+    }
+
+    #[test]
+    fn run_set_description_ensures_trailing_newline() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        run_set_description(tmp.path(), "foo", "No newline at end").unwrap();
+
+        let updated = read_backlog(tmp.path()).unwrap();
+        let foo = updated.tasks.iter().find(|t| t.id == "foo").unwrap();
+        assert_eq!(foo.description, "No newline at end\n");
+    }
+
+    #[test]
+    fn run_set_description_rejects_empty_body() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_description(tmp.path(), "foo", "").unwrap_err();
+        assert!(
+            format!("{err:#}").contains("empty"),
+            "error must mention empty body: {err:#}"
+        );
+
+        // Disk unchanged.
+        let reloaded = read_backlog(tmp.path()).unwrap();
+        assert_eq!(reloaded.tasks[0].description, "body\n");
+    }
+
+    #[test]
+    fn run_set_description_rejects_whitespace_only_body() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_description(tmp.path(), "foo", "   \n\t\n").unwrap_err();
+        assert!(format!("{err:#}").contains("empty"));
+    }
+
+    #[test]
+    fn run_set_description_errors_on_unknown_task_id() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_description(tmp.path(), "nonexistent", "Body.\n").unwrap_err();
+        assert!(format!("{err:#}").contains("nonexistent"));
     }
 
     #[test]

@@ -7,6 +7,7 @@ pub mod format;
 pub mod git;
 pub mod init;
 pub mod multi_plan;
+pub mod ontology;
 pub mod phase_loop;
 pub mod projects;
 pub mod prompt;

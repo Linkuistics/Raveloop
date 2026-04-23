@@ -341,6 +341,21 @@ enum BacklogCommands {
         #[arg(long)]
         body: Option<String>,
     },
+    /// Rewrite a task's Description (the brief authored at `add` time).
+    ///
+    /// Use when external references in the body — e.g. doc section
+    /// anchors or file paths — have moved and the brief needs to catch
+    /// up. For recording what a completed task produced, use
+    /// `set-results` instead; for promote-vs-archive hand-offs use
+    /// `set-handoff`.
+    SetDescription {
+        plan_dir: PathBuf,
+        id: String,
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<PathBuf>,
+        #[arg(long)]
+        body: Option<String>,
+    },
     /// Set a task's hand-off block from a file or stdin.
     SetHandoff {
         plan_dir: PathBuf,
@@ -864,6 +879,10 @@ fn dispatch_backlog(command: BacklogCommands) -> Result<()> {
         BacklogCommands::SetResults { plan_dir, id, body_file, body } => {
             let body = resolve_body(body_file, body)?;
             backlog::run_set_results(&plan_dir, &id, &body)
+        }
+        BacklogCommands::SetDescription { plan_dir, id, body_file, body } => {
+            let body = resolve_body(body_file, body)?;
+            backlog::run_set_description(&plan_dir, &id, &body)
         }
         BacklogCommands::SetHandoff { plan_dir, id, body_file, body } => {
             let body = resolve_body(body_file, body)?;

@@ -139,6 +139,188 @@ fn migrate_parse_failure_leaves_filesystem_untouched() {
     assert!(!tmp.path().join("backlog.yaml").exists(), "partial write on parse failure");
 }
 
+fn add_seed_task(plan_dir: &std::path::Path) {
+    // Start from an empty backlog.yaml and append one task via the CLI
+    // so state_backlog tests share a compact, repeatable setup.
+    std::fs::write(plan_dir.join("backlog.yaml"), "tasks: []\n").unwrap();
+    let add = Command::new(bin())
+        .args(["state", "backlog", "add"])
+        .arg(plan_dir)
+        .args(["--title", "Seed task", "--category", "maintenance"])
+        .args(["--description", "Original body.\n"])
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "seed add failed: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+}
+
+#[test]
+fn set_description_via_body_file_round_trips_through_cli() {
+    let tmp = TempDir::new().unwrap();
+    add_seed_task(tmp.path());
+
+    let body_file = tmp.path().join("new-body.md");
+    std::fs::write(&body_file, "Fresh brief from disk.\n").unwrap();
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "set-description"])
+        .arg(tmp.path())
+        .args(["seed-task", "--body-file"])
+        .arg(&body_file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "set-description failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("seed-task")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(
+        stdout.contains("Fresh brief from disk."),
+        "show must reflect new body: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Original body."),
+        "old body must be gone: {stdout}"
+    );
+}
+
+#[test]
+fn set_description_via_body_stdin_round_trips_through_cli() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let tmp = TempDir::new().unwrap();
+    add_seed_task(tmp.path());
+
+    let mut child = Command::new(bin())
+        .args(["state", "backlog", "set-description"])
+        .arg(tmp.path())
+        .args(["seed-task", "--body", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"Piped-in body.\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "set-description failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("seed-task")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(stdout.contains("Piped-in body."));
+}
+
+#[test]
+fn set_description_errors_on_unknown_task() {
+    let tmp = TempDir::new().unwrap();
+    add_seed_task(tmp.path());
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "set-description"])
+        .arg(tmp.path())
+        .args(["nonexistent", "--body", "anything\n"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "unknown id must exit non-zero");
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("nonexistent"), "stderr must cite the id: {stderr}");
+}
+
+#[test]
+fn set_description_rejects_empty_body() {
+    let tmp = TempDir::new().unwrap();
+    add_seed_task(tmp.path());
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "set-description"])
+        .arg(tmp.path())
+        .args(["seed-task", "--body", ""])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "empty body must exit non-zero");
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("empty"), "stderr must mention empty: {stderr}");
+
+    // Original body preserved.
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("seed-task")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(stdout.contains("Original body."));
+}
+
+#[test]
+fn set_description_preserves_sibling_fields() {
+    let tmp = TempDir::new().unwrap();
+    add_seed_task(tmp.path());
+
+    // Pre-load sibling fields; note the plan_dir goes immediately after
+    // the subcommand, then positional task id + verb-specific args.
+    let run = |args: &[&str]| {
+        let out = Command::new(bin())
+            .args(["state", "backlog"])
+            .arg(args[0])
+            .arg(tmp.path())
+            .args(&args[1..])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "cmd {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    run(&["set-status", "seed-task", "in_progress"]);
+    run(&["set-title", "seed-task", "Renamed Seed"]);
+    run(&["set-results", "seed-task", "--body", "Results body.\n"]);
+    run(&["set-handoff", "seed-task", "--body", "Handoff body.\n"]);
+
+    run(&["set-description", "seed-task", "--body", "Rewritten brief.\n"]);
+
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("seed-task")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(stdout.contains("Rewritten brief."), "desc updated: {stdout}");
+    assert!(stdout.contains("in_progress"), "status preserved: {stdout}");
+    assert!(stdout.contains("Renamed Seed"), "title preserved: {stdout}");
+    assert!(stdout.contains("Results body."), "results preserved: {stdout}");
+    assert!(stdout.contains("Handoff body."), "handoff preserved: {stdout}");
+    // The task id must remain stable across the rename + description rewrite.
+    assert!(stdout.contains("id: seed-task"), "id stable: {stdout}");
+}
+
 #[test]
 fn add_set_status_set_results_round_trip_through_cli() {
     let tmp = TempDir::new().unwrap();
