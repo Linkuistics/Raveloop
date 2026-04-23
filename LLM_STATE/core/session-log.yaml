@@ -411,3 +411,26 @@ sessions:
     - The memory feedback about `--allowed-tools` + `--add-dir` was correct and directly applicable: any claude spawn that must Write a file outside its cwd needs both flags when using `--setting-sources project,local`.
     - Subtree-scoped dirty hashing with `git diff HEAD -- <rel>` + `git ls-files --others -- <rel>` gives a reliable cache key without requiring a clean working tree. The NUL-terminated `ls-files -z` output enables safe path parsing.
     - Stage 2 skip on all-cached is a significant UX improvement for incremental re-runs; it also prevents non-deterministic LLM output from overwriting user-curated proposals.
+- id: session-24
+  timestamp: 2026-04-23T05:36:30Z
+  phase: work
+  body: |
+    ### Session 24 (2026-04-23T05:36:30Z) — Extend ProposalsFile cache state to full ProjectState
+
+    - Attempted: rename `ProposalsFile::source_tree_shas` (type `BTreeMap<String, String>`) to `source_project_states` (type `BTreeMap<String, ProjectState>`) so the proposals file records both `tree_sha` and `dirty_hash` — matching the actual cache key used by Stage 1.
+    - What worked: clean implementation across all five affected files; all 415 lib tests pass. Chose Option 2 from the task description (rename + extend) over the rename-only path.
+    - What this suggests trying next: the `research-richer-ontology-of-inter-project-relationships` task remains the next meaningful discover-pipeline work item.
+
+    ## Changes
+
+    - `src/discover/schema.rs` — renamed field, updated type to `ProjectState`, updated round-trip test, added two new compat tests.
+    - `src/discover/tree_sha.rs` — added `Serialize, Deserialize` to `ProjectState`; added `#[serde(default)]` to `dirty_hash` for read-compat with pre-dirty-hash files.
+    - `src/discover/stage2.rs` — `run_stage2` now builds a full `ProjectState` per surface rather than extracting only `tree_sha`.
+    - `src/discover/mod.rs` — empty-surfaces early-exit path and round-trip test updated to new field name/type.
+    - `src/discover/apply.rs` — `mk_proposals` test helper updated.
+
+    ## Key learnings
+
+    - Reusing `ProjectState` directly (rather than defining a parallel schema-local twin) keeps the on-disk representation literally identical to the in-memory cache key — self-documenting and zero maintenance.
+    - `#[serde(default)]` on individual fields is the right pattern for forward-compat when a field is added to an existing serialised struct; no schema_version bump needed when the field is informational.
+    - Silent-drop of the legacy `source_tree_shas` key is acceptable because the field is never consulted for cache correctness — it is pure documentation. The new test `proposals_file_reads_legacy_source_tree_shas_as_empty_states` pins this behaviour explicitly.

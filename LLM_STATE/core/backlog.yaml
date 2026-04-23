@@ -61,7 +61,7 @@ tasks:
 - id: fix-proposalsfile-source-tree-shas-field-misnomer-capture-dirty-hash-too
   title: Fix ProposalsFile::source_tree_shas field misnomer (capture dirty_hash too)
   category: maintenance
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Rename or extend `ProposalsFile::source_tree_shas` to reflect that the cache key is now `(tree_sha, dirty_hash)` rather than just `tree_sha`.
@@ -85,3 +85,70 @@ tasks:
     - Round-trip YAML tests.
 
     No user-visible behaviour change; this is a schema cosmetic + internal correctness fix.
+  results: |
+    Chose **Option 2** from the task description — rename + extend — so the
+    proposals file now records full `{ tree_sha, dirty_hash }` per project
+    rather than just `tree_sha`. The field name and its contents now match
+    the actual cache key used by Stage 1.
+
+    ## What changed
+
+    - `src/discover/schema.rs` — renamed `source_tree_shas: BTreeMap<String, String>`
+      → `source_project_states: BTreeMap<String, ProjectState>`. Reused the
+      existing `ProjectState` from `tree_sha.rs` rather than defining a parallel
+      type, so the on-disk representation literally is the in-memory cache key.
+    - `src/discover/tree_sha.rs` — added `Serialize, Deserialize` derives to
+      `ProjectState` and `#[serde(default)]` to its `dirty_hash` field
+      (mirrors the same pattern already applied to `SurfaceFile::dirty_hash`
+      for read-compat).
+    - `src/discover/stage2.rs` — populates the new field with a full
+      `ProjectState` built from each surface's `tree_sha` + `dirty_hash`.
+    - `src/discover/mod.rs` — empty-surfaces early-exit path + round-trip
+      test updated to new field name/type.
+    - `src/discover/apply.rs` — test helper `mk_proposals` updated.
+
+    ## Tests
+
+    - `proposals_file_round_trips_via_yaml` — updated to use `ProjectState`
+      values, covers both `dirty_hash: "dirty-alpha"` and `dirty_hash: ""`.
+    - `proposals_file_reads_legacy_source_tree_shas_as_empty_states`
+      (new) — asserts on-disk files written before the rename deserialise
+      cleanly with `source_project_states` empty; the legacy key is silently
+      ignored since it is informational only.
+    - `project_state_reads_without_dirty_hash_as_default` (new) —
+      forward-compat guard: a `ProjectState` with `tree_sha` only still
+      deserialises, yielding `dirty_hash: ""`.
+    - All 415 lib tests pass; all integration crates green.
+
+    ## Design decisions
+
+    - **Reused `ProjectState` rather than a schema-local twin.** The struct
+      is two strings; duplicating it would add weight without benefit.
+      If the on-disk and in-memory representations later need to diverge,
+      the split is trivial. This keeps the field "self-documenting" in the
+      sense the task called for: proposals files now serialise the exact
+      same struct Stage 1 uses as a cache key.
+    - **Silent legacy field drop is acceptable.** `source_project_states`
+      (and its predecessor) is never consulted for cache correctness — it
+      is pure documentation of the cache state at generation time.
+      Stale-file readers get an empty map instead of a parse error, which
+      is the friendliest behaviour. If the field ever becomes
+      load-bearing, this would need revisiting.
+    - **No schema_version bump.** Per the task: "No user-visible
+      behaviour change; this is a schema cosmetic + internal correctness
+      fix." Since the field is informational and `#[serde(default)]`
+      handles missing fields on both sides of the rename, a version bump
+      would be overkill and would force a migration on existing files for
+      no real benefit.
+
+    ## What this suggests next
+
+    - The R7 smoke-test follow-up that filed this task also called out
+      the `parent-of` / `sibling` ontology as semantically thin — that is
+      tracked by the HIGH-priority
+      `research-richer-ontology-of-inter-project-relationships` task and
+      remains the next meaningful piece of discover-pipeline work.
+    - If at any point `source_project_states` is used to drive behaviour
+      (e.g., "has this project's state changed since last proposal?"),
+      the silent-drop-legacy decision above should be revisited and
+      schema_version bumped.
