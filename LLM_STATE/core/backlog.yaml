@@ -1,150 +1,9 @@
 tasks:
-- id: rewrite-stage-2-discover-prompt-for-ontology-v2-vocabulary
-  title: Rewrite Stage 2 discover prompt for ontology v2 vocabulary
-  category: feature
-  status: done
-  dependencies: []
-  description: |
-    **Priority: HIGH.** Flips Stage 2 from emitting v1 (`sibling` / `parent-of`) to emitting v2 directly, using the component-ontology vocabulary.
-
-    **Depends on:** the caller-migration task.
-
-    ## Scope
-
-    - **Prompt rewrite** of `defaults/discover-stage2.md` per `docs/component-ontology.md` §13.2:
-      - "Edge kinds" section replaced by `{{ONTOLOGY_KINDS}}` — a new template token rendered from `defaults/ontology.yaml` at Stage 2 launch time, not hard-coded in the prompt.
-      - New "Decision tree" section explicitly walking the kind-picking order (§13.2 has the sketch).
-      - Output schema updated: proposals emit `kind`, `lifecycle`, `participants`, `evidence_grade`, `evidence_fields`, `rationale`. `supporting_surface_fields` renamed to `evidence_fields`.
-      - "Insufficient signals" section repurposed as the `weak` evidence-grade threshold; still listed verbatim as traps to avoid.
-    - **Stage 2 code** (`src/discover/stage2.rs`, `src/discover/schema.rs`):
-      - `ProposalRecord` gains `lifecycle`, `evidence_grade`, `evidence_fields` (these were likely stubbed in the previous task's transitional bundling; this task completes them).
-      - `ProposalsFile` bumps `schema_version` to 2 definitively.
-      - Stage 2 substitutes `{{ONTOLOGY_KINDS}}` using the loader from the ontology crate (`ontology::render_prompt_block()` or similar helper — define in this task).
-    - **Apply phase** (`src/discover/apply.rs`) accepts v2 proposal shape natively.
-    - **Drift test**: a test asserts that the kind list in `defaults/discover-stage2.md` (via the rendered token) is in bijection with `defaults/ontology.yaml` — same test style as the existing `shipped_pi_prompts_have_no_dangling_tokens`.
-    - **Golden-file test** (optional but recommended): one fixture LLM output covering three v2 edge kinds + three lifecycles, asserting Stage 2 parses and applies correctly.
-
-    ## Out of scope
-
-    - Stage 1 `interaction_role_hints` field (separate task; Stage 2 must work without it).
-    - CLI `add-edge` argument extension for `lifecycle` / `evidence-grade` (separate task; Stage 2 writes directly via the library, not the CLI).
-    - Workspace-crate extraction.
-
-    ## Exit criteria
-
-    - Running `ravel-lite state related-components discover --apply` against a real catalog produces a v2 `related-components.yaml` with non-empty `lifecycle` + `evidence_grade` on every edge.
-    - The Ravel-Lite → {Ravel, APIAnyware-MacOS, TestAnyware} smoke test that motivated v2 now produces `generates @ codegen` + `orchestrates @ dev-workflow` (or the evidence-appropriate variants) — not `parent-of`.
-    - No dangling `{{…}}` tokens in the rendered Stage 2 prompt.
-    - All drift tests green.
-  results: |
-    ## What landed
-
-    **Prompt rewrite — `defaults/discover-stage2.md`.** "Edge kinds
-    (transitional vocabulary)" section replaced by a `{{ONTOLOGY_KINDS}}`
-    token that expands at launch time from `defaults/ontology.yaml`.
-    "Decision tree" section added covering nine questions in evidence-
-    priority order (runtime messaging → codegen → spawning → dependency
-    → embedding → spec conformance → docs → tests → no edge). Output
-    schema already matches `ProposalRecord`; no field renames were
-    needed. The previous task had already landed the `lifecycle`,
-    `evidence_grade`, `evidence_fields`, and `rationale` fields — the
-    brief's "stubbed / transitional" phrasing was outdated.
-
-    **Ontology renderer — `src/ontology/defaults.rs`.** Added
-    `render_kinds_for_prompt(&OntologyYaml) -> String` and a thin
-    `render_embedded_kinds_for_prompt()` convenience. Kinds are grouped
-    by family in the order they appear in the YAML; each bullet
-    emits `- **\`<name>\`** (<directed|symmetric>; lifecycles: …) — <flattened description>`.
-    Re-exported from `src/ontology/mod.rs`.
-
-    **Stage 2 wiring — `src/discover/stage2.rs`.** `run_stage2` now
-    renders the ontology block and substitutes `{{ONTOLOGY_KINDS}}` as
-    the first replacement (before `{{PROPOSALS_OUTPUT_PATH}}` and
-    `{{SURFACE_RECORDS_YAML}}`, so the output-path pattern stays first
-    in the composed prompt for the fake-claude shim's greedy
-    `head -n1` extractor). A local `assert_no_dangling_tokens` guard
-    hard-errors on any leftover `{{X}}` after substitution — discover
-    doesn't route through `prompt::substitute_tokens` (no `PlanContext`),
-    so this narrow guard preserves the same failure mode for Stage 2.
-
-    **Drift tests.**
-    - `rendered_stage2_kind_block_is_bijective_with_edgekind_enum`
-      (`src/ontology/mod.rs`) — the set of kinds rendered into the Stage 2
-      prompt block is compared via `BTreeSet` against `EdgeKind::all()`.
-      Adding a kind to only one side fails loudly.
-    - `shipped_stage2_prompt_substitutes_cleanly_with_no_dangling_tokens`
-      (`src/discover/stage2.rs::tests`) — embeds `defaults/discover-stage2.md`
-      at compile time, applies every Stage 2 substitution, asserts zero
-      `{{…}}` residuals. Catches a new templated token added without a
-      matching replacement.
-    - `shipped_stage2_prompt_renders_every_ontology_kind_as_a_bullet`
-      (`src/discover/stage2.rs::tests`) — complementary end-to-end check:
-      every `EdgeKind::all()` name appears as a bullet in the composed
-      prompt, not just the rendered token (guards against an overridden
-      token in the file being incompatible with the block it should
-      expand to).
-    - Plus three unit tests on the renderer itself covering family-heading
-      ordering, directionality/lifecycle annotations, and description
-      flattening.
-
-    ## Verified
-
-    - `cargo build` — clean.
-    - `cargo test --lib` — 453 passed, 0 failed.
-    - `cargo test --tests` — all integration suites pass (discover e2e,
-      state_related_components, integration, state_backlog,
-      state_session_log).
-
-    ## Notes + loose ends
-
-    - **Fake-claude shim considered.** The `grep -oE '/[^[:space:]]+\.yaml'`
-      extractor in `tests/discover.rs` would grab any `/…yaml` path in the
-      rendered prompt. I scrubbed the new prompt of `.yaml` mentions in
-      prose and ordered substitutions so `{{PROPOSALS_OUTPUT_PATH}}`
-      remains the first such path in the composed output. The discover
-      e2e test passes, confirming the ordering contract held.
-    - **Task-brief references to §13.2 / §14.1 / §13.1 of the ontology
-      spec don't exist** — those section numbers belong to the migration
-      companion doc's §5.1/§5.2. The backlog should be updated to point
-      at `docs/component-ontology-migration.md#52-stage-2--prompt-rewrite`
-      instead. Triage worth noting for the sibling task
-      `extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints`.
-    - **Golden-file test deferred.** The task brief called this "optional
-      but recommended." The structural drift tests plus the e2e test
-      already cover the cases the golden file would pin — a golden file
-      for LLM output would either (a) pin trivial shape that the existing
-      `ProposalRecord` round-trip test already covers, or (b) pin real
-      LLM text that's non-deterministic to regenerate. Not worth the
-      maintenance cost; skipped.
-    - **Manual smoke test still outstanding.** The exit criteria include
-      running `ravel-lite state related-components discover --apply`
-      against a real catalog and confirming the Ravel-Lite → {Ravel,
-      APIAnyware-MacOS, TestAnyware} case produces `generates @ codegen`
-      / `orchestrates @ dev-workflow`. This needs a real claude subagent
-      and a populated catalog; deferred to user execution (the local
-      catalog in this session still holds v1 `parent-of` edges, so
-      running now would require the catalog-upgrade workflow).
-
-    ## Suggests next
-
-    - The next backlog task
-      (`extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints`)
-      is now unblocked and ready. It adds `interaction_role_hints` to
-      Stage 1 surfaces and extends the CLI for the v2 lifecycle /
-      evidence-grade arguments. The Stage 2 prompt already mentions
-      "hints are priors, not verdicts"-style language in an earlier
-      draft — I removed that since Stage 1 doesn't emit hints yet; the
-      next task should re-add a paragraph to the decision tree
-      explaining how to consume hints once they arrive.
-    - Triage could usefully update the backlog description for this task
-      and the CLI-extension task to cite migration-doc §5 rather than
-      the non-existent ontology-spec §13/§14 sections.
 - id: extend-cli-for-ontology-v2-and-add-stage-1-interaction-role-hints
   title: Extend CLI for ontology v2 and add Stage 1 interaction_role_hints
   category: feature
   status: not_started
-  dependencies:
-  - rewrite-stage-2-discover-prompt-for-ontology-v2-vocabulary
+  dependencies: []
   description: |
     **Priority: MEDIUM.** Brings the interactive CLI and Stage 1 surface-extraction up to v2 parity. After this task the CLI is fully v2-capable for humans, and Stage 2 gains Stage-1-sourced priors.
 
@@ -154,7 +13,7 @@ tasks:
 
     ### CLI extensions (`ravel-lite state related-components …`)
 
-    Per `docs/component-ontology.md` §14.1:
+    Per `docs/component-ontology.md` §7.1–§7.4 (on-disk schema; CLI mirrors it):
 
     - **`add-edge`** signature extended:
       ```
@@ -170,7 +29,7 @@ tasks:
 
     ### Stage 1 optional hint field
 
-    Per §13.1:
+    Per `docs/component-ontology-migration.md` §5.1:
 
     - `SurfaceRecord` gains optional `interaction_role_hints: Vec<String>`. Closed vocabulary (enum strings: `generator`, `orchestrator`, `test-harness`, `spec-document`, `spawner`, `documented-by`, `client`, `server`, `library`, `tool`); unknowns rejected.
     - `defaults/discover-stage1.md` gains a "Role hints (optional)" section describing the vocabulary and when to emit each hint. Hints are advisory — Stage 2 still picks edges from cross-referenced evidence.
