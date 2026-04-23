@@ -11,7 +11,7 @@ Read the following in order:
 2. The current task backlog — run `ravel-lite state backlog list {{PLAN}}`.
 3. Distilled memory — run `ravel-lite state memory list {{PLAN}}`.
 4. Declared peer-project relationships — run
-   `ravel-lite state related-projects list --plan {{PLAN}}` (empty output
+   `ravel-lite state related-components list --plan {{PLAN}}` (empty output
    is fine — it means this plan has no declared peers).
 
 **Placeholder note:** any file you {{TOOL_READ}} inside this project

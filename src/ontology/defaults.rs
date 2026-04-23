@@ -1,3 +1,11 @@
+// The bin (`main.rs`) does not yet exercise ontology-yaml parsing —
+// `parse_embedded` and the entry types feed only the drift tests in
+// `mod.rs`, plus the next backlog task's prompt-rendering code. The
+// allow keeps the binary compilation unit clean without hiding real
+// dead code: removing usages from the lib's drift tests would still
+// leave these functions without coverage to flag.
+#![allow(dead_code)]
+
 //! Parsed form of `defaults/ontology.yaml`.
 //!
 //! The data form of docs/component-ontology.md §5 + §6 + §3.2. Its

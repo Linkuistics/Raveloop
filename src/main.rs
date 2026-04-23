@@ -7,10 +7,11 @@ mod format;
 mod git;
 mod init;
 mod multi_plan;
+mod ontology;
 mod phase_loop;
 mod projects;
 mod prompt;
-mod related_projects;
+mod related_components;
 mod state;
 mod subagent;
 mod survey;
@@ -204,10 +205,11 @@ enum StateCommands {
         phase: String,
     },
     /// Manage the per-user projects catalog (`<config-dir>/projects.yaml`)
-    /// that maps project names to absolute paths. Shared-between-users
-    /// related-projects edge lists reference projects by name; this
-    /// catalog is the per-user resolver. Auto-populated on
-    /// `ravel-lite run` when a new project is encountered.
+    /// that maps component names to absolute paths. The shared
+    /// component-relationship graph (`related-components.yaml`)
+    /// references components by name; this catalog is the per-user
+    /// resolver. Auto-populated on `ravel-lite run` when a new project
+    /// is encountered.
     Projects {
         #[command(subcommand)]
         command: ProjectsCommands,
@@ -249,28 +251,21 @@ enum StateCommands {
         #[arg(long)]
         force: bool,
     },
-    /// Global edge list at `<config-dir>/related-projects.yaml`.
-    /// Edges reference projects by name (resolved per-user via the
-    /// projects catalog), so the file is shareable between users.
+    /// Global component-relationship graph at
+    /// `<config-dir>/related-components.yaml`. Edges follow the
+    /// component-ontology v2 schema (see docs/component-ontology.md);
+    /// participants reference components by name (resolved per-user via
+    /// the projects catalog), so the file is shareable between users.
+    RelatedComponents {
+        #[command(subcommand)]
+        command: RelatedComponentsCommands,
+    },
+    /// Deprecated alias for `related-components`. Will be removed after
+    /// one release cycle. Emits a stderr deprecation warning and
+    /// forwards to the new verb unchanged.
     RelatedProjects {
         #[command(subcommand)]
-        command: RelatedProjectsCommands,
-    },
-    /// One-shot merge of a plan's legacy `related-plans.md` into the
-    /// global `related-projects.yaml`. Creates the file on first call
-    /// and dedupes by (kind, canonicalised participants).
-    MigrateRelatedProjects {
-        plan_dir: PathBuf,
-        /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and
-        /// the default location.
-        #[arg(long)]
-        config: Option<PathBuf>,
-        /// Parse, resolve, and report without touching disk.
-        #[arg(long)]
-        dry_run: bool,
-        /// Remove the source `related-plans.md` after the merge succeeds.
-        #[arg(long)]
-        delete_original: bool,
+        command: RelatedComponentsCommands,
     },
 }
 
@@ -537,8 +532,10 @@ enum ProjectsCommands {
         config: Option<PathBuf>,
         name: String,
     },
-    /// Rename an existing entry. Does not cascade into
-    /// `related-projects.yaml` yet (R5 adds that cascade).
+    /// Rename an existing entry. Cascades into
+    /// `<config-dir>/related-components.yaml` (every edge participant
+    /// matching `<old>` is rewritten to `<new>`) and into the discover
+    /// surface cache at `<config-dir>/discover-cache/<name>.yaml`.
     Rename {
         /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and the
         /// default location at <dirs::config_dir()>/ravel-lite/.
@@ -550,34 +547,45 @@ enum ProjectsCommands {
 }
 
 #[derive(Subcommand)]
-enum RelatedProjectsCommands {
+enum RelatedComponentsCommands {
     /// Emit the file as YAML. With `--plan`, filter to edges that
-    /// involve the project derived from the plan dir.
+    /// involve the component derived from the plan dir.
     List {
         /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and
         /// the default location.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Restrict output to edges involving the project that owns
+        /// Restrict output to edges involving the component that owns
         /// `<plan>` (derived as `<plan>/../..`).
         #[arg(long)]
         plan: Option<PathBuf>,
     },
-    /// Add an edge. `kind` is `sibling` or `parent-of`. Sibling edges
-    /// are order-insensitive; parent-of edges are `<parent> <child>`.
-    /// Refuses unknown project names.
+    /// Add an edge. `kind` is one of the ontology v2 kebab-case kinds
+    /// (e.g. `generates`, `orchestrates`, `depends-on`,
+    /// `co-implements`). Symmetric kinds are participant-order-
+    /// insensitive; directed kinds use canonical order from
+    /// docs/component-ontology.md §6. Refuses unknown component names.
+    ///
+    /// **Transitional**: this CLI synthesises sensible per-kind
+    /// defaults for `lifecycle`, `evidence_grade=weak`, and
+    /// `rationale`. Explicit `--lifecycle` / `--evidence-grade` /
+    /// `--rationale` flags are introduced in the next backlog task.
     AddEdge {
         #[arg(long)]
         config: Option<PathBuf>,
-        /// `sibling` or `parent-of`.
+        /// One of the v2 kebab-case kinds (see
+        /// docs/component-ontology.md §5).
         kind: String,
-        /// First participant. For parent-of, this is the parent.
+        /// First participant. For directed kinds, the canonical-order
+        /// "from" component.
         a: String,
-        /// Second participant. For parent-of, this is the child.
+        /// Second participant. For directed kinds, the canonical-order
+        /// "to" component.
         b: String,
     },
-    /// Remove an edge matching `kind` and the participants (sibling is
-    /// order-insensitive, parent-of is order-sensitive).
+    /// Remove every edge matching `(kind, canonicalised participants)`
+    /// across all lifecycles. Errors if no match. (Lifecycle-targeted
+    /// removal arrives with the same CLI extension as `add-edge`.)
     RemoveEdge {
         #[arg(long)]
         config: Option<PathBuf>,
@@ -586,12 +594,12 @@ enum RelatedProjectsCommands {
         b: String,
     },
     /// Run the two-stage LLM discovery pipeline over all catalogued
-    /// projects (or just `--project <name>`). Writes proposals to
+    /// components (or just `--project <name>`). Writes proposals to
     /// `<config-dir>/discover-proposals.yaml` for user review.
     Discover {
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Restrict Stage 1 re-analysis to a single project; Stage 2
+        /// Restrict Stage 1 re-analysis to a single component; Stage 2
         /// still operates over the full catalog's cached surfaces.
         #[arg(long)]
         project: Option<String>,
@@ -604,8 +612,8 @@ enum RelatedProjectsCommands {
         apply: bool,
     },
     /// Merge a previously-produced `discover-proposals.yaml` into
-    /// `related-projects.yaml`. Idempotent; reports and rejects
-    /// kind-conflicts without aborting.
+    /// `related-components.yaml`. Idempotent; reports and rejects
+    /// directional conflicts without aborting.
     DiscoverApply {
         #[arg(long)]
         config: Option<PathBuf>,
@@ -724,47 +732,35 @@ async fn dispatch_state(command: StateCommands) -> Result<()> {
             };
             state::migrate::run_migrate(&plan_dir, &options)
         }
-        StateCommands::RelatedProjects { command } => dispatch_related_projects(command).await,
-        StateCommands::MigrateRelatedProjects {
-            plan_dir,
-            config,
-            dry_run,
-            delete_original,
-        } => {
-            let config_root = resolve_config_dir(config)?;
-            let options = related_projects::MigrateRelatedProjectsOptions {
-                dry_run,
-                delete_original,
-            };
-            let report =
-                related_projects::run_migrate_related_projects(&config_root, &plan_dir, &options)?;
-            print_migration_report(&report, dry_run);
-            Ok(())
+        StateCommands::RelatedComponents { command } => dispatch_related_components(command).await,
+        StateCommands::RelatedProjects { command } => {
+            eprintln!(
+                "warning: `state related-projects` is deprecated; use \
+                 `state related-components` instead. The alias will be \
+                 removed after one release cycle."
+            );
+            dispatch_related_components(command).await
         }
     }
 }
 
-async fn dispatch_related_projects(command: RelatedProjectsCommands) -> Result<()> {
+async fn dispatch_related_components(command: RelatedComponentsCommands) -> Result<()> {
     match command {
-        RelatedProjectsCommands::List { config, plan } => {
+        RelatedComponentsCommands::List { config, plan } => {
             let config_root = resolve_config_dir(config)?;
-            related_projects::run_list(&config_root, plan.as_deref())
+            related_components::run_list(&config_root, plan.as_deref())
         }
-        RelatedProjectsCommands::AddEdge { config, kind, a, b } => {
+        RelatedComponentsCommands::AddEdge { config, kind, a, b } => {
             let config_root = resolve_config_dir(config)?;
-            let kind = related_projects::EdgeKind::parse(&kind).ok_or_else(|| {
-                anyhow::anyhow!("invalid kind {kind:?}; expected 'sibling' or 'parent-of'")
-            })?;
-            related_projects::run_add_edge(&config_root, kind, &a, &b)
+            let kind = parse_edge_kind(&kind)?;
+            related_components::run_add_edge(&config_root, kind, &a, &b)
         }
-        RelatedProjectsCommands::RemoveEdge { config, kind, a, b } => {
+        RelatedComponentsCommands::RemoveEdge { config, kind, a, b } => {
             let config_root = resolve_config_dir(config)?;
-            let kind = related_projects::EdgeKind::parse(&kind).ok_or_else(|| {
-                anyhow::anyhow!("invalid kind {kind:?}; expected 'sibling' or 'parent-of'")
-            })?;
-            related_projects::run_remove_edge(&config_root, kind, &a, &b)
+            let kind = parse_edge_kind(&kind)?;
+            related_components::run_remove_edge(&config_root, kind, &a, &b)
         }
-        RelatedProjectsCommands::Discover {
+        RelatedComponentsCommands::Discover {
             config,
             project,
             concurrency,
@@ -778,31 +774,24 @@ async fn dispatch_related_projects(command: RelatedProjectsCommands) -> Result<(
             };
             crate::discover::run_discover(&config_root, options).await
         }
-        RelatedProjectsCommands::DiscoverApply { config } => {
+        RelatedComponentsCommands::DiscoverApply { config } => {
             let config_root = resolve_config_dir(config)?;
             crate::discover::apply::run_discover_apply(&config_root)
         }
     }
 }
 
-fn print_migration_report(report: &related_projects::MigrationReport, dry_run: bool) {
-    let prefix = if dry_run { "dry-run: would add" } else { "added" };
-    for edge in &report.added {
-        println!(
-            "{prefix} {} edge: {} / {}",
-            edge.kind.as_str(),
-            edge.participants[0],
-            edge.participants[1]
-        );
-    }
-    for edge in &report.skipped_existing {
-        println!(
-            "already present: {} edge: {} / {}",
-            edge.kind.as_str(),
-            edge.participants[0],
-            edge.participants[1]
-        );
-    }
+fn parse_edge_kind(input: &str) -> Result<related_components::EdgeKind> {
+    related_components::EdgeKind::parse(input).ok_or_else(|| {
+        let kebab = related_components::EdgeKind::all()
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        anyhow::anyhow!(
+            "invalid kind {input:?}; expected one of the ontology v2 kinds: {kebab}"
+        )
+    })
 }
 
 fn dispatch_backlog(command: BacklogCommands) -> Result<()> {
@@ -1099,7 +1088,7 @@ async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) ->
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
-        related_plans: related_projects::read_related_plans_markdown(plan_dir),
+        related_plans: related_components::read_related_plans_markdown(plan_dir),
         config_root: config_root.to_string_lossy().to_string(),
     };
 

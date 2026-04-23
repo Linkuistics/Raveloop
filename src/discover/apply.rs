@@ -1,10 +1,11 @@
-//! Merge `discover-proposals.yaml` into `related-projects.yaml`.
+//! Merge `discover-proposals.yaml` into `related-components.yaml`.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::related_projects::{self, Edge, EdgeKind, RelatedProjectsFile};
+use crate::ontology::{Edge, EdgeKind, RelatedComponentsFile};
+use crate::related_components;
 
 use super::load_proposals;
 
@@ -22,13 +23,16 @@ pub struct KindConflict {
 pub fn run_discover_apply(config_root: &Path) -> Result<()> {
     let report = apply_proposals(config_root)?;
     eprintln!(
-        "discover-apply: added {} edge(s), {} already present, {} kind-conflict(s)",
+        "discover-apply: added {} edge(s), {} already present, {} directional conflict(s)",
         report.added, report.already_present, report.kind_conflicts.len()
     );
     for c in &report.kind_conflicts {
         eprintln!(
-            "  conflict: proposed {:?} on {:?} but existing {:?} on {:?} blocks it",
-            c.proposed.kind, c.proposed.participants, c.existing.kind, c.existing.participants
+            "  conflict: proposed {}@{} on {:?} but existing reverses participants ({:?})",
+            c.proposed.kind.as_str(),
+            c.proposed.lifecycle.as_str(),
+            c.proposed.participants,
+            c.existing.participants,
         );
     }
     Ok(())
@@ -36,36 +40,41 @@ pub fn run_discover_apply(config_root: &Path) -> Result<()> {
 
 pub fn apply_proposals(config_root: &Path) -> Result<ApplyReport> {
     let proposals = load_proposals(config_root)?;
-    let mut file = related_projects::load_or_empty(config_root)?;
+    let mut file = related_components::load_or_empty(config_root)?;
     let mut added = 0usize;
     let mut already_present = 0usize;
     let mut kind_conflicts = Vec::new();
 
     for p in proposals.proposals {
+        let participants = canonicalise_for_kind(p.kind, p.participants);
         let proposed = Edge {
             kind: p.kind,
-            participants: p.participants,
+            lifecycle: p.lifecycle,
+            participants,
+            evidence_grade: p.evidence_grade,
+            evidence_fields: p.evidence_fields,
+            rationale: p.rationale,
         };
         if let Err(e) = proposed.validate() {
             eprintln!("  skipping invalid proposal: {e:#}");
             continue;
         }
-        if let Some(existing) = find_conflicting_kind(&file, &proposed) {
+        if let Some(existing) = find_directional_conflict(&file, &proposed) {
             kind_conflicts.push(KindConflict {
                 proposed: proposed.clone(),
                 existing: existing.clone(),
             });
             continue;
         }
-        match file.add_edge(proposed.clone())? {
+        match file.add_edge(proposed)? {
             true => added += 1,
             false => already_present += 1,
         }
     }
 
     if added > 0 {
-        related_projects::save_atomic(config_root, &file)
-            .context("save related-projects.yaml after applying proposals")?;
+        related_components::save_atomic(config_root, &file)
+            .context("save related-components.yaml after applying proposals")?;
     }
 
     Ok(ApplyReport {
@@ -75,43 +84,44 @@ pub fn apply_proposals(config_root: &Path) -> Result<ApplyReport> {
     })
 }
 
-/// Look for an existing edge on the same participant pair that the
-/// apply layer must treat as a conflict:
-///
-/// * different kind on the same unordered pair (sibling vs parent-of) —
-///   mutually exclusive as a policy choice, even though the schema
-///   would allow coexistence;
-/// * same kind, but a reversed `parent-of` — `parent-of(A,B)` and
-///   `parent-of(B,A)` are a contradictory graph state, not a duplicate.
-///   `add_edge`'s canonical key is order-preserving for `parent-of`
-///   (direction is semantic), so this policy check is the only place
-///   the reversal is caught.
-fn find_conflicting_kind<'a>(
-    file: &'a RelatedProjectsFile,
+/// Spec §7.4: the only modelling conflict the apply layer detects is a
+/// directed edge proposed in the reverse direction of an existing one
+/// at the same `(kind, lifecycle)`. Cross-kind on the same pair is
+/// expected (§3.5), so it is not a conflict. Exact-duplicate edges
+/// route through `add_edge` as `already_present`, never as conflicts.
+fn find_directional_conflict<'a>(
+    file: &'a RelatedComponentsFile,
     proposed: &Edge,
 ) -> Option<&'a Edge> {
-    let pair_sorted = {
-        let mut v = proposed.participants.clone();
-        v.sort();
-        v
-    };
+    if !proposed.kind.is_directed() {
+        return None;
+    }
     file.edges.iter().find(|e| {
-        let mut ev = e.participants.clone();
-        ev.sort();
-        ev == pair_sorted
-            && (e.kind != proposed.kind
-                || (e.kind == EdgeKind::ParentOf
-                    && e.participants != proposed.participants))
+        e.kind == proposed.kind
+            && e.lifecycle == proposed.lifecycle
+            && e.participants != proposed.participants
+            && participants_reversed(&e.participants, &proposed.participants)
     })
+}
+
+fn participants_reversed(a: &[String], b: &[String]) -> bool {
+    a.len() == 2 && b.len() == 2 && a[0] == b[1] && a[1] == b[0]
+}
+
+fn canonicalise_for_kind(kind: EdgeKind, mut participants: Vec<String>) -> Vec<String> {
+    if !kind.is_directed() {
+        participants.sort();
+    }
+    participants
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::super::schema::{ProposalRecord, ProposalsFile, PROPOSALS_SCHEMA_VERSION};
     use super::super::save_proposals_atomic;
+    use super::super::schema::{ProposalRecord, ProposalsFile, PROPOSALS_SCHEMA_VERSION};
+    use super::*;
+    use crate::ontology::{EvidenceGrade, LifecycleScope};
     use crate::projects;
-    use crate::related_projects::EdgeKind;
     use tempfile::TempDir;
 
     fn seed_two_projects(cfg: &std::path::Path) -> std::path::PathBuf {
@@ -126,21 +136,46 @@ mod tests {
         a
     }
 
-    fn mk_proposals(pairs: &[(EdgeKind, &str, &str)]) -> ProposalsFile {
+    fn proposal(
+        kind: EdgeKind,
+        lifecycle: LifecycleScope,
+        a: &str,
+        b: &str,
+    ) -> ProposalRecord {
+        ProposalRecord {
+            kind,
+            lifecycle,
+            participants: vec![a.to_string(), b.to_string()],
+            evidence_grade: EvidenceGrade::Strong,
+            evidence_fields: vec![format!("{a}.produces_files"), format!("{b}.consumes_files")],
+            rationale: "test".to_string(),
+        }
+    }
+
+    fn mk_proposals(records: Vec<ProposalRecord>) -> ProposalsFile {
         ProposalsFile {
             schema_version: PROPOSALS_SCHEMA_VERSION,
             generated_at: "t".to_string(),
             source_project_states: Default::default(),
-            proposals: pairs
-                .iter()
-                .map(|(k, a, b)| ProposalRecord {
-                    kind: *k,
-                    participants: vec![a.to_string(), b.to_string()],
-                    rationale: "test".to_string(),
-                    supporting_surface_fields: vec![],
-                })
-                .collect(),
+            proposals: records,
             failures: vec![],
+        }
+    }
+
+    fn strong_edge(
+        kind: EdgeKind,
+        lifecycle: LifecycleScope,
+        a: &str,
+        b: &str,
+    ) -> Edge {
+        let participants = canonicalise_for_kind(kind, vec![a.to_string(), b.to_string()]);
+        Edge {
+            kind,
+            lifecycle,
+            participants,
+            evidence_grade: EvidenceGrade::Strong,
+            evidence_fields: vec![format!("{a}.produces_files")],
+            rationale: "seed".to_string(),
         }
     }
 
@@ -151,13 +186,22 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         seed_two_projects(&cfg);
 
-        save_proposals_atomic(&cfg, &mk_proposals(&[(EdgeKind::Sibling, "A", "B")])).unwrap();
+        save_proposals_atomic(
+            &cfg,
+            &mk_proposals(vec![proposal(
+                EdgeKind::Generates,
+                LifecycleScope::Codegen,
+                "A",
+                "B",
+            )]),
+        )
+        .unwrap();
         let report = apply_proposals(&cfg).unwrap();
 
         assert_eq!(report.added, 1);
         assert_eq!(report.already_present, 0);
         assert!(report.kind_conflicts.is_empty());
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.edges.len(), 1);
     }
 
@@ -167,7 +211,16 @@ mod tests {
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
         seed_two_projects(&cfg);
-        save_proposals_atomic(&cfg, &mk_proposals(&[(EdgeKind::Sibling, "A", "B")])).unwrap();
+        save_proposals_atomic(
+            &cfg,
+            &mk_proposals(vec![proposal(
+                EdgeKind::Generates,
+                LifecycleScope::Codegen,
+                "A",
+                "B",
+            )]),
+        )
+        .unwrap();
 
         let first = apply_proposals(&cfg).unwrap();
         assert_eq!(first.added, 1);
@@ -177,49 +230,67 @@ mod tests {
     }
 
     #[test]
-    fn apply_rejects_reversed_parent_of_as_conflict() {
+    fn apply_rejects_reversed_directed_edge_at_same_lifecycle() {
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
         seed_two_projects(&cfg);
-        // Seed existing parent-of(A, B).
-        let mut file = related_projects::RelatedProjectsFile::default();
-        file.add_edge(Edge::parent_of("A", "B")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
+        // Seed existing generates(A, B) @ codegen.
+        let mut file = RelatedComponentsFile::default();
+        file.add_edge(strong_edge(
+            EdgeKind::Generates,
+            LifecycleScope::Codegen,
+            "A",
+            "B",
+        ))
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
 
-        // Propose the reversed parent-of(B, A) — must be rejected as a
-        // directional conflict, not silently added as a second edge.
+        // Propose the reversed direction at the same lifecycle.
         save_proposals_atomic(
             &cfg,
-            &mk_proposals(&[(EdgeKind::ParentOf, "B", "A")]),
+            &mk_proposals(vec![proposal(
+                EdgeKind::Generates,
+                LifecycleScope::Codegen,
+                "B",
+                "A",
+            )]),
         )
         .unwrap();
 
         let report = apply_proposals(&cfg).unwrap();
-        assert_eq!(report.added, 0, "reversed parent-of must not be added");
-        assert_eq!(report.already_present, 0);
+        assert_eq!(report.added, 0, "reversed directed edge must not be added");
         assert_eq!(report.kind_conflicts.len(), 1);
 
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
-        assert_eq!(loaded.edges.len(), 1, "only the original edge survives");
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
+        assert_eq!(loaded.edges.len(), 1);
         assert_eq!(loaded.edges[0].participants, vec!["A", "B"]);
     }
 
     #[test]
-    fn apply_treats_duplicate_parent_of_as_already_present() {
-        // Negative control: exact-duplicate parent-of must NOT be flagged as a
-        // conflict — it is a dedup no-op routed through `add_edge`.
+    fn apply_treats_duplicate_directed_as_already_present() {
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
         seed_two_projects(&cfg);
-        let mut file = related_projects::RelatedProjectsFile::default();
-        file.add_edge(Edge::parent_of("A", "B")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
+        let mut file = RelatedComponentsFile::default();
+        file.add_edge(strong_edge(
+            EdgeKind::Generates,
+            LifecycleScope::Codegen,
+            "A",
+            "B",
+        ))
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
 
         save_proposals_atomic(
             &cfg,
-            &mk_proposals(&[(EdgeKind::ParentOf, "A", "B")]),
+            &mk_proposals(vec![proposal(
+                EdgeKind::Generates,
+                LifecycleScope::Codegen,
+                "A",
+                "B",
+            )]),
         )
         .unwrap();
 
@@ -230,18 +301,46 @@ mod tests {
     }
 
     #[test]
-    fn apply_rejects_kind_conflict_and_continues() {
+    fn apply_accepts_multiple_kinds_on_same_pair() {
+        // §3.5: two distinct (kind, lifecycle) tuples on one pair are
+        // legal — one edge generates schemas, the other orchestrates a
+        // dev-workflow loop. Both must land.
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
         seed_two_projects(&cfg);
-        // Seed existing parent-of(A, B).
-        let mut file = related_projects::RelatedProjectsFile::default();
-        file.add_edge(Edge::parent_of("A", "B")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
 
-        // Propose sibling(A, B) — must be rejected. Also include a
-        // harmless sibling(B, "C") to prove "continues" works; seed C first.
+        save_proposals_atomic(
+            &cfg,
+            &mk_proposals(vec![
+                proposal(EdgeKind::Generates, LifecycleScope::Codegen, "A", "B"),
+                proposal(EdgeKind::Orchestrates, LifecycleScope::DevWorkflow, "A", "B"),
+            ]),
+        )
+        .unwrap();
+
+        let report = apply_proposals(&cfg).unwrap();
+        assert_eq!(report.added, 2);
+        assert!(report.kind_conflicts.is_empty());
+    }
+
+    #[test]
+    fn apply_rejects_directional_conflict_and_continues() {
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("cfg");
+        std::fs::create_dir_all(&cfg).unwrap();
+        seed_two_projects(&cfg);
+        let mut file = RelatedComponentsFile::default();
+        file.add_edge(strong_edge(
+            EdgeKind::Generates,
+            LifecycleScope::Codegen,
+            "A",
+            "B",
+        ))
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
+
+        // Catalogue C so the harmless second proposal can land.
         let mut catalog = projects::load_or_empty(&cfg).unwrap();
         let c_path = tmp.path().join("C");
         std::fs::create_dir_all(&c_path).unwrap();
@@ -250,9 +349,9 @@ mod tests {
 
         save_proposals_atomic(
             &cfg,
-            &mk_proposals(&[
-                (EdgeKind::Sibling, "A", "B"),   // conflicts
-                (EdgeKind::Sibling, "B", "C"),   // OK
+            &mk_proposals(vec![
+                proposal(EdgeKind::Generates, LifecycleScope::Codegen, "B", "A"), // conflicts
+                proposal(EdgeKind::Generates, LifecycleScope::Codegen, "B", "C"), // OK
             ]),
         )
         .unwrap();
@@ -261,9 +360,7 @@ mod tests {
         assert_eq!(report.added, 1, "second proposal should still land");
         assert_eq!(report.kind_conflicts.len(), 1);
 
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.edges.len(), 2);
-        assert!(loaded.edges.iter().any(|e| e.kind == EdgeKind::ParentOf));
-        assert!(loaded.edges.iter().any(|e| e.kind == EdgeKind::Sibling));
     }
 }

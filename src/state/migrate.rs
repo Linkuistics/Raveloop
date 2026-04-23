@@ -5,8 +5,10 @@
 //! memory). The top-level verb runs every migrator that has a source
 //! file, parses all source files first, then writes all targets second:
 //! a parse failure on any file aborts before any write touches disk.
-//! Does not touch related-plans.md (handled by the separate
-//! migrate-related-projects verb when R5 lands).
+//! Does not touch related-plans.md — that legacy markdown migrator
+//! was retired with the move to component-ontology v2 (the
+//! component-relationship graph at `<config-dir>/related-components.yaml`
+//! is now populated exclusively by the discover pipeline).
 
 use std::path::{Path, PathBuf};
 

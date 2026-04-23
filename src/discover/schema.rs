@@ -4,13 +4,19 @@
 //! `SurfaceRecord` is the surface section authored by the LLM; identity
 //! fields on `SurfaceFile` are injected by Rust post-parse so the subagent
 //! cannot claim a different project name or stale tree SHA.
+//!
+//! `ProposalsFile` is the Stage 2 output. Bumped to `schema_version: 2`
+//! in lockstep with the component-ontology v2 cutover: every proposal
+//! now carries `(kind, lifecycle, evidence_grade, evidence_fields,
+//! rationale)` so the apply phase can build a fully-formed v2 `Edge`
+//! without back-filling fields it has no evidence for.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 use super::tree_sha::ProjectState;
-use crate::related_projects::EdgeKind;
+use crate::ontology::{EdgeKind, EvidenceGrade, LifecycleScope};
 
 pub const SURFACE_SCHEMA_VERSION: u32 = 1;
 
@@ -50,7 +56,7 @@ pub struct SurfaceRecord {
     pub notes: String,
 }
 
-pub const PROPOSALS_SCHEMA_VERSION: u32 = 1;
+pub const PROPOSALS_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposalsFile {
@@ -68,13 +74,21 @@ pub struct ProposalsFile {
     pub failures: Vec<Stage1Failure>,
 }
 
+/// Stage 2 LLM-emitted proposal. Mirrors `ontology::Edge` minus the
+/// participant-canonicalisation invariant (apply-time normalisation
+/// handles symmetric-kind sort order). The transitional Stage 2 prompt
+/// in this release defaults `evidence_grade` to `weak` and emits a
+/// short list of v2 kinds; the next backlog task rewrites the prompt
+/// against the full ontology vocabulary with a decision tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposalRecord {
     pub kind: EdgeKind,
+    pub lifecycle: LifecycleScope,
     pub participants: Vec<String>,
-    pub rationale: String,
+    pub evidence_grade: EvidenceGrade,
     #[serde(default)]
-    pub supporting_surface_fields: Vec<String>,
+    pub evidence_fields: Vec<String>,
+    pub rationale: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,17 +162,17 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-            proposals: vec![
-                ProposalRecord {
-                    kind: EdgeKind::Sibling,
-                    participants: vec!["Alpha".to_string(), "Beta".to_string()],
-                    rationale: "Both speak the same gRPC protocol.".to_string(),
-                    supporting_surface_fields: vec![
-                        "Alpha.surface.network_endpoints".to_string(),
-                        "Beta.surface.network_endpoints".to_string(),
-                    ],
-                },
-            ],
+            proposals: vec![ProposalRecord {
+                kind: EdgeKind::Generates,
+                lifecycle: LifecycleScope::Codegen,
+                participants: vec!["Alpha".to_string(), "Beta".to_string()],
+                evidence_grade: EvidenceGrade::Strong,
+                evidence_fields: vec![
+                    "Alpha.surface.produces_files".to_string(),
+                    "Beta.surface.consumes_files".to_string(),
+                ],
+                rationale: "Alpha emits schemas Beta consumes.".to_string(),
+            }],
             failures: vec![],
         };
         let yaml = serde_yaml::to_string(&original).unwrap();
@@ -173,7 +187,7 @@ mod tests {
         // field is purely informational (never consulted for cache
         // correctness), so the acceptable behaviour is: read succeeds with
         // an empty map, legacy field silently ignored.
-        let yaml = "schema_version: 1\n\
+        let yaml = "schema_version: 2\n\
                     generated_at: \"2026-04-22T12:05:00Z\"\n\
                     source_tree_shas:\n\
                       Alpha: abc123\n\

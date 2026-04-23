@@ -57,10 +57,11 @@ skip this step; memory starts empty.
 `session-log append` creates it.
 
 **related-plans.md** (optional) — only if the user declared peer-project
-relationships. Write the markdown body and then let the first
-`ravel-lite run` (or an explicit
-`ravel-lite state migrate-related-projects {{PLAN}}`) fold it into the
-global edge store. Example body:
+relationships. The file is read at phase-loop entry to seed the
+`{{RELATED_PLANS}}` macro for the work-phase prompt; the global
+component graph at `<config-dir>/related-components.yaml` is populated
+separately by `ravel-lite state related-components discover --apply`,
+not from this prose. Example body:
 
 ```markdown
 # Related Plans

@@ -11,7 +11,7 @@ pub mod ontology;
 pub mod phase_loop;
 pub mod projects;
 pub mod prompt;
-pub mod related_projects;
+pub mod related_components;
 pub mod state;
 pub mod subagent;
 pub mod survey;

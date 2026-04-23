@@ -17,13 +17,23 @@ pub mod defaults;
 pub mod schema;
 pub mod yaml_io;
 
+// The lib's public surface re-exports the full ontology API; the
+// binary compilation unit reaches only `EdgeKind`, `LifecycleScope`,
+// `EvidenceGrade`, `Edge`, `RelatedComponentsFile`, `load_or_default`,
+// and `save_atomic` (via `crate::related_components`). The remaining
+// re-exports are valid public API for external consumers and for the
+// next backlog task's prompt-rendering code; allow the lint here so
+// the binary build stays green without dropping public surface area.
+#[allow(unused_imports)]
 pub use defaults::{
     parse as parse_ontology_yaml, parse_embedded as parse_embedded_ontology_yaml,
     EMBEDDED_ONTOLOGY_YAML, ONTOLOGY_FILE_SCHEMA_VERSION,
 };
+#[allow(unused_imports)]
 pub use schema::{
     Edge, EdgeKind, EvidenceGrade, LifecycleScope, RelatedComponentsFile, SCHEMA_VERSION,
 };
+#[allow(unused_imports)]
 pub use yaml_io::{load, load_or_default, save_atomic};
 
 #[cfg(test)]

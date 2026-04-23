@@ -148,13 +148,13 @@ fn discover_writes_proposals_and_apply_merges_them() {
     write_fake_claude(
         &shim_dir,
         "purpose: alpha consumes yaml\nconsumes_files: [/data/*.yaml]\n",
-        "generated_at: 2026-04-22T00:00:00Z\nproposals:\n  - kind: parent-of\n    participants: [Beta, Alpha]\n    rationale: 'beta produces, alpha consumes'\n    supporting_surface_fields: []\n",
+        "generated_at: 2026-04-22T00:00:00Z\nproposals:\n  - kind: generates\n    lifecycle: codegen\n    participants: [Beta, Alpha]\n    evidence_grade: strong\n    evidence_fields:\n      - Beta.surface.produces_files\n      - Alpha.surface.consumes_files\n    rationale: 'beta produces /data/*.yaml that alpha consumes'\n",
     );
 
     // Run discover.
     let status = Command::new(bin_path())
         .env("PATH", format!("{}:{}", shim_dir.display(), std::env::var("PATH").unwrap()))
-        .args(["state", "related-projects", "discover", "--config"])
+        .args(["state", "related-components", "discover", "--config"])
         .arg(&cfg)
         .status()
         .unwrap();
@@ -164,7 +164,7 @@ fn discover_writes_proposals_and_apply_merges_them() {
     let proposals_path = cfg.join("discover-proposals.yaml");
     assert!(proposals_path.exists());
     let content = std::fs::read_to_string(&proposals_path).unwrap();
-    assert!(content.contains("parent-of"));
+    assert!(content.contains("generates"));
     assert!(content.contains("Beta"));
     assert!(content.contains("Alpha"));
 
@@ -172,15 +172,15 @@ fn discover_writes_proposals_and_apply_merges_them() {
     assert!(cfg.join("discover-cache/Alpha.yaml").exists());
     assert!(cfg.join("discover-cache/Beta.yaml").exists());
 
-    // Apply and verify related-projects.yaml.
+    // Apply and verify related-components.yaml.
     let status = Command::new(bin_path())
-        .args(["state", "related-projects", "discover-apply", "--config"])
+        .args(["state", "related-components", "discover-apply", "--config"])
         .arg(&cfg)
         .status()
         .unwrap();
     assert!(status.success());
-    let rp = std::fs::read_to_string(cfg.join("related-projects.yaml")).unwrap();
-    assert!(rp.contains("parent-of"));
+    let rp = std::fs::read_to_string(cfg.join("related-components.yaml")).unwrap();
+    assert!(rp.contains("generates"));
 
     // --- Second run: every Stage 1 must cache-hit and Stage 2 must be skipped ---
     // We hand-edit the proposals file to a marker string; if Stage 2 runs, the
@@ -193,7 +193,7 @@ fn discover_writes_proposals_and_apply_merges_them() {
 
     let output = Command::new(bin_path())
         .env("PATH", format!("{}:{}", shim_dir.display(), std::env::var("PATH").unwrap()))
-        .args(["state", "related-projects", "discover", "--config"])
+        .args(["state", "related-components", "discover", "--config"])
         .arg(&cfg)
         .output()
         .unwrap();

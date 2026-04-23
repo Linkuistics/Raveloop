@@ -24,7 +24,7 @@ use crate::agent::Agent;
 use crate::config::{load_agent_config, load_shared_config};
 use crate::git::project_root_for_plan;
 use crate::phase_loop;
-use crate::related_projects::read_related_plans_markdown;
+use crate::related_components::read_related_plans_markdown;
 use crate::survey::{
     compute_survey_response, emit_survey_yaml, load_plan, plan_key, SurveyResponse,
 };

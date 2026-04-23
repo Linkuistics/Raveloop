@@ -232,7 +232,7 @@ pub fn run_rename(config_root: &Path, old: &str, new: &str) -> Result<()> {
         .with_context(|| format!("no project named '{old}' in catalog"))?;
     entry.name = new.to_string();
     save_atomic(config_root, &catalog)?;
-    crate::related_projects::rename_project_in_edges(config_root, old, new)?;
+    crate::related_components::rename_component_in_edges(config_root, old, new)?;
     crate::discover::cache::rename(config_root, old, new)
 }
 
@@ -584,8 +584,9 @@ mod tests {
     }
 
     #[test]
-    fn run_rename_cascades_into_sibling_edges() {
-        use crate::related_projects::{self, Edge, EdgeKind};
+    fn run_rename_cascades_into_symmetric_v2_edges() {
+        use crate::ontology::{Edge, EdgeKind, EvidenceGrade, LifecycleScope};
+        use crate::related_components;
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
@@ -594,23 +595,36 @@ mod tests {
         run_add(&cfg, Some("OldName"), &a).unwrap();
         run_add(&cfg, Some("Other"), &b).unwrap();
 
-        let mut file = related_projects::RelatedProjectsFile::default();
-        file.add_edge(Edge::sibling("OldName", "Other")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
+        // Symmetric kind: participants must be sorted on construction.
+        let mut file = crate::ontology::RelatedComponentsFile::default();
+        file.add_edge(Edge {
+            kind: EdgeKind::CoImplements,
+            lifecycle: LifecycleScope::Design,
+            participants: vec!["OldName".to_string(), "Other".to_string()],
+            evidence_grade: EvidenceGrade::Medium,
+            evidence_fields: vec!["OldName.purpose".into()],
+            rationale: "shared spec".into(),
+        })
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
 
         run_rename(&cfg, "OldName", "NewName").unwrap();
 
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.edges.len(), 1);
-        assert_eq!(loaded.edges[0].kind, EdgeKind::Sibling);
-        assert!(loaded.edges[0].participants.contains(&"NewName".to_string()));
-        assert!(loaded.edges[0].participants.contains(&"Other".to_string()));
-        assert!(!loaded.edges[0].participants.contains(&"OldName".to_string()));
+        assert_eq!(loaded.edges[0].kind, EdgeKind::CoImplements);
+        // After rename to NewName, sort order is (NewName, Other).
+        assert_eq!(
+            loaded.edges[0].participants,
+            vec!["NewName".to_string(), "Other".to_string()],
+            "symmetric participants must be re-sorted after rename"
+        );
     }
 
     #[test]
-    fn run_rename_cascade_preserves_parent_of_direction() {
-        use crate::related_projects::{self, Edge, EdgeKind};
+    fn run_rename_cascade_preserves_directed_kind_order() {
+        use crate::ontology::{Edge, EdgeKind, EvidenceGrade, LifecycleScope};
+        use crate::related_components;
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
@@ -619,26 +633,35 @@ mod tests {
         run_add(&cfg, Some("Parent"), &parent).unwrap();
         run_add(&cfg, Some("Child"), &child).unwrap();
 
-        let mut file = related_projects::RelatedProjectsFile::default();
-        // Parent is first in participants; direction is semantic.
-        file.add_edge(Edge::parent_of("Parent", "Child")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
+        // Directed kind: order is semantic (Parent first as generator).
+        let mut file = crate::ontology::RelatedComponentsFile::default();
+        file.add_edge(Edge {
+            kind: EdgeKind::Generates,
+            lifecycle: LifecycleScope::Codegen,
+            participants: vec!["Parent".to_string(), "Child".to_string()],
+            evidence_grade: EvidenceGrade::Strong,
+            evidence_fields: vec!["Parent.produces_files".into()],
+            rationale: "generates schemas Child consumes".into(),
+        })
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
 
         run_rename(&cfg, "Parent", "NewParent").unwrap();
 
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.edges.len(), 1);
-        assert_eq!(loaded.edges[0].kind, EdgeKind::ParentOf);
+        assert_eq!(loaded.edges[0].kind, EdgeKind::Generates);
         assert_eq!(
             loaded.edges[0].participants,
             vec!["NewParent".to_string(), "Child".to_string()],
-            "parent-of order must be preserved across rename"
+            "directed kind order must be preserved across rename"
         );
     }
 
     #[test]
     fn run_rename_cascade_leaves_uninvolved_edges_untouched() {
-        use crate::related_projects::{self, Edge};
+        use crate::ontology::{Edge, EdgeKind, EvidenceGrade, LifecycleScope};
+        use crate::related_components;
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
         std::fs::create_dir_all(&cfg).unwrap();
@@ -649,13 +672,21 @@ mod tests {
         run_add(&cfg, Some("Beta"), &b).unwrap();
         run_add(&cfg, Some("Gamma"), &c).unwrap();
 
-        let mut file = related_projects::RelatedProjectsFile::default();
-        file.add_edge(Edge::sibling("Beta", "Gamma")).unwrap();
-        related_projects::save_atomic(&cfg, &file).unwrap();
+        let mut file = crate::ontology::RelatedComponentsFile::default();
+        file.add_edge(Edge {
+            kind: EdgeKind::Generates,
+            lifecycle: LifecycleScope::Codegen,
+            participants: vec!["Beta".to_string(), "Gamma".to_string()],
+            evidence_grade: EvidenceGrade::Medium,
+            evidence_fields: vec!["Beta.produces_files".into()],
+            rationale: "test".into(),
+        })
+        .unwrap();
+        related_components::save_atomic(&cfg, &file).unwrap();
 
         run_rename(&cfg, "Alpha", "AlphaRenamed").unwrap();
 
-        let loaded = related_projects::load_or_empty(&cfg).unwrap();
+        let loaded = related_components::load_or_empty(&cfg).unwrap();
         assert_eq!(loaded.edges.len(), 1);
         assert!(loaded.edges[0].participants.contains(&"Beta".to_string()));
         assert!(loaded.edges[0].participants.contains(&"Gamma".to_string()));
@@ -669,11 +700,13 @@ mod tests {
         let a = mk_project_dir(tmp.path(), "Solo");
         run_add(&cfg, Some("Solo"), &a).unwrap();
 
-        // No related-projects.yaml at all: rename must succeed.
+        // No related-components.yaml at all: rename must succeed.
         run_rename(&cfg, "Solo", "SoloRenamed").unwrap();
 
-        assert!(!cfg.join(crate::related_projects::RELATED_PROJECTS_FILE).exists(),
-            "cascade must not create the file when it wasn't there to begin with");
+        assert!(
+            !cfg.join(crate::related_components::RELATED_COMPONENTS_FILE).exists(),
+            "cascade must not create the file when it wasn't there to begin with"
+        );
     }
 
     #[test]

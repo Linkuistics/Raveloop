@@ -147,6 +147,10 @@ impl LifecycleScope {
         }
     }
 
+    // `parse` and `all` feed only the drift tests in `mod.rs` today;
+    // the binary compilation unit doesn't reach them. Remove the allow
+    // when a non-test consumer is added.
+    #[allow(dead_code)]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "design" => LifecycleScope::Design,
@@ -160,6 +164,7 @@ impl LifecycleScope {
         })
     }
 
+    #[allow(dead_code)]
     pub fn all() -> &'static [LifecycleScope] {
         &[
             LifecycleScope::Design,
@@ -190,6 +195,7 @@ impl EvidenceGrade {
         }
     }
 
+    #[allow(dead_code)]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "strong" => EvidenceGrade::Strong,
@@ -199,6 +205,7 @@ impl EvidenceGrade {
         })
     }
 
+    #[allow(dead_code)]
     pub fn all() -> &'static [EvidenceGrade] {
         &[EvidenceGrade::Strong, EvidenceGrade::Medium, EvidenceGrade::Weak]
     }
