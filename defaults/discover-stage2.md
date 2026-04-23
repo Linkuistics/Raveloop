@@ -4,92 +4,100 @@ You are given a collection of per-project interaction-surface records.
 Your task is to propose relationship edges between catalogued components
 based on what their surfaces reveal.
 
-## Edge kinds (transitional vocabulary)
+## Edge kinds
 
-This release uses the component-ontology v2 vocabulary. The next backlog
-task ships a full decision tree rendered from the shipped ontology
-definition; for now, the most useful subset for the proposals you will
-likely write is:
+The ontology below enumerates every relationship kind you may propose.
+Use kind names exactly as listed; do not invent kinds. Each kind
+declares its direction (**directed** — participant order is semantic,
+so pick it intentionally; **symmetric** — participants carry no order,
+sort them alphabetically) and its typical lifecycle scopes. Pick the
+lifecycle that best matches the evidence you cite; if several apply,
+prefer the tightest (e.g. `build` over `runtime` when the coupling
+only holds at compile time).
 
-- **`generates`** (directed; lifecycle `codegen`) — A's tooling emits
-  source committed to B. Evidence: A's `produces_files` matches B's
-  source tree; B documents "run A to regenerate".
-- **`orchestrates`** (directed; lifecycle `dev-workflow` or `runtime`) —
-  A drives B's lifecycle / multi-step workflow. Evidence: A's prose
-  documents driving B through phases; A reads/writes B's state files.
-- **`invokes`** (directed; lifecycle `dev-workflow` or `runtime`) — A
-  spawns B as a subprocess, but does not manage B's broader lifecycle.
-  Weaker than `orchestrates`. Evidence: A's
-  `external_tools_spawned` names B's binary.
-- **`depends-on`** (directed; lifecycle `build` or `runtime`) — A
-  requires B to function. Evidence: package-manifest entries; import
-  statements; `consumes_files` referencing B's manifest.
-- **`calls`** (directed; lifecycle `runtime`) — A is the client of an
-  endpoint B serves. Evidence: A's `network_endpoints` contains an
-  address B's `network_endpoints` serves.
-- **`communicates-with`** (symmetric; lifecycle `runtime`) — A and B
-  exchange messages over a named transport as peers. Use when no clear
-  client/server split exists. Evidence: overlapping `network_endpoints`
-  with matching protocol; shared `data_formats` both emit and consume.
-- **`describes`** (directed; lifecycle `design`) — A documents B (docs
-  repo, architecture notes, external user guide). Evidence: A's purpose
-  is documentation; A's name or contents reference B.
-- **`co-implements`** (symmetric; lifecycle `design`) — A and B are
-  parallel implementations of the same external spec that neither
-  component owns. Evidence: both declare implementing the same named
-  spec; no artifact flows between them.
-- **`tests`** (directed; lifecycle `test`) — A is a test harness for B
-  (A's primary purpose is to exercise B). Evidence: A's purpose prose;
-  A's `consumes_files` includes B's source.
+{{ONTOLOGY_KINDS}}
 
-For directed kinds, the canonical participant order is:
-- `generates` / `orchestrates` / `invokes` / `describes` / `tests`:
-  source/orchestrator/parent first, target second.
-- `depends-on`: dependent first, dependency second.
-- `calls`: client first, server second.
+## Decision tree
 
-For symmetric kinds (`communicates-with`, `co-implements`), participant
-order does not matter — sort the participant identifiers
-alphabetically.
+Walk these questions in order against each pair of components whose
+surfaces share any signal. Propose an edge the moment one branch
+matches with direct, cross-referenced evidence; skip the branch
+otherwise. A pair may match more than one branch — §3.5 of the
+ontology explicitly allows multiple `(kind, lifecycle)` edges on the
+same pair.
 
-## Matching signals
+1. **Runtime message exchange?** Overlapping `network_endpoints`
+   with matching protocol/address.
+   → `communicates-with @ runtime` when the two sides are peers with
+     no clear client/server split; `calls @ runtime` when one side is
+     plainly the client of an endpoint the other serves.
+2. **Source generation into another tree?** One project's
+   `produces_files` overlaps another's source-tree paths or
+   `consumes_files`, and the coupling is ongoing (regenerated on
+   change, not one-shot).
+   → `generates @ codegen`. Use `scaffolds @ dev-workflow` only when
+     the generation is explicitly one-shot initial scaffolding.
+3. **Process spawning?** One project's `external_tools_spawned` names
+   a binary owned by another catalog component.
+   → `invokes` for one-shot CLI invocations (`dev-workflow`) or
+     persistent child processes (`runtime`). Upgrade to
+     `orchestrates` when the spawner manages the spawnee's lifecycle,
+     state, and multi-step workflow — orchestration is stronger than
+     invocation.
+4. **Library dependency?** Package-manifest entries, import
+   statements, or `consumes_files` referencing a manifest.
+   → `depends-on` at the appropriate lifecycle (`build` for
+     compile-time deps, `runtime` for loaded-at-runtime deps). Use
+     `links-statically` / `links-dynamically` only when linkage
+     specifics are in evidence. `has-optional-dependency` when the
+     dependency is flagged optional; `provided-by-host` when the
+     project expects the dependency to be present in the execution
+     environment rather than bundled.
+5. **In-process embedding?** One project runs the other in-process as
+   a whole program (library embedding, WASM, subprocess-in-pipe) —
+   distinct from dynamic linkage.
+   → `embeds @ runtime`.
+6. **Common external specification declared by both components?**
+   Both reference implementing the same RFC / protocol / schema
+   that neither component owns.
+   → `co-implements @ design`. Use `conforms-to @ design` when one
+     component owns the specification the other implements.
+7. **Documentation relationship?** One project's purpose is to
+   document another (docs repo, architecture notes, external user
+   guide).
+   → `describes @ design`.
+8. **Test harness or fixture provider?** One project's primary
+   purpose is to exercise another, or to provide test data / mocks /
+   fixtures that the other's test suite loads.
+   → `tests @ test` or `provides-fixtures-for @ test`.
+9. **None of the above with direct evidence?**
+   → No edge. Omission is the correct answer for weak overlaps.
 
-Propose edges when you see direct evidence such as:
-- Overlapping file paths or globs between one project's `produces_files`
-  and another's `consumes_files` (→ `generates @ codegen`).
-- Matching network endpoints (server vs. client of the same protocol/
-  address) (→ `calls @ runtime` or `communicates-with @ runtime`).
-- Shared data format names (same struct / schema / message type).
-- Shared external tools that suggest tight coupling (e.g., both projects
-  spawn `some-custom-daemon` owned by one of them) (→ `invokes` or
-  `orchestrates`).
-- Direct cross-project mentions in `explicit_cross_project_mentions`,
-  *especially* when reciprocated by the other project.
-- Documentation-style references (A's purpose is to describe B) (→
-  `describes @ design`).
+## Insufficient signals (weak evidence-grade threshold)
 
-## Insufficient signals (do NOT propose edges from these alone)
+Patterns too thin to support a proposal on their own. If the only
+evidence you have falls into this list, either omit the edge or mark
+it `evidence_grade: weak` with rationale explaining why the signal is
+nevertheless informative.
 
-These patterns are too weak to justify an edge on their own. Require
-direct evidence from the matching-signals list above before proposing.
-
-- **Shared upstream dependencies.** Two components independently mentioning
-  the same *third* catalog component in their `explicit_cross_project_mentions`
-  is NOT evidence of an edge between those two. Many unrelated components
-  share infrastructure dependencies.
+- **Shared upstream dependencies.** Two components independently
+  mentioning the same *third* catalog component in their
+  `explicit_cross_project_mentions` is not evidence of an edge between
+  those two. Many unrelated components share infrastructure
+  dependencies.
 - **Same programming language or ecosystem.** Both being Rust crates,
   Racket packages, Swift apps, or Node packages is not a relationship.
 - **Generic or trivial file-glob overlap.** Patterns like `*.txt`,
   `**/*.rkt`, `~/.config/**`, or any whole-language source-tree glob
   are too broad to constitute file-level coupling. Require a specific,
-  named file or a narrow glob whose match set is plausibly produced by
-  one project and consumed by another.
-- **Same external tools alone.** Both components spawning `git` or `bash`
-  is not evidence; both spawning a *bespoke* binary owned by one of
-  them is.
+  named file or a narrow glob whose match set is plausibly produced
+  by one project and consumed by another.
+- **Same external tools alone.** Both components spawning `git` or
+  `bash` is not evidence; both spawning a *bespoke* binary owned by
+  one of them is.
 
-When in doubt, omit the edge — false positives are costlier than missed
-edges since the user reviews proposals manually.
+When in doubt, omit — false positives are costlier than missed edges
+since the user reviews proposals manually.
 
 ## Evidence grade
 
@@ -101,14 +109,14 @@ Annotate every proposal with one of:
 - **`medium`** — one-sided evidence; shared format name without
   location; a shared external tool that's clearly one component's
   bespoke binary.
-- **`weak`** — prose overlap, purpose similarity, shared data-format
+- **`weak`** — prose overlap; purpose similarity; shared data-format
   name without location. Weak edges are permitted but must declare
   weakness.
 
 `evidence_fields` lists the surface paths that justify the edge (e.g.
-`Alpha.surface.produces_files`, `Beta.surface.consumes_files`). May be
-empty only when `evidence_grade: weak` AND `rationale` justifies it
-explicitly.
+`Alpha.surface.produces_files`, `Beta.surface.consumes_files`). May
+be empty only when `evidence_grade: weak` AND `rationale` justifies
+it explicitly.
 
 ## Output format
 
@@ -117,9 +125,9 @@ Write YAML to `{{PROPOSALS_OUTPUT_PATH}}` matching this shape:
 ```yaml
 generated_at: <ISO-8601 UTC timestamp>
 proposals:
-  - kind: <one of the kinds listed above, kebab-case>
-    lifecycle: <one of: design | codegen | build | test | deploy | runtime | dev-workflow>
-    participants: [<name>, <name>]    # see canonical order rules above
+  - kind: <kebab-case kind from the ontology above>
+    lifecycle: <kebab-case lifecycle from the ontology above>
+    participants: [<name>, <name>]    # see direction rules above
     evidence_grade: <strong | medium | weak>
     evidence_fields:
       - <e.g., "Alpha.surface.produces_files">

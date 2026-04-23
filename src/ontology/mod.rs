@@ -27,7 +27,8 @@ pub mod yaml_io;
 #[allow(unused_imports)]
 pub use defaults::{
     parse as parse_ontology_yaml, parse_embedded as parse_embedded_ontology_yaml,
-    EMBEDDED_ONTOLOGY_YAML, ONTOLOGY_FILE_SCHEMA_VERSION,
+    render_embedded_kinds_for_prompt, render_kinds_for_prompt, EMBEDDED_ONTOLOGY_YAML,
+    ONTOLOGY_FILE_SCHEMA_VERSION,
 };
 #[allow(unused_imports)]
 pub use schema::{
@@ -120,6 +121,44 @@ mod drift_tests {
                 kind.is_directed()
             );
         }
+    }
+
+    #[test]
+    fn rendered_stage2_kind_block_is_bijective_with_edgekind_enum() {
+        // The task-brief contract: the kind list rendered into the
+        // Stage 2 prompt via `{{ONTOLOGY_KINDS}}` must carry exactly
+        // the same set of kinds the Rust enum knows about. Drift in
+        // either direction (missing bullet in the rendered block;
+        // stray bullet for a kind that no longer exists) fails here.
+        let ontology = parse_embedded().unwrap();
+        let block = super::render_kinds_for_prompt(&ontology);
+
+        let rust: BTreeSet<String> = EdgeKind::all()
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect();
+
+        // The rendered bullet format is `- **`<name>`** (…)`; scan for
+        // that shape rather than substring-matching each kind name,
+        // which would tolerate collisions like `depends-on` vs
+        // `has-optional-dependency`.
+        let bullet_name = regex::Regex::new(r"(?m)^- \*\*`([a-z0-9-]+)`\*\*").unwrap();
+        let rendered: BTreeSet<String> = bullet_name
+            .captures_iter(&block)
+            .map(|c| c[1].to_string())
+            .collect();
+
+        let missing_from_rendered: Vec<_> = rust.difference(&rendered).cloned().collect();
+        let missing_from_enum: Vec<_> = rendered.difference(&rust).cloned().collect();
+
+        assert!(
+            missing_from_rendered.is_empty(),
+            "kinds in EdgeKind but missing from rendered Stage 2 block: {missing_from_rendered:?}"
+        );
+        assert!(
+            missing_from_enum.is_empty(),
+            "kinds rendered in Stage 2 block but missing from EdgeKind: {missing_from_enum:?}"
+        );
     }
 
     #[test]

@@ -82,10 +82,67 @@ pub fn parse(yaml: &str) -> Result<OntologyYaml> {
 }
 
 /// Parse the shipped `defaults/ontology.yaml` embedded in the binary.
-/// Used by the drift test in `mod.rs` and by future prompt-rendering
-/// code that substitutes the kind list into Stage 2.
+/// Used by the drift test in `mod.rs` and by Stage 2 prompt rendering
+/// to substitute the kind list into `defaults/discover-stage2.md`.
 pub fn parse_embedded() -> Result<OntologyYaml> {
     parse(EMBEDDED_ONTOLOGY_YAML)
+}
+
+/// Render the ontology's kind list as the markdown block that
+/// Stage 2's `{{ONTOLOGY_KINDS}}` token expands to. Kinds are grouped
+/// by family in the order they appear in the YAML; each bullet carries
+/// directionality, typical lifecycles, and a flattened one-paragraph
+/// description. A drift test in `mod.rs` asserts the rendered kind
+/// names stay in bijection with the YAML.
+pub fn render_kinds_for_prompt(ontology: &OntologyYaml) -> String {
+    let mut out = String::new();
+    let mut current_family: Option<&str> = None;
+    for kind in &ontology.kinds {
+        if current_family != Some(kind.family.as_str()) {
+            if current_family.is_some() {
+                out.push('\n');
+            }
+            out.push_str(&format!(
+                "### {} family\n\n",
+                capitalise_first(&kind.family)
+            ));
+            current_family = Some(kind.family.as_str());
+        }
+        let direction = if kind.directed { "directed" } else { "symmetric" };
+        let lifecycles = kind
+            .lifecycles
+            .iter()
+            .map(|l| format!("`{l}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "- **`{}`** ({}; lifecycles: {}) — {}\n",
+            kind.name,
+            direction,
+            lifecycles,
+            flatten_paragraph(&kind.description),
+        ));
+    }
+    out
+}
+
+/// Convenience wrapper that parses the embedded YAML and renders in one
+/// call. Callers that need the parsed form for other purposes should
+/// go through `parse_embedded` + `render_kinds_for_prompt` directly.
+pub fn render_embedded_kinds_for_prompt() -> Result<String> {
+    parse_embedded().map(|o| render_kinds_for_prompt(&o))
+}
+
+fn capitalise_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn flatten_paragraph(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -116,6 +173,69 @@ mod tests {
         let yaml = serde_yaml::to_string(&entry).unwrap();
         let parsed: KindEntry = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn render_kinds_for_prompt_emits_family_headings_in_yaml_order() {
+        let ontology = parse_embedded().unwrap();
+        let block = render_kinds_for_prompt(&ontology);
+
+        // The shipped YAML lists families in this order; the rendered
+        // block must preserve it (capitalised, as a sub-heading).
+        let mut last_pos: Option<usize> = None;
+        for heading in [
+            "### Dependency family",
+            "### Linkage family",
+            "### Generation family",
+            "### Communication family",
+            "### Orchestration family",
+            "### Testing family",
+            "### Specification family",
+        ] {
+            let pos = block
+                .find(heading)
+                .unwrap_or_else(|| panic!("missing heading: {heading}"));
+            if let Some(prev) = last_pos {
+                assert!(
+                    pos > prev,
+                    "family heading {heading} out of order (pos {pos} <= previous {prev})"
+                );
+            }
+            last_pos = Some(pos);
+        }
+    }
+
+    #[test]
+    fn render_kinds_for_prompt_annotates_directionality_and_lifecycles() {
+        let ontology = parse_embedded().unwrap();
+        let block = render_kinds_for_prompt(&ontology);
+
+        // Spot-check a directed kind and a symmetric one.
+        assert!(
+            block.contains("**`generates`** (directed; lifecycles: `codegen`)"),
+            "generates should render as directed with codegen lifecycle:\n{block}"
+        );
+        assert!(
+            block.contains("**`co-implements`** (symmetric; lifecycles: `design`)"),
+            "co-implements should render as symmetric with design lifecycle:\n{block}"
+        );
+    }
+
+    #[test]
+    fn render_kinds_for_prompt_flattens_multiline_descriptions_to_single_line() {
+        let ontology = parse_embedded().unwrap();
+        let block = render_kinds_for_prompt(&ontology);
+
+        // Every bullet line must be self-contained — flattening collapses
+        // the YAML's hard-wrapped description into one paragraph per
+        // bullet, which is the contract downstream prompt rendering
+        // relies on. Assert the property by checking no continuation
+        // line begins with lower-case text suggesting a wrapped body.
+        for line in block.lines() {
+            if line.starts_with("  ") && !line.trim().is_empty() {
+                panic!("description should be flattened; got continuation line: {line}");
+            }
+        }
     }
 
     #[test]
