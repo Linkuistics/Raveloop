@@ -615,3 +615,13 @@ sessions:
     - Removed five `#[allow(unused_imports)]` attributes and their 6-line explanatory comment from `src/survey.rs`; removed three `#[allow(unused_imports)]` attributes and their 7-line comment from `src/ontology/mod.rs`.
     - All verification passed: `cargo build` clean, `cargo clippy --all-targets --all-features` clean under `deny(warnings)`, `cargo test` 541 tests pass, `cargo build -vv` confirmed exactly two `rustc` invocations (one lib, one bin), `grep '#\[allow(unused_imports)\]' src` yields 0 matches.
     - The pattern is now clean: the propagating `#[allow(unused_imports)]` debt on pub-use blocks is fully eliminated; future pub-use additions in library surface need no per-item workaround.
+- id: session-39
+  timestamp: 2026-04-24T05:50:48Z
+  phase: work
+  body: |
+    ### Session 39 (2026-04-24T05:50:48Z) — fix create pivot bug with prompt-layer invariant
+
+    - **What was attempted:** Fix the `create` subcommand failure mode where the spawned Claude session would abandon plan-directory creation when the user's first turn described a concrete problem (bug report, feature request) rather than a multi-task scope.
+    - **What worked:** Two prompt-layer edits landed cleanly. `compose_create_prompt` in `src/create.rs` now appends an explicit INVARIANT paragraph after the path instruction, binding the agent against interpreting a concrete description as a pivot signal. `defaults/create-plan.md` gained a §0 "Invariant: this session produces a plan" ahead of the §1 clarification dialogue, so the rule is visible before the agent reads the clarification script. A unit test `compose_prompt_asserts_plan_only_output_invariant` asserts both key phrases are present in the composed prompt. 542 tests pass, clippy clean.
+    - **What this suggests next:** If the failure recurs (phase.md missing after a create session), that's signal to consider: (a) instrumenting the warning path for observability, or (b) a file-read test asserting `defaults/create-plan.md` starts with the §0 invariant heading. Neither is worth a task until recurrence is observed.
+    - **Key learnings:** The root cause was that nothing in the original prompt bound the agent's *purpose* — it described the output format and file paths, but left the agent room to interpret a concrete description as a reason to skip plan creation entirely. An explicit INVARIANT at the top of the runtime-appended block and at the top of the template file eliminates that slack. Single-task plans are explicitly called out as valid to prevent the agent from treating "only one thing to do" as a non-plan.

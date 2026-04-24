@@ -2,7 +2,7 @@ tasks:
 - id: create-must-always-produce-a-plan-even-when-user-pastes-a-bug-report
   title: create must always produce a plan even when user pastes a bug report
   category: bug
-  status: not_started
+  status: done
   dependencies: []
   description: |
     The `create` subcommand must always produce a plan directory,
@@ -104,6 +104,82 @@ tasks:
     more plan-shaped description), but it wastes one headful claude
     session per occurrence and the failure mode is not obvious to a
     first-time user. Low-LOC fix with straightforward exit criteria.
+  results: |
+    ## What changed
+
+    Two prompt-layer edits prevent the `create` subcommand from silently
+    abandoning its job when the user's first turn describes a single
+    concrete problem (bug report, feature request, direct question)
+    rather than a multi-task plan scope.
+
+    ### `src/create.rs` — `compose_create_prompt`
+
+    Appended an explicit **INVARIANT** paragraph after the existing "Create
+    a new plan at this absolute path" section. The invariant binds the
+    agent against the observed failure mode by stating:
+
+    > Your ONLY output from this session is a plan directory at `{target}`.
+    > If the user's description sounds like a single concrete task […]
+    > that is the plan's initial task — capture it in the backlog and
+    > scaffold the plan around it. A single-task plan is a valid plan. Do
+    > not attempt to do the work the user described; your job is to write
+    > plan files, not to solve the problem they described.
+
+    ### `defaults/create-plan.md` — §0 "Invariant: this session produces a plan"
+
+    Added a new §0 *ahead of* §1 ("Clarify the scope") so the rule is in
+    front of the agent before it reads the clarification script. §0 uses
+    the same framing as the runtime-appended invariant: concrete
+    description → single-task plan, abstract description → run §1
+    clarification dialogue. The fallback sentence — "I'll capture that as
+    the first task in a plan at `<target>`; what other tasks belong
+    alongside it?" — gives the agent a concrete redirect phrase when it
+    feels pulled toward in-session work.
+
+    ### New test: `compose_prompt_asserts_plan_only_output_invariant`
+
+    Unit test in `src/create.rs` asserts the composed prompt contains
+    both the "ONLY output from this session is a plan directory" phrase
+    and the "single-task plan is a valid plan" phrase. This catches
+    accidental future edits that weaken the binding, per the exit
+    criteria in the task description.
+
+    ## Verification
+
+    - `cargo test --workspace` — 542 tests pass, 0 failures (includes all
+      existing `create::` tests plus the new invariant test).
+    - `cargo clippy --workspace --tests` — clean.
+    - No changes to `validate_target` or the post-hoc `phase.md`
+      check — the belt-and-suspenders layer is preserved as the exit
+      criteria required.
+
+    ## Decision on the open question
+
+    The task flagged an open question: should the post-hoc `phase.md`
+    check in `run_create` (currently a `warning:` stderr message) be
+    hard-escalated to `bail!`? **Left as a warning**, per the
+    backlog's own lean: the warning already makes the situation visible,
+    and the session may contain useful conversation state the user wants
+    to preserve. The prompt-layer invariant is the primary fix; the
+    post-hoc check is now secondary rather than load-bearing.
+
+    ## What this suggests next
+
+    - **Observability.** If this class of failure recurs even with the
+      invariant in place, the right next step is *instrumentation* — log
+      or surface when `run_create` emits the "phase.md does not exist"
+      warning, so recurrence rate is measurable rather than anecdotal.
+      Not worth a task today; flag if it happens again.
+    - **Prompt drift guard (maybe).** The test guards the composed
+      prompt, but not the `defaults/create-plan.md` §0 content. If §0 is
+      the primacy anchor, a regression there would be just as bad as a
+      regression in the runtime appendix. A file-read test that asserts
+      `defaults/create-plan.md` starts its Process section with the §0
+      invariant heading would close that gap — but it's low-value until
+      we see evidence of drift. Defer.
+    - **No follow-up task needed** — exit criteria are met and the fix is
+      self-contained. This is a good candidate for the triage phase to
+      mark as closed without creating sibling tasks.
 - id: support-relative-paths-in-projects-yaml-for-git-shared-catalogs
   title: Support relative paths in projects.yaml for git-shared catalogs
   category: architecture
