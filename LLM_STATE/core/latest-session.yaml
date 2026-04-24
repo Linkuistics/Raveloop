@@ -1,12 +1,14 @@
-id: session-49
-timestamp: 2026-04-24T11:56:03Z
+id: session-50
+timestamp: 2026-04-24T12:26:24Z
 phase: work
 body: |
-  ### Session 49 (2026-04-24T11:56:03Z) — Fix work-baseline timing; add repair-stale-statuses verb
+  ### Session 50 (2026-04-24T12:26:24Z) — Rewrite analyse-work commit-message guidance
 
-  - Attempted: two tasks from backlog — fix work-baseline timing bug and add the `repair-stale-statuses` CLI verb
-  - Fixed `src/phase_loop.rs` GitCommitTriage arm: `git_save_work_baseline` now runs AFTER `git_commit_plan`, so `work-baseline` names the triage commit SHA not the reflect commit. A follow-on `save-work-baseline` commit lands the file cleanly so the plan tree is dirty-free at the user prompt.
-  - Added `src/state/backlog/repair_stale_statuses.rs` with `analyse_repairs`, `run_repair_stale_statuses`, and the `Repair`/`RepairReport`/`RepairReason` types. Wired the verb (`repair-stale-statuses`) into `src/main.rs` and re-exported via `src/state/backlog/mod.rs`.
-  - Tests added: `git_commit_triage_records_work_baseline_at_triage_commit_sha` in `tests/phase_loop.rs` (SHA invariant + save-work-baseline commit presence); two integration tests in `tests/state_backlog.rs` (exit-code 1 when repairs apply, exit-code 0 when no drift). Unit tests live in the module itself.
-  - Both tasks completed successfully with no unexpected obstacles.
-  - Next: the unblocked `split-analyse-work-source-commit-into-multiple-logical-commits` task now has its baseline dependency satisfied.
+  - Worked on rewriting `defaults/phases/analyse-work.md` to stop instructing the LLM to embed task ids in commit messages
+  - Changed the "Backlog transitions" section preamble to describe the block as context for understanding what moved, not as a source for commit titles
+  - Added explicit prohibition: "Do not author commit titles or bodies around these task ids"
+  - Rewrote step 5 (repair-stale-statuses) to say "note the *kind* of repair" rather than "include the reported task ids"
+  - Rewrote step 6 (source commit) to emphasise the message must make sense in `git log` a year from now without plan-execution context
+  - Rewrote step 9 (plan-state commit) to replace "draw title from task ids" with "describe change by shape not by slot," including good/bad examples
+  - The commit was made in the work phase itself (commit 1fdab9e); no source-file changes remain uncommitted
+  - Also updated backlog: two completed tasks removed, one title/dependency updated, two task titles updated for clarity
