@@ -456,6 +456,6 @@ entries:
   body: |
     `docs/r7-related-projects-discovery-plan.md` has ~15 occurrences of `related-projects` and v1 edge-kind references. It is a frozen implementation record; leave as-is unless a consumer references it directly.
 - id: docs-architecture-md-not-audited-for-v1-vocabulary
-  title: docs/architecture.md not audited for v1 vocabulary
+  title: docs/architecture.md has no v1 edge-kind vocabulary
   body: |
-    `docs/architecture.md` was not audited post-ontology-v2 and may carry stale v1 edge-kind vocabulary or `related-projects` references.
+    `docs/architecture.md` carries no v1 edge-kind vocabulary or `related-projects` references. Matches for `sibling`/`parent`/`child` are filesystem or process-context English, not ontology edge kinds. The source-tree section (lines 407–435) has generic drift (missing `ontology/`, `state/`, `discover/`, `related_components.rs`, `survey/` subdirs); separate task needed for doc drift unrelated to v1 migration.
