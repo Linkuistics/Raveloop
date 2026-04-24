@@ -261,11 +261,6 @@ async fn handle_script_phase(
             Ok(true)
         }
         ScriptPhase::GitCommitTriage => {
-            // Prepare for the next work cycle as part of this commit, so
-            // `work-baseline` is also captured atomically. The
-            // `LlmPhase::Work` entry retains a first-run fallback for
-            // fresh plans that start at `work` without a preceding triage.
-            //
             // `latest-session.md` is intentionally NOT touched here:
             // analyse-work overwrites it next cycle (see
             // `defaults/phases/analyse-work.md` step 8), and leaving it
@@ -273,9 +268,26 @@ async fn handle_script_phase(
             // session's record available for operator inspection in the
             // gap between cycles.
             write_phase(plan_dir, Phase::Llm(LlmPhase::Work))?;
-            git_save_work_baseline(plan_dir);
+
+            // Commit triage mutations first so HEAD advances to the
+            // triage commit. Only after this does `git rev-parse HEAD`
+            // yield the SHA the next work phase should diff against.
+            // Saving the baseline before this commit (the prior
+            // arrangement) captured the reflect commit's SHA, which
+            // conflated the previous cycle's triage mutations into
+            // `{{BACKLOG_TRANSITIONS}}` on the next analyse-work.
             let result = git_commit_plan(plan_dir, &name, "triage")?;
             log_commit(ui, "triage", &scope, &result);
+
+            // Baseline must land in a commit (not float in the working
+            // tree) so `warn_if_project_tree_dirty` sees a clean subtree
+            // at the post-cycle user prompt. A follow-on commit is
+            // simpler than `git commit --amend`, which would orphan the
+            // pre-amend SHA that `work-baseline` names.
+            git_save_work_baseline(plan_dir);
+            let baseline_result = git_commit_plan(plan_dir, &name, "save-work-baseline")?;
+            log_commit(ui, "save-work-baseline", &scope, &baseline_result);
+
             // Exit phase_loop after one full cycle. Whether another
             // cycle starts — and, in multi-plan mode, which plan runs
             // next — is the outer loop's decision, not this function's.

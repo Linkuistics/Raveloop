@@ -425,3 +425,122 @@ fn set_dependencies_round_trips_through_cli() {
     let stdout = String::from_utf8(show.stdout).unwrap();
     assert!(stdout.contains("dependencies: []"), "deps must be cleared: {stdout}");
 }
+
+/// Exit-code contract: `repair-stale-statuses` exits 1 when at least
+/// one repair is applied so scripts can detect drift via `$?` without
+/// re-parsing the YAML report. Also verifies the mutation actually
+/// lands on disk (the stale task flips to `done`).
+#[test]
+fn repair_stale_statuses_exits_one_when_repairs_applied() {
+    let tmp = TempDir::new().unwrap();
+    // Seed an in_progress task with non-empty results — the canonical
+    // drift mode the prompt safety-net previously caught.
+    let yaml = "\
+tasks:
+- id: foo
+  title: Foo
+  category: maintenance
+  status: in_progress
+  dependencies: []
+  description: |
+    body
+  results: |
+    completed
+";
+    std::fs::write(tmp.path().join("backlog.yaml"), yaml).unwrap();
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "repair-stale-statuses"])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "expected exit code 1 when repairs were applied, got status {:?}, stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("task_id: foo") && stdout.contains("results_non_empty"),
+        "report must cite repaired task and reason: {stdout}"
+    );
+
+    // Verify the mutation landed on disk.
+    let after = std::fs::read_to_string(tmp.path().join("backlog.yaml")).unwrap();
+    assert!(
+        after.contains("status: done"),
+        "repaired backlog must show status: done, got:\n{after}"
+    );
+}
+
+/// Exit-code contract: with no drift in the backlog, the verb exits 0
+/// and leaves the file untouched.
+#[test]
+fn repair_stale_statuses_exits_zero_when_no_drift() {
+    let tmp = TempDir::new().unwrap();
+    let yaml = "\
+tasks:
+- id: foo
+  title: Foo
+  category: maintenance
+  status: not_started
+  dependencies: []
+  description: |
+    body
+";
+    std::fs::write(tmp.path().join("backlog.yaml"), yaml).unwrap();
+    let before = std::fs::read_to_string(tmp.path().join("backlog.yaml")).unwrap();
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "repair-stale-statuses"])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected exit 0 when no repairs were applied, got {:?}, stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let after = std::fs::read_to_string(tmp.path().join("backlog.yaml")).unwrap();
+    assert_eq!(before, after, "backlog must be byte-identical when no repairs applied");
+}
+
+/// `--dry-run` reports the repair but must not write. Complements the
+/// unit test by going through the built binary's CLI parsing — catches
+/// a regression where `--dry-run` was defined but not threaded through.
+#[test]
+fn repair_stale_statuses_dry_run_does_not_mutate_disk() {
+    let tmp = TempDir::new().unwrap();
+    let yaml = "\
+tasks:
+- id: foo
+  title: Foo
+  category: maintenance
+  status: in_progress
+  dependencies: []
+  description: |
+    body
+  results: |
+    completed
+";
+    std::fs::write(tmp.path().join("backlog.yaml"), yaml).unwrap();
+    let before = std::fs::read_to_string(tmp.path().join("backlog.yaml")).unwrap();
+
+    let out = Command::new(bin())
+        .args(["state", "backlog", "repair-stale-statuses"])
+        .arg(tmp.path())
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+    // Exit 1 still signals that repairs WOULD apply, even under dry-run.
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "dry-run still exits 1 when drift is detected (scripts need the signal)"
+    );
+    let after = std::fs::read_to_string(tmp.path().join("backlog.yaml")).unwrap();
+    assert_eq!(before, after, "dry-run must not mutate disk");
+}

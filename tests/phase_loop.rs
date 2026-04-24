@@ -1244,3 +1244,113 @@ async fn git_commit_work_leaves_plan_tree_clean_at_user_prompt() {
         "plan tree should be clean after git-commit-work, but porcelain shows:\n{dirty}"
     );
 }
+
+/// Invariant: after git-commit-triage, `work-baseline` contains the SHA
+/// of the triage commit — not the SHA of the prior (reflect) commit.
+///
+/// The saved SHA is the baseline the next cycle's analyse-work diffs
+/// `{{BACKLOG_TRANSITIONS}}` against. If it points at the reflect
+/// commit, every next-cycle diff conflates this cycle's triage
+/// mutations with the next cycle's work changes — tasks deleted in
+/// triage look like tasks deleted during work, and tasks added in
+/// triage look like tasks added during work.
+#[tokio::test]
+async fn git_commit_triage_records_work_baseline_at_triage_commit_sha() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    init_test_repo(root);
+
+    let plan_dir = root.join("plans/baseline-sha-plan");
+    fs::create_dir_all(&plan_dir).unwrap();
+    fs::write(plan_dir.join("phase.md"), "triage").unwrap();
+    // Seed a plan-dir file so the triage commit has real content to
+    // record — otherwise `git_commit_plan` would short-circuit on an
+    // empty diff and HEAD wouldn't advance.
+    fs::write(plan_dir.join("backlog.md"), "# Backlog\n").unwrap();
+
+    let config_root = root.join("config");
+    fs::create_dir_all(config_root.join("phases")).unwrap();
+    fs::write(config_root.join("phases/triage.md"), "triage on {{PLAN}}").unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let agent = Arc::new(MockAgent {
+        calls: calls.clone(),
+        next_phase_after: HashMap::from([(LlmPhase::Triage, "git-commit-triage")]),
+        plan_dir: plan_dir.clone(),
+    });
+
+    let shared = SharedConfig {
+        agent: "mock".into(),
+        headroom: 1500,
+    };
+
+    let ctx = PlanContext {
+        plan_dir: plan_dir.to_string_lossy().to_string(),
+        project_dir: root.to_string_lossy().to_string(),
+        dev_root: root.parent().unwrap().to_string_lossy().to_string(),
+        related_plans: String::new(),
+        config_root: config_root.to_string_lossy().to_string(),
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui = UI::new(tx);
+
+    let drain = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                UIMessage::Quit => break,
+                UIMessage::Confirm { reply, .. } => {
+                    let _ = reply.send(false);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = phase_loop(agent, &ctx, &shared, &ui).await;
+    ui.quit();
+    let _ = drain.await;
+    assert!(result.is_ok(), "phase_loop returned error: {result:?}");
+
+    // Resolve the SHA of the commit whose message starts with
+    // `run-plan: triage`. That is the commit `work-baseline` should
+    // name — distinct from the reflect-era HEAD the prior code saved
+    // and distinct from the follow-on `save-work-baseline` commit.
+    let triage_sha = String::from_utf8(
+        Command::new("git")
+            .current_dir(root)
+            .args(["log", "--grep=^run-plan: triage", "--format=%H", "-n", "1"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    assert!(
+        !triage_sha.is_empty(),
+        "expected a commit with message starting with 'run-plan: triage'"
+    );
+
+    let baseline = fs::read_to_string(plan_dir.join("work-baseline"))
+        .unwrap()
+        .trim()
+        .to_string();
+    assert_eq!(
+        baseline, triage_sha,
+        "work-baseline should name the triage commit SHA, not the reflect HEAD"
+    );
+
+    // The follow-on commit that persists `work-baseline` must be
+    // present — otherwise the plan tree would be dirty at the user
+    // prompt (guarded by a separate invariant test).
+    let has_save_commit = Command::new("git")
+        .current_dir(root)
+        .args(["log", "--grep=^run-plan: save-work-baseline", "--format=%H", "-n", "1"])
+        .output()
+        .unwrap();
+    assert!(
+        !String::from_utf8(has_save_commit.stdout).unwrap().trim().is_empty(),
+        "expected a follow-on 'save-work-baseline' commit alongside the triage commit"
+    );
+}

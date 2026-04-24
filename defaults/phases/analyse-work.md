@@ -64,16 +64,13 @@ session; treat other entries as baseline context.
 4. Inspect the backlog (from step 1's required read) to understand what
    task was being worked on and what results were recorded.
 
-5. **Safety-net: mark completed tasks as `done`.** Scan the backlog for
-   every task whose `Results:` block is non-empty (anything other than
-   `_pending_` or an empty marker) while its status is still
-   `not_started` or `in_progress`. For each such task, run
-   `ravel-lite state backlog set-status {{PLAN}} <task-id> done`. This
-   is a post-condition check, not a judgement call — the diff is
-   authoritative; if the work phase wrote a results block but forgot to
-   flip the status, this step repairs that drift so triage sees the
-   real state. If the work phase already flipped everything correctly,
-   this step is a no-op.
+5. **Safety-net: repair stale task statuses.** Run
+   `ravel-lite state backlog repair-stale-statuses {{PLAN}}`. The verb
+   flips `in_progress` tasks with non-empty results to `done` and
+   unblocks `blocked` tasks whose structural dependencies are all now
+   `done`. It emits a YAML report of any repairs applied — include the
+   reported task ids in the plan-state commit message (step 9). If no
+   drift is present this step is a no-op.
 
 6. **Commit the source-file changes.** The work phase no longer commits
    its own source edits — that is this phase's responsibility. Using the

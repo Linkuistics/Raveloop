@@ -386,6 +386,19 @@ enum BacklogCommands {
         #[arg(long, default_value = "yaml")]
         format: String,
     },
+    /// Repair stale task statuses: flip `in_progress` tasks with
+    /// non-empty `results` to `done`, and flip `blocked` tasks whose
+    /// structural dependencies are all `done` back to `not_started`.
+    /// Emits a report and (unless `--dry-run`) writes the repaired
+    /// backlog. Exit code: 0 if no repairs applied, 1 if any repairs
+    /// applied (scripting signal).
+    RepairStaleStatuses {
+        plan_dir: PathBuf,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = "yaml")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1004,6 +1017,17 @@ fn dispatch_backlog(command: BacklogCommands) -> Result<()> {
         BacklogCommands::LintDependencies { plan_dir, format } => {
             let fmt = parse_output_format(&format)?;
             backlog::run_lint_dependencies(&plan_dir, fmt)
+        }
+        BacklogCommands::RepairStaleStatuses { plan_dir, dry_run, format } => {
+            let fmt = parse_output_format(&format)?;
+            let count = backlog::run_repair_stale_statuses(&plan_dir, dry_run, fmt)?;
+            // Non-zero exit iff any repair would apply — scripts poll
+            // this verb before a mutating run to detect status drift
+            // without parsing YAML.
+            if count > 0 {
+                std::process::exit(1);
+            }
+            Ok(())
         }
         BacklogCommands::Delete { plan_dir, id, force } => {
             backlog::run_delete(&plan_dir, &id, force)
