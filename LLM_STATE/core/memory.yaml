@@ -50,7 +50,7 @@ entries:
 - id: tool-read-token-scoped-to-work-md-only
   title: '`{{TOOL_READ}}` token scoped to `work.md` only'
   body: |
-    Headless phases (analyse-work, reflect, dream) must not include `{{TOOL_READ}}`; an unresolved token in a headless phase fails integration tests.
+    Headless phases (analyse-work, reflect, dream) must not include `{{TOOL_READ}}`; an unresolved token in a headless phase fails integration tests. A universal "all tokens substitute cleanly" drift guard produces false negatives for the same reason: `{{TOOL_READ}}` is intentionally absent from headless-phase prompts.
 - id: substitute-tokens-expands-content-macros-before-path-tokens
   title: '`substitute_tokens` expands content macros before path tokens'
   body: |
@@ -455,3 +455,7 @@ entries:
   title: ontology/cli.rs imports from super, not related_components
   body: |
     `src/ontology/cli.rs` imports `{EdgeKind, LifecycleScope, EvidenceGrade}` via `super::`, not via `related_components` re-exports. Avoids a dependency inversion that would block Atlas's standalone ontology crate extraction.
+- id: main-rs-double-compilation-workaround-scales-with-pub-use-count
+  title: main.rs double-compilation workaround scales with pub use count
+  body: |
+    `main.rs` compiles as both binary and library to support integration test imports. Each new `pub use` item added to the binary-layer library exposure scales compile cost linearly. Removing it is a self-contained refactor and unblocks the CLI-split decision. Backlog task: `eliminate-binary-library-double-compilation-in-main-rs`.
