@@ -498,13 +498,12 @@ entries:
 - id: lint-dependencies-id-slug-collision-risk
   title: lint-dependencies id-slug collision risk
   body: |
-    ---
-    name: lint-dependencies id-slug collision risk
-    description: backlog lint-dependencies may false-match common-word ids; audit allocate_id if ids like 'add' appear
-    type: project
-    ---
-
-    `lint_dependencies` byte-scan word-boundary matching is correct for most slugs, but a task id that coincides with a common English word (e.g. a hypothetical id `add`) would match every occurrence of that word in any task description. The risk is low with the current slug generation (ids are derived from titles and tend to be long), but worth auditing `allocate_id` if very short ids appear in practice.
-
-    **Why:** Identified as a design edge-case in the lint-dependencies results block (session 46).
-    **How to apply:** If a triage run produces unexpected drift reports, check whether any task id matches common English words; escalate to an `allocate_id` guard if confirmed.
+    `lint_dependencies` word-boundary matching will false-match any task id that coincides with a common English word; every occurrence of that word in any task description is reported as drift. Risk is low with current slug generation (ids are long title-derived strings), but audit `allocate_id` if very short ids appear in practice.
+- id: backlog-transitions-token-computed-by-src-backlog-transitions-rs
+  title: '{{BACKLOG_TRANSITIONS}} token computed by src/backlog_transitions.rs'
+  body: |
+    `src/backlog_transitions.rs` diffs `backlog.yaml` at the work-baseline SHA against the current state. Covers status flips, result additions/modifications, added/deleted tasks, dependency changes, and handoff changes. Soft-fails to a human-readable placeholder on any error. Wired into `phase_loop.rs` `AnalyseWork` branch alongside `{{WORK_TREE_STATUS}}`; `analyse-work.md` step 9 directs the LLM to draw the commit title and body from this block.
+- id: work-baseline-is-prior-triage-commit-triage-additions-bleed-into-backlog-transitions
+  title: Work-baseline is prior triage commit; triage additions bleed into {{BACKLOG_TRANSITIONS}}
+  body: |
+    The work-baseline SHA is captured at the triage commit (end of the previous cycle), not at session start. Triage additions from the prior cycle therefore appear in the `{{BACKLOG_TRANSITIONS}}` diff alongside this cycle's work changes. `analyse-work.md` includes a caveat about this. A cleaner fix requires a separate session-start baseline snapshot. See: `Work-baseline seeded atomically in the triage commit`.
