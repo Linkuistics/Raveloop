@@ -455,7 +455,3 @@ entries:
   title: ontology/cli.rs imports from super, not related_components
   body: |
     `src/ontology/cli.rs` imports `{EdgeKind, LifecycleScope, EvidenceGrade}` via `super::`, not via `related_components` re-exports. Avoids a dependency inversion that would block Atlas's standalone ontology crate extraction.
-- id: main-rs-double-compilation-workaround-scales-with-pub-use-count
-  title: main.rs double-compilation workaround scales with pub use count
-  body: |
-    `main.rs` compiles as both binary and library to support integration test imports. Each new `pub use` item added to the binary-layer library exposure scales compile cost linearly. Removing it is a self-contained refactor and unblocks the CLI-split decision. Backlog task: `eliminate-binary-library-double-compilation-in-main-rs`.
