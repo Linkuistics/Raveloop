@@ -518,3 +518,13 @@ entries:
     - When extracting label rendering to Rust (task `add-phase-summary-render-cli-verb-…`), the renderer replaces only the label list, not the whole output. The LLM still prints its preamble above the CLI's label block.
     - When editing `defaults/phases/{reflect,dream,triage}.md` output-format sections, the wording must explicitly permit a preamble — do not reintroduce a blanket "no commentary" instruction.
     - When adjusting `src/format.rs::format_result_text`, ensure generic prose lines above the label list still render (as dim text). Filters should only remove structural noise like `---` separators or stray code fences, never paragraph text.
+- id: run-create-pre-seeds-plan-dir-in-rust-before-llm-spawn
+  title: run_create pre-seeds plan dir in Rust before LLM spawn
+  body: |
+    run_create pre-seeds plan dir in Rust before LLM spawn
+
+    `src/create.rs` scaffolds the plan directory — creating `backlog.yaml`, `memory.yaml`, and related plan-state files — via CLI calls before the create-plan LLM spawn. Eliminates format drift between LLM-authored YAML and CLI-serialised YAML; removes the corresponding scaffolding instructions from `defaults/create-plan.md`. See: `Pre-initialise output file before CLI-driven spawn`.
+- id: headless-output-filters-hr-lines-in-rust
+  title: Headless output filters `---` HR lines in Rust
+  body: |
+    `src/format.rs` strips bare `---` horizontal-rule lines from headless phase output (reflect, dream, triage). Only `---` is filtered; `***` and `___` variants are not (the reported issue was `---` only). Replaces a fragile prose instruction that asked the LLM not to emit HR separators.
