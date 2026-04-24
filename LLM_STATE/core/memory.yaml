@@ -471,3 +471,11 @@ entries:
   title: projects.yaml migrates silently to relative paths on first save
   body: |
     Pre-existing all-absolute `projects.yaml` files load without error and are rewritten to relative form on the next mutating command. No explicit migration step needed; users with git-shared catalogs benefit automatically.
+- id: bash-var-pat-repl-treats-in-replacement-as-matched-text
+  title: Bash ${var//pat/repl} treats & in replacement as matched text
+  body: |
+    In bash 5.2+, `&` in the replacement side of `${var//pat/repl}` expands to the matched pattern, not a literal ampersand. HTML entities like `&lt;` in replacement content become the matched text, silently corrupting output. Escape `&` → `\&` before using content as a replacement string.
+- id: build-docs-sh-esc-must-wrap-every-substitution-replacement
+  title: build-docs.sh esc() must wrap every substitution replacement
+  body: |
+    The `esc()` helper in `scripts/build-docs.sh` escapes `&` → `\&` before every bash string substitution call. Omitting it on any substitution silently corrupts HTML entities. This is a mandatory pipeline invariant; the comment block above the substitution calls documents it. See: `Bash ${var//pat/repl} treats & in replacement as matched text`.
