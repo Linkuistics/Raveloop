@@ -16,9 +16,9 @@ entries:
   body: |
     `defaults/agents/pi/subagents/` holds pi subagent definitions (brainstorming, tdd, writing-plans); `init.rs` embed paths and `pi.rs` reads reference this location.
 - id: init-rs-drift-detection-test-guards-coding-style-registration
-  title: '`init.rs` drift-detection test guards coding-style registration'
+  title: init.rs drift test guards all defaults/ file registration
   body: |
-    The test reads `defaults/fixed-memory/coding-style-*.md` at test time and asserts every file on disk is registered as an `EmbeddedFile`. Adding a new coding-style file without registering it fails the test.
+    every_file_under_defaults_is_registered_in_embedded_files recursively walks the entire defaults/ tree and asserts every file has a matching EmbeddedFile entry in src/init.rs. Adding any file under defaults/ without registering it fails the test. Replaced the narrower every_default_coding_style_file_is_embedded, which only covered defaults/fixed-memory/coding-style-*.md.
 - id: embedded-defaults-are-valid-asserts-non-empty-model-and-provider
   title: '`embedded_defaults_are_valid` asserts non-empty model and provider'
   body: |
