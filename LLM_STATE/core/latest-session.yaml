@@ -1,13 +1,11 @@
-id: session-41
-timestamp: 2026-04-24T06:52:19Z
+id: session-42
+timestamp: 2026-04-24T07:54:26Z
 phase: work
 body: |
-  ### Session 41 (2026-04-24T06:52:19Z) — Relative paths in projects.yaml for git-shared catalogs
+  ### Session 42 (2026-04-24T07:54:26Z) — Triage: docs/infra backlog for public release
 
-  - **What was attempted:** Make `projects.yaml` portable across machines by storing paths relative to the catalog file rather than as absolute paths. The task covered: a serde DTO layer (RawProjectsCatalog/RawProjectEntry), load-time absolute resolution, save-time relativisation via pathdiff, legacy absolute-path migration on first mutating verb, PathClean throughout, and a comprehensive test suite.
-
-  - **What worked:** All deliverables shipped. The in-memory `ProjectEntry.path` contract (always absolute) is preserved unchanged, so downstream consumers (discovery pipeline, orchestrator) required zero changes. Legacy all-absolute catalogs load unmodified and are silently migrated to relative form on the next save. Design questions from the task description were fully resolved during the user brainstorm: no sidecar `original_form` field, no `--relative` CLI flag, `..` segments allowed (needed for sibling-repo layouts), silent migration accepted. 26 pre-existing unit tests pass unmodified; 7 new acceptance tests added; 1 integration test updated.
-
-  - **What this suggests trying next:** Migration tooling is largely moot — automatic migration fires on the next mutating command. A `state projects canonicalise` verb (load-then-save) would cover the case of migrating without a mutation; defer until there is user demand. No schema version bump was needed (the change is additive on-disk).
-
-  - **Key learnings:** The DTO-layer pattern (separate Raw* structs for serde, rich in-memory structs without derive macros) is clean and low-churn; it can be reused if other catalog structs need similar on-disk/in-memory shape divergence. `pathdiff::diff_paths` + `path_clean::PathClean` together handle the round-trip losslessly. `serialise_catalog` extracted as a shared helper prevents divergence between `save_atomic` and `run_list`.
+  - What was attempted: Triage cycle after the relative-paths-in-projects-yaml feature shipped. The completed task was retired and a new backlog was built targeting public release documentation and distribution infrastructure.
+  - What worked: Six new tasks were defined covering the full chain from AsciiDoc build pipeline (T1) → tutorial (T2) → reference page (T3) → Homebrew formula (T4) → TestAnyware VM capture (T5) → publish/hub update (T6). Dependencies are explicit: T2 and T3 depend on T1; T5 depends on T1 and T4; T6 depends on T2 and T3.
+  - What didn't: No source code was changed — this was a pure planning cycle.
+  - What this suggests trying next: T1 (AsciiDoc pipeline) and T4 (Homebrew formula) are the two independent prerequisites that unblock everything else; either can start first.
+  - Key learnings: The triage correctly ordered the chain with the build pipeline as the single prerequisite for all doc output tasks. TestAnyware VM integration (T5) is flagged as optional/risky — fall back to user-driven capture if VM overhead proves too high.

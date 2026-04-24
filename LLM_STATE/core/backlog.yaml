@@ -1,1 +1,43 @@
-tasks: []
+tasks:
+- id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
+  title: 'Write tutorial walk-through: install through further-cycles with worked example'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
+- id: set-up-asciidoc-doc-build-pipeline-with-linkuistics-site-template
+  title: Set up AsciiDoc doc build pipeline with linkuistics site template
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Introduce an AsciiDoc-to-HTML pipeline for Ravel-Lite docs that publishes into the linkuistics.com site. Deliverables: (a) Ravel-Lite/docs/ directory with tutorial/ and reference/ subtrees; (b) asciidoctor HTML5 template that wraps each chapter in the linkuistics site chrome (nav bar with back-to-projects link, .prose container, footer) and inserts prev/next chapter navigation; (c) scripts/build-docs.sh (or Makefile target 'docs') that compiles every .adoc into ../www.linkuistics.com/projects/ravel-lite/*.html using the template; (d) one pilot chapter (e.g., 00-overview.adoc) that builds end-to-end and renders correctly against the site's existing CSS; (e) README note on build prerequisites (brew install asciidoctor). No GitHub Actions; local manual build. Design goal: template and recipe are reusable across projects (TheGreatExplainer will consume the same pattern) so keep linkuistics-specific bits parametric where sensible. Prerequisite for T2 and T3.
+- id: write-reference-page-covering-all-user-facing-cli-verbs
+  title: Write reference page covering all user-facing CLI verbs
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Single-page reference-tour in AsciiDoc (docs/reference/index.adoc or docs/reference.adoc). TOC at top, then prose entries for each user-facing verb: run, create, init (+ --force), version, state projects (add/list/rename/remove), state backlog (CRUD), state memory (CRUD), state session-log, state set-phase, state related-components (list/add-edge/discover — briefly; advanced), survey and survey-format (one-liner mention), --config / RAVEL_LITE_CONFIG / --dangerous. Each entry: invocation, flags, what it does, side effects, gotchas. Friendly prose, minimal lists, no emoji. Depends on T1.
+- id: add-ravel-lite-rb-homebrew-formula-to-linkuistics-homebrew-taps
+  title: Add ravel-lite.rb Homebrew formula to linkuistics/homebrew-taps
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Create Formula/ravel-lite.rb in /Users/antony/Development/homebrew-taps/ so that 'brew install linkuistics/taps/ravel-lite' works. Apache-2.0, from-source cargo build (depends_on 'rust' => :build; install runs 'cargo install --locked --root #{prefix} --path .'). Tag the Ravel-Lite repo at the current release and point the formula's url at github.com/linkuistics/Ravel-Lite with tag: "vX.Y.Z". Basic 'test do' asserting 'ravel-lite --version' prints the crate version. Verify locally with 'brew install --build-from-source linkuistics/taps/ravel-lite' before committing. No GitHub Actions; no pre-built binaries.
+- id: integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands
+  title: Integrate TestAnyware VM for capturing interactive ravel-lite commands
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Dogfood TestAnyware as the driver for running ravel-lite's interactive commands (create, run) inside a VM so tutorial sections can include real transcripts and — optionally — screenshots without requiring the user to manually drive their own terminal. Scope: (a) start a TestAnyware macOS VM with ravel-lite installed via the brew formula (T4); (b) drive 'ravel-lite create' and 'ravel-lite run' via TestAnyware's VNC + agent (input injection, screen capture, agent exec); (c) capture state files on the VM, extract them to the host, and include them as evidence in the tutorial chapters; (d) optional: capture PNG screenshots of the TUI for the tutorial. Supports T2; depends on T1 (pipeline) and T4 (brew formula) for a clean 'brew install' inside the VM. Scope carefully — this can become a rabbit hole; if VM-driven capture proves too costly, fall back to user-driven capture as originally planned.
+- id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
+  title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
