@@ -40,6 +40,15 @@ to propagate learnings to related plans when warranted.
    `ravel-lite state backlog add {{PLAN}} --title "<title>" --category <cat> --description-file <path>`
    (optionally `--dependencies <id1,id2>`).
 
+   **Keep the `dependencies` field in sync with the prose.** Whenever a
+   task's description says "depends on X", "blocked by X", or "requires
+   X" (or equivalent), the structured `dependencies` field must name
+   those ids — `--ready` and downstream tooling rely on it. At add time,
+   pass `--dependencies <ids>`; when you retitle or reshuffle and reread
+   a description, reconcile any drift with
+   `ravel-lite state backlog set-dependencies {{PLAN}} <id> --deps <id1,id2>`
+   (or `--deps ""` to clear).
+
 3. **Mine completed tasks for hand-offs, then delete them.** List
    candidates with `ravel-lite state backlog list {{PLAN}} --has-handoff`
    (tasks carrying an explicit hand-off block) and inspect each done

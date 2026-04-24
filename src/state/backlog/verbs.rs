@@ -286,6 +286,67 @@ pub fn run_set_title(plan_dir: &Path, id: &str, new_title: &str) -> Result<()> {
     write_backlog(plan_dir, &backlog)
 }
 
+/// Replace the `dependencies` field on a task post-hoc. `run_add`
+/// validates the same way at creation time, but because deps there must
+/// already exist, `add` cannot introduce a cycle; `set-dependencies`
+/// can, so the cycle check is additional here.
+pub fn run_set_dependencies(plan_dir: &Path, id: &str, deps: &[String]) -> Result<()> {
+    let mut backlog = read_backlog(plan_dir)?;
+
+    let target_index = backlog
+        .tasks
+        .iter()
+        .position(|t| t.id == id)
+        .ok_or_else(|| anyhow::anyhow!("no task with id {id:?} in backlog"))?;
+
+    if deps.iter().any(|d| d == id) {
+        bail!("task {id:?} cannot depend on itself");
+    }
+
+    let existing_ids: HashSet<&str> = backlog.tasks.iter().map(|t| t.id.as_str()).collect();
+    for dep in deps {
+        if !existing_ids.contains(dep.as_str()) {
+            bail!(
+                "dependency id {dep:?} does not exist in backlog; known ids: {:?}",
+                existing_ids
+            );
+        }
+    }
+
+    // Cycle check: adding edge id → d would close a cycle iff the
+    // existing graph already has a path d → … → id.
+    for dep in deps {
+        if dependency_path_exists(&backlog, dep, id) {
+            bail!(
+                "refusing to set dependencies on {id:?}: would create a cycle through {dep:?}"
+            );
+        }
+    }
+
+    backlog.tasks[target_index].dependencies = deps.to_vec();
+    write_backlog(plan_dir, &backlog)
+}
+
+/// True iff following `dependencies` edges from `from` can reach `to`.
+fn dependency_path_exists(backlog: &BacklogFile, from: &str, to: &str) -> bool {
+    let mut stack = vec![from];
+    let mut visited: HashSet<&str> = HashSet::new();
+    while let Some(current) = stack.pop() {
+        if current == to {
+            return true;
+        }
+        if !visited.insert(current) {
+            continue;
+        }
+        if let Some(task) = backlog.tasks.iter().find(|t| t.id == current) {
+            for dep in &task.dependencies {
+                stack.push(dep.as_str());
+            }
+        }
+    }
+    false
+}
+
 pub fn run_reorder(
     plan_dir: &Path,
     id: &str,
@@ -711,6 +772,79 @@ mod tests {
         let updated = read_backlog(tmp.path()).unwrap();
         let ids: Vec<&str> = updated.tasks.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["bar", "baz", "foo", "qux"]);
+    }
+
+    #[test]
+    fn run_set_dependencies_replaces_the_dependency_list() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        // `bar` starts with deps ["foo"]; swap to ["qux"].
+        run_set_dependencies(tmp.path(), "bar", &["qux".into()]).unwrap();
+
+        let updated = read_backlog(tmp.path()).unwrap();
+        let bar = updated.tasks.iter().find(|t| t.id == "bar").unwrap();
+        assert_eq!(bar.dependencies, vec!["qux".to_string()]);
+    }
+
+    #[test]
+    fn run_set_dependencies_clears_when_empty_slice_is_passed() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        run_set_dependencies(tmp.path(), "bar", &[]).unwrap();
+
+        let updated = read_backlog(tmp.path()).unwrap();
+        let bar = updated.tasks.iter().find(|t| t.id == "bar").unwrap();
+        assert!(bar.dependencies.is_empty());
+    }
+
+    #[test]
+    fn run_set_dependencies_errors_on_unknown_task_id() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_dependencies(tmp.path(), "nonexistent", &["foo".into()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("nonexistent"), "error must cite the bad id: {msg}");
+    }
+
+    #[test]
+    fn run_set_dependencies_errors_on_unknown_dependency_id() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_dependencies(tmp.path(), "bar", &["ghost".into()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("ghost"), "error must name the unknown dep: {msg}");
+    }
+
+    #[test]
+    fn run_set_dependencies_rejects_self_reference() {
+        let tmp = TempDir::new().unwrap();
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_dependencies(tmp.path(), "bar", &["bar".into()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("itself") || msg.contains("self"),
+            "error must call out the self-reference: {msg}");
+    }
+
+    #[test]
+    fn run_set_dependencies_rejects_cycles() {
+        let tmp = TempDir::new().unwrap();
+        // baz → bar → foo. Making foo depend on baz closes a cycle
+        // foo → baz → bar → foo.
+        write_backlog(tmp.path(), &sample_backlog()).unwrap();
+
+        let err = run_set_dependencies(tmp.path(), "foo", &["baz".into()]).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("cycle"), "error must mention cycle: {msg}");
+
+        // Disk is unchanged — foo still has no deps.
+        let reloaded = read_backlog(tmp.path()).unwrap();
+        let foo = reloaded.tasks.iter().find(|t| t.id == "foo").unwrap();
+        assert!(foo.dependencies.is_empty(), "cycle rejection must not persist the bad write");
     }
 
     #[test]

@@ -356,6 +356,14 @@ enum BacklogCommands {
         id: String,
         new_title: String,
     },
+    /// Replace a task's dependency list. Validates ids, rejects self-reference and cycles.
+    SetDependencies {
+        plan_dir: PathBuf,
+        id: String,
+        /// Comma-separated list of task ids. Pass `--deps ""` to clear all deps.
+        #[arg(long, value_delimiter = ',')]
+        deps: Vec<String>,
+    },
     /// Move a task before or after another in the backlog list.
     Reorder {
         plan_dir: PathBuf,
@@ -970,6 +978,12 @@ fn dispatch_backlog(command: BacklogCommands) -> Result<()> {
         }
         BacklogCommands::SetTitle { plan_dir, id, new_title } => {
             backlog::run_set_title(&plan_dir, &id, &new_title)
+        }
+        BacklogCommands::SetDependencies { plan_dir, id, deps } => {
+            // clap parses `--deps ""` as a single empty string; normalise to
+            // an empty vec so the documented clearing form works.
+            let deps: Vec<String> = deps.into_iter().filter(|d| !d.is_empty()).collect();
+            backlog::run_set_dependencies(&plan_dir, &id, &deps)
         }
         BacklogCommands::Reorder { plan_dir, id, position, target_id } => {
             let pos = ReorderPosition::parse(&position).ok_or_else(|| {

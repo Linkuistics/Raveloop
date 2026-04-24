@@ -369,3 +369,59 @@ fn add_set_status_set_results_round_trip_through_cli() {
     assert!(stdout.contains("in_progress"));
     assert!(stdout.contains("Finished."));
 }
+
+#[test]
+fn set_dependencies_round_trips_through_cli() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("backlog.yaml"), "tasks: []\n").unwrap();
+
+    let add = |title: &str| {
+        let out = Command::new(bin())
+            .args(["state", "backlog", "add"])
+            .arg(tmp.path())
+            .args(["--title", title, "--category", "maintenance"])
+            .args(["--description", "body.\n"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "add failed: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    add("First");
+    add("Second");
+
+    // Set Second to depend on First.
+    let set = Command::new(bin())
+        .args(["state", "backlog", "set-dependencies"])
+        .arg(tmp.path())
+        .args(["second", "--deps", "first"])
+        .output()
+        .unwrap();
+    assert!(set.status.success(), "set-dependencies failed: {}", String::from_utf8_lossy(&set.stderr));
+
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("second")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(stdout.contains("dependencies:"), "dependencies field missing: {stdout}");
+    assert!(stdout.contains("first"), "dep first not present: {stdout}");
+
+    // `--deps ""` clears the list.
+    let clear = Command::new(bin())
+        .args(["state", "backlog", "set-dependencies"])
+        .arg(tmp.path())
+        .args(["second", "--deps", ""])
+        .output()
+        .unwrap();
+    assert!(clear.status.success(), "clear failed: {}", String::from_utf8_lossy(&clear.stderr));
+
+    let show = Command::new(bin())
+        .args(["state", "backlog", "show"])
+        .arg(tmp.path())
+        .arg("second")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(show.stdout).unwrap();
+    assert!(stdout.contains("dependencies: []"), "deps must be cleared: {stdout}");
+}
