@@ -86,7 +86,7 @@ entries:
 - id: work-baseline-seeded-atomically-in-the-triage-commit
   title: Work-baseline seeded atomically in the triage commit
   body: |
-    `GitCommitTriage` calls `git_save_work_baseline` before committing. `LlmPhase::Work` seeds work-baseline only when the file is absent (first-run fallback).
+    `GitCommitTriage` calls `git_commit_plan` first, then `git_save_work_baseline`, so `work-baseline` records the triage commit SHA (not the reflect commit). A follow-on save-work-baseline commit lands the file; plan tree is dirty-free at user prompt. `LlmPhase::Work` seeds work-baseline only when the file is absent (first-run fallback).
 - id: llmphase-work-does-not-delete-latest-session-yaml
   title: '`LlmPhase::Work` does not delete `latest-session.yaml`'
   body: |
@@ -488,9 +488,9 @@ entries:
   body: |
     `state backlog lint-dependencies <PLAN_DIR>` reports drift between prose task-id mentions in task descriptions and structured `dependencies:` fields. Byte-scan whole-word matching; `[a-zA-Z0-9_-]` chars are id-body, any other byte is a boundary. Output is `LintReport`/`TaskDrift` serde types (YAML/JSON). Linter output is advisory, not authoritative; triage uses `set-dependencies` to reconcile. Triage prompt leads with a **Preflight** directive instructing the LLM to run the linter before triage work.
 - id: analyse-work-stale-status-repair-is-a-mechanical-scan
-  title: Analyse-work stale-status repair is a mechanical scan
+  title: '`repair-stale-statuses` exits 1 on drift, 0 on clean'
   body: |
-    Analyse-work currently walks all tasks to flip stale in-progress/blocked statuses. Pure deterministic scan; extractable to a `backlog repair-stale-statuses` Rust verb.
+    `src/state/backlog/repair_stale_statuses.rs` exposes `analyse_repairs` and `run_repair_stale_statuses`; types `Repair`, `RepairReport`, `RepairReason`. Flips stale in-progress/blocked statuses. Exit 1 when repairs apply, 0 when no drift.
 - id: datalog-evaluator-deferred-imperative-verbs-sufficient
   title: Datalog evaluator deferred; imperative verbs sufficient
   body: |
