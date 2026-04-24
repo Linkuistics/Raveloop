@@ -1,11 +1,11 @@
-id: session-42
-timestamp: 2026-04-24T07:54:26Z
+id: session-43
+timestamp: 2026-04-24T08:20:06Z
 phase: work
 body: |
-  ### Session 42 (2026-04-24T07:54:26Z) — Triage: docs/infra backlog for public release
+  ### Session 43 (2026-04-24T08:20:06Z) — AsciiDoc doc build pipeline
 
-  - What was attempted: Triage cycle after the relative-paths-in-projects-yaml feature shipped. The completed task was retired and a new backlog was built targeting public release documentation and distribution infrastructure.
-  - What worked: Six new tasks were defined covering the full chain from AsciiDoc build pipeline (T1) → tutorial (T2) → reference page (T3) → Homebrew formula (T4) → TestAnyware VM capture (T5) → publish/hub update (T6). Dependencies are explicit: T2 and T3 depend on T1; T5 depends on T1 and T4; T6 depends on T2 and T3.
-  - What didn't: No source code was changed — this was a pure planning cycle.
-  - What this suggests trying next: T1 (AsciiDoc pipeline) and T4 (Homebrew formula) are the two independent prerequisites that unblock everything else; either can start first.
-  - Key learnings: The triage correctly ordered the chain with the build pipeline as the single prerequisite for all doc output tasks. TestAnyware VM integration (T5) is flagged as optional/risky — fall back to user-driven capture if VM overhead proves too high.
+  - **Attempted:** Implemented T1 — AsciiDoc-to-HTML doc build pipeline with Linkuistics site chrome. Deliverables: docs/ subtree, scripts/build-docs.sh, docs/templates/page-shell.html, docs/build-config.sh, docs/manifest.txt, pilot chapter docs/tutorial/00-overview.adoc, README Documentation section, .gitignore entry for .playwright-mcp/.
+  - **What worked:** Asciidoctor `--no-header-footer` (embedded mode) paired with a Bash substitution-based HTML shell. The linkuistics `.prose` CSS descendant selectors cascade through asciidoctor's wrapper divs without needing new CSS. A sourced `build-config.sh` file cleanly isolates per-project values. Visual verification via Playwright confirmed the pilot chapter renders correctly against existing site CSS.
+  - **What didn't work (fixed mid-flight):** Bash 5.2+ back-reference bug: a leading `&` in the replacement side of `${var//pat/repl}` is replaced by the matched pattern, corrupting HTML entities (e.g., `&lt;` → `<project>/...`). Fixed with an `esc()` helper that escapes `&` → `\&` before every substitution. Also: `mkdir -p` added for the output subdir; initial version hard-failed if it didn't exist.
+  - **What this suggests next:** T2 (tutorial) and T3 (reference) are unblocked — add .adoc files under docs/tutorial/ and docs/reference/, append to docs/manifest.txt, rerun ./scripts/build-docs.sh. T4 (Homebrew formula) can proceed in parallel. T6 (publish hub) should cite build-docs.sh when bumping synced_at SHA.
+  - **Key learnings:** The `esc()` pattern (escape `&` before every bash string substitution) is a mandatory invariant for this pipeline; the comment block above the calls in build-docs.sh documents it. docs/reference/ is intentionally empty — git ignores empty dirs, T3 will populate it.

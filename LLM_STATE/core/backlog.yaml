@@ -2,10 +2,52 @@ tasks:
 - id: set-up-asciidoc-doc-build-pipeline-with-linkuistics-site-template
   title: Set up AsciiDoc doc build pipeline with linkuistics site template
   category: infra
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Introduce an AsciiDoc-to-HTML pipeline for Ravel-Lite docs that publishes into the linkuistics.com site. Deliverables: (a) Ravel-Lite/docs/ directory with tutorial/ and reference/ subtrees; (b) asciidoctor HTML5 template that wraps each chapter in the linkuistics site chrome (nav bar with back-to-projects link, .prose container, footer) and inserts prev/next chapter navigation; (c) scripts/build-docs.sh (or Makefile target 'docs') that compiles every .adoc into ../www.linkuistics.com/projects/ravel-lite/*.html using the template; (d) one pilot chapter (e.g., 00-overview.adoc) that builds end-to-end and renders correctly against the site's existing CSS; (e) README note on build prerequisites (brew install asciidoctor). No GitHub Actions; local manual build. Design goal: template and recipe are reusable across projects (TheGreatExplainer will consume the same pattern) so keep linkuistics-specific bits parametric where sensible. Prerequisite for T2 and T3.
+  results: |
+    ## Pipeline shape
+
+    AsciiDoc → HTML pipeline built as a pure shell script (`scripts/build-docs.sh`) wrapping `asciidoctor --no-header-footer`. The embedded-mode body output is substituted into `docs/templates/page-shell.html` alongside title, prev/next chapter nav, and project-specific config values. No asciidoctor template-engine system (`-T`), no Makefile, no Ruby — just asciidoctor + bash.
+
+    Parametric split, as the task's reusability goal required:
+    - `docs/templates/page-shell.html` — site chrome (universal, copy-as-is for other projects)
+    - `scripts/build-docs.sh` — build driver (universal, copy-as-is for other projects)
+    - `docs/build-config.sh` — per-project vars: `PROJECT_NAME`, `PROJECT_SLUG`, back-link URL, output dir (project-specific, edit per project)
+    - `docs/manifest.txt` — chapter order for prev/next nav (project-specific)
+
+    For TheGreatExplainer (or any future project), copy the template + script verbatim and only edit `build-config.sh` + `manifest.txt`.
+
+    ## Deliverables
+
+    - [x] (a) `docs/tutorial/` and `docs/reference/` subtrees created
+    - [x] (b) HTML5 template in `docs/templates/page-shell.html` — wraps each chapter in the linkuistics nav bar (logo + tagline + "← Ravel-Lite" back link + Collaborator badge), `.prose` container, and footer. Prev/next chapter links injected at the bottom of each page using the existing `.detail-link` class.
+    - [x] (c) `scripts/build-docs.sh` (executable) builds every `.adoc` listed in `manifest.txt` into `<OUTPUT_DIR>/*.html`. Paths like `tutorial/00-overview.adoc` are flattened to `tutorial-00-overview.html` so the site stays one dir deep under `projects/ravel-lite/`.
+    - [x] (d) Pilot chapter `docs/tutorial/00-overview.adoc` builds end-to-end to `www.linkuistics.com/projects/ravel-lite/tutorial-00-overview.html` and renders correctly against the existing site CSS (verified visually via Playwright — nav chrome, h1/h2 spacing, code blocks, link colors, and footer all match prior art in `projects/ravel/user-guide.html`).
+    - [x] (e) README `## Documentation` section added between Principles and Releasing, covering build prerequisites (`brew install asciidoctor`), `./scripts/build-docs.sh` invocation, and the portability story.
+
+    ## What worked
+
+    - **Embedded mode over custom template engines.** Asciidoctor's `--no-header-footer` emits body-only HTML with its standard wrapper classes (`.paragraph`, `.listingblock`, `.sect1`, etc.). The linkuistics `.prose` CSS uses descendant selectors (`.prose p`, `.prose h2`), so the asciidoctor wrappers are effectively transparent — styling cascades through correctly with zero new CSS. Much simpler than driving Slim/ERB templates.
+    - **Bash `${var//pat/repl}` for substitution, once the `&` back-reference bug was pinned.** Using literal string replacement sidesteps regex-metachar escaping, which makes the substitution robust against arbitrary asciidoctor body content. See Gotcha below.
+    - **Parametric config via a sourced shell file** (`docs/build-config.sh`). No need for env-var juggling or a separate args parser; the script just sources it and reads globals.
+
+    ## What didn't work (fixed mid-flight)
+
+    - **Bash 5.2+ back-reference bug.** First build produced `<code>{{BODY}}lt;project{{BODY}}gt;/...` where `&lt;` should have been. Root cause: bash 5.2 added an undocumented feature where a leading `&` in the replacement half of `${var//pat/repl}` is replaced by the matched pattern. Any replacement that might contain `&` (HTML entities, numeric character references, stray `&`) is affected. Fixed by adding an `esc()` helper that escapes `&` → `\&` before every substitution. The escape is applied uniformly to every variable, not just body/nav, to guard against future surprises (e.g., a title containing "Foo & Bar").
+    - **Output dir didn't exist on first run.** Initial script errored if `OUTPUT_DIR` was missing. Changed to `mkdir -p` the per-project subdir while still hard-failing if the parent site checkout is absent — matches how `projects/ravel/`, `projects/testanyware/`, etc. are created on demand in the site repo.
+
+    ## Gotcha for future readers / writers of this pipeline
+
+    `&` is special in bash 5.2+ string substitution. If you add a new `{{PLACEHOLDER}}` to the template, route it through `esc()` in `build-docs.sh`, not raw `$var` substitution — otherwise any value containing `&` will corrupt the output. The comment block above the `esc()` calls in `build-docs.sh` captures this; keep the comment if you refactor.
+
+    ## What this suggests next
+
+    - T2 (tutorial) and T3 (reference) are unblocked — add `.adoc` files under `docs/tutorial/` and `docs/reference/`, append each to `docs/manifest.txt`, rerun `./scripts/build-docs.sh`.
+    - T6 (publish + update `projects/ravel-lite.html` hub + `SYNC.yml`) should cite `build-docs.sh` as the generator when bumping the synced_at SHA on the hub page.
+    - The empty `docs/reference/` subdir doesn't show up in `git status` (git ignores empty dirs); T3 will populate it naturally.
+    - Build artifact under `.playwright-mcp/` was left from visual verification; added to `.gitignore` so future work-phase runs that use the browser tools don't leak the scratch dir into commits.
 - id: add-ravel-lite-rb-homebrew-formula-to-linkuistics-homebrew-taps
   title: Add ravel-lite.rb Homebrew formula to linkuistics/homebrew-taps
   category: infra
@@ -41,3 +83,26 @@ tasks:
   dependencies: []
   description: |
     Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
+- id: add-set-dependencies-verb-backfill-deps-on-existing-tasks-teach-triage-to-maintain-the-field
+  title: Add set-dependencies verb; backfill deps on existing tasks; teach triage to maintain the field
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Backlog tasks currently have an empty `dependencies: []` field even when the description prose encodes a real dependency (e.g. T3 says "Depends on T1" but the YAML field is empty). This matters for two reasons: (a) the `--ready` filter on `ravel-lite state backlog list` relies on the `dependencies` field, so with empty deps it will happily surface T3 as "ready" even when T1 hasn't landed; (b) downstream tooling (ordering heuristics, cross-plan propagation) has no machine-readable graph to work from.
+
+    Scope — three parts:
+
+    1. **Add a `set-dependencies` CLI verb.** `ravel-lite state backlog set-dependencies <plan> <id> --deps <id1,id2>` (or `--deps ""` to clear). Validate every id exists in the same plan's backlog (same check `run_add` already performs); reject self-references; reject cycles (the add-path does not currently check cycles because deps must already exist when a task is created, but post-hoc edits can create them). Mirrors the shape of `run_add`'s dep validation. Add unit tests covering: happy path, unknown-id rejection, cycle rejection, self-reference rejection, empty-string clears.
+
+    2. **Retroactively fix the current LLM_STATE/core backlog.** Once the verb exists, set deps on the six existing tasks to match the prose:
+       - T3 `write-reference-page-covering-all-user-facing-cli-verbs` → depends on T1
+       - T5 `integrate-testanyware-vm-...` → depends on T1 and T4
+       - T2 `write-user-guide-covering-install-...` → depends on T1
+       - T6 `publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml` → depends on T2 and T3
+       - T1 and T4 stay dependency-free.
+       (T5 also mentions being "supported by T1 and T4" — that is a real hard dependency for the VM-driven capture, so include both.)
+
+    3. **Extend the triage phase.** `defaults/phases/triage.md` currently does not instruct the agent to maintain the `dependencies` field. Add an instruction block: when triage adjusts the backlog (adds, renames, promotes from handoffs, or reads prose that names another task), it should keep the structured `dependencies` field in sync with the narrative. Specifically: when a new task's description says "depends on X" / "blocked by X" / "requires X", the triage agent must also pass `--dependencies X` at add time; when retitling or reshuffling, re-read the affected descriptions and call the new `set-dependencies` verb if the prose and field disagree. Keep the instruction surgical — a few sentences pointing at the verb and the invariant, not a new section.
+
+    Done when: verb exists with tests green, the six tasks above show correct `dependencies` arrays in `backlog list`, and triage.md mentions the invariant and points at `set-dependencies`.
