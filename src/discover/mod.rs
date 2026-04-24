@@ -162,9 +162,10 @@ pub async fn run_discover(config_root: &Path, options: RunDiscoverOptions) -> Re
             prompt_template: stage2_prompt,
             timeout: Duration::from_secs(stage2::DEFAULT_STAGE2_TIMEOUT_SECS),
         };
-        let proposals = run_stage2(&surfaces, failures, &stage2_cfg).await?;
-        save_proposals_atomic(config_root, &proposals)?;
-        proposals
+        // `run_stage2` pre-initialises discover-proposals.yaml and
+        // returns the file as it stands after the LLM's CLI-driven
+        // appends; the file on disk is already the authority.
+        run_stage2(&surfaces, failures, &stage2_cfg).await?
     };
 
     eprintln!(

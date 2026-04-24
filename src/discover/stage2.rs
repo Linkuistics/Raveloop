@@ -1,4 +1,13 @@
 //! Stage 2: global edge inference over Stage 1 surface records.
+//!
+//! The LLM emits each proposed edge through
+//! `ravel-lite state discover-proposals add-proposal` rather than writing
+//! a YAML file directly. `run_stage2` pre-initialises the proposals file
+//! (so the CLI has something to append to), spawns `claude` with the
+//! `Bash` tool allowed, and loads the accumulated file after claude
+//! exits. A hallucinated `--kind` is rejected by clap on the single bad
+//! call, leaving all the other good proposals intact — the fix that
+//! made the whole refactor worthwhile.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -8,10 +17,10 @@ use anyhow::{bail, Context, Result};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command as TokioCommand;
 
-use super::schema::{
-    ProposalRecord, ProposalsFile, Stage1Failure, SurfaceFile, PROPOSALS_SCHEMA_VERSION,
-};
+use super::schema::{ProposalsFile, Stage1Failure, SurfaceFile, PROPOSALS_SCHEMA_VERSION};
+use super::stage1::current_utc_rfc3339;
 use super::tree_sha::ProjectState;
+use super::{load_proposals, save_proposals_atomic};
 use crate::ontology::render_embedded_kinds_for_prompt;
 
 pub const DEFAULT_STAGE2_TIMEOUT_SECS: u64 = 300;
@@ -23,52 +32,14 @@ pub struct Stage2Config {
     pub timeout: Duration,
 }
 
-/// Run Stage 2 over `surfaces`. `failures` from Stage 1 are passed
-/// through unchanged into the output.
+/// Run Stage 2 over `surfaces`. `failures` from Stage 1 are seeded into
+/// the proposals file before the LLM runs, so they survive the CLI
+/// round-trip regardless of what (or how little) Stage 2 emits.
 pub async fn run_stage2(
     surfaces: &[SurfaceFile],
     failures: Vec<Stage1Failure>,
     cfg: &Stage2Config,
 ) -> Result<ProposalsFile> {
-    let output_path = cfg
-        .config_root
-        .join(format!(".tmp-proposals-{}.yaml", std::process::id()));
-    if output_path.exists() {
-        std::fs::remove_file(&output_path).with_context(|| {
-            format!("failed to remove stale tmp file {}", output_path.display())
-        })?;
-    }
-
-    let surfaces_yaml = render_surfaces_for_prompt(surfaces)?;
-    let ontology_block = render_embedded_kinds_for_prompt()
-        .context("render shipped ontology YAML for Stage 2 prompt")?;
-    let prompt = cfg
-        .prompt_template
-        .replace("{{ONTOLOGY_KINDS}}", &ontology_block)
-        .replace("{{PROPOSALS_OUTPUT_PATH}}", &output_path.to_string_lossy())
-        .replace("{{SURFACE_RECORDS_YAML}}", &surfaces_yaml);
-    assert_no_dangling_tokens(&prompt)
-        .context("composing Stage 2 prompt")?;
-
-    let success = spawn_claude_for_stage2(&prompt, &cfg.model, &cfg.config_root, cfg.timeout).await?;
-    if !success {
-        bail!("Stage 2 claude subprocess exited non-zero");
-    }
-    if !output_path.exists() {
-        bail!(
-            "Stage 2 did not create {} — claude likely refused the Write \
-             (check stderr above for permission/sandbox errors)",
-            output_path.display()
-        );
-    }
-
-    let raw = std::fs::read_to_string(&output_path).with_context(|| {
-        format!("failed to read Stage 2 output {}", output_path.display())
-    })?;
-    let raw_parsed: RawStage2Output = serde_yaml::from_str(&raw)
-        .with_context(|| format!("parse Stage 2 output from {}", output_path.display()))?;
-    let _ = std::fs::remove_file(&output_path);
-
     let source_project_states = surfaces
         .iter()
         .map(|s| {
@@ -82,20 +53,36 @@ pub async fn run_stage2(
         })
         .collect();
 
-    Ok(ProposalsFile {
+    let initial = ProposalsFile {
         schema_version: PROPOSALS_SCHEMA_VERSION,
-        generated_at: raw_parsed.generated_at,
+        generated_at: current_utc_rfc3339(),
         source_project_states,
-        proposals: raw_parsed.proposals,
+        proposals: Vec::new(),
         failures,
-    })
-}
+    };
+    save_proposals_atomic(&cfg.config_root, &initial)
+        .context("pre-initialise discover-proposals.yaml for Stage 2 CLI appends")?;
 
-#[derive(serde::Deserialize)]
-struct RawStage2Output {
-    generated_at: String,
-    #[serde(default)]
-    proposals: Vec<ProposalRecord>,
+    let surfaces_yaml = render_surfaces_for_prompt(surfaces)?;
+    let ontology_block = render_embedded_kinds_for_prompt()
+        .context("render shipped ontology YAML for Stage 2 prompt")?;
+    let prompt = cfg
+        .prompt_template
+        .replace("{{ONTOLOGY_KINDS}}", &ontology_block)
+        .replace("{{CONFIG_ROOT}}", &cfg.config_root.to_string_lossy())
+        .replace("{{SURFACE_RECORDS_YAML}}", &surfaces_yaml);
+    assert_no_dangling_tokens(&prompt)
+        .context("composing Stage 2 prompt")?;
+
+    let success = spawn_claude_for_stage2(&prompt, &cfg.model, &cfg.config_root, cfg.timeout).await?;
+    if !success {
+        bail!("Stage 2 claude subprocess exited non-zero");
+    }
+
+    load_proposals(&cfg.config_root).context(
+        "load discover-proposals.yaml after Stage 2 — claude may have failed to \
+         invoke any `ravel-lite state discover-proposals add-proposal` commands",
+    )
 }
 
 /// Hard-error if the composed prompt still carries any `{{NAME}}`
@@ -145,9 +132,11 @@ async fn spawn_claude_for_stage2(
     config_root: &std::path::Path,
     timeout: Duration,
 ) -> Result<bool> {
-    // Set cwd to config_root so the proposals tmp file lives inside
-    // claude's sandboxed working directory; pair with `--allowed-tools`
-    // so Write isn't denied when user settings are excluded.
+    // The LLM emits proposals via `ravel-lite state discover-proposals
+    // add-proposal` (Bash). cwd=config_root keeps relative paths short in
+    // the shell; `--add-dir` grants the sandbox read/write coverage of
+    // the config dir so the subprocess's writes aren't blocked when the
+    // user's allowlist is excluded by `--setting-sources project,local`.
     let mut child = TokioCommand::new("claude")
         .arg("-p")
         .arg(prompt)
@@ -157,7 +146,9 @@ async fn spawn_claude_for_stage2(
         .arg("--setting-sources")
         .arg("project,local")
         .arg("--allowed-tools")
-        .arg("Write")
+        .arg("Bash")
+        .arg("--add-dir")
+        .arg(config_root)
         .current_dir(config_root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -200,9 +191,31 @@ mod tests {
         let ontology_block = render_embedded_kinds_for_prompt().unwrap();
         let composed = SHIPPED_STAGE2_PROMPT
             .replace("{{ONTOLOGY_KINDS}}", &ontology_block)
-            .replace("{{PROPOSALS_OUTPUT_PATH}}", "/tmp/out.yaml")
+            .replace("{{CONFIG_ROOT}}", "/tmp/cfg")
             .replace("{{SURFACE_RECORDS_YAML}}", "surfaces: []\n");
         assert_no_dangling_tokens(&composed).unwrap();
+    }
+
+    #[test]
+    fn shipped_stage2_prompt_instructs_llm_to_invoke_add_proposal_cli() {
+        // Regression guard: the prompt must route structured data through
+        // `ravel-lite state discover-proposals add-proposal`, not through
+        // a Write-YAML instruction. A prompt rewrite that accidentally
+        // reverts to YAML output (e.g. reintroduces
+        // `{{PROPOSALS_OUTPUT_PATH}}`) would bypass the clap-validation
+        // boundary that motivated this shape.
+        assert!(
+            SHIPPED_STAGE2_PROMPT.contains("ravel-lite state discover-proposals add-proposal"),
+            "Stage 2 prompt must instruct the LLM to invoke the add-proposal CLI"
+        );
+        assert!(
+            !SHIPPED_STAGE2_PROMPT.contains("{{PROPOSALS_OUTPUT_PATH}}"),
+            "Stage 2 prompt must not carry the legacy {{PROPOSALS_OUTPUT_PATH}} token"
+        );
+        assert!(
+            SHIPPED_STAGE2_PROMPT.contains("{{CONFIG_ROOT}}"),
+            "Stage 2 prompt must template the config root so the CLI call is unambiguous"
+        );
     }
 
     #[test]

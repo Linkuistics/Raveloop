@@ -267,6 +267,15 @@ enum StateCommands {
         #[command(subcommand)]
         command: RelatedComponentsCommands,
     },
+    /// Stage 2 discovery emits each edge through `add-proposal` instead
+    /// of writing `discover-proposals.yaml` directly. A hallucinated
+    /// `--kind` is rejected by clap with the full valid vocabulary in
+    /// the error message, so the LLM retries that single call rather
+    /// than nuking the whole file.
+    DiscoverProposals {
+        #[command(subcommand)]
+        command: DiscoverProposalsCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -639,6 +648,48 @@ enum RelatedComponentsCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum DiscoverProposalsCommands {
+    /// Append a Stage 2 edge proposal to `<config-dir>/discover-proposals.yaml`.
+    /// Every validation is enforced here rather than at batch-parse time —
+    /// clap rejects an unknown `--kind`/`--lifecycle`/`--evidence-grade`,
+    /// `Edge::validate()` rejects self-loops and empty-evidence misuse, and
+    /// the catalog check rejects participants not in `projects.yaml`.
+    AddProposal {
+        /// Path to the config directory. Overrides $RAVEL_LITE_CONFIG and
+        /// the default location.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// One of the v2 kebab-case kinds (see
+        /// docs/component-ontology.md §5).
+        #[arg(long)]
+        kind: String,
+        /// One of the v2 kebab-case lifecycles (see
+        /// docs/component-ontology.md §3.2).
+        #[arg(long)]
+        lifecycle: String,
+        /// Component name (repeat twice). For directed kinds, the first
+        /// `--participant` is the canonical-order "from" component and
+        /// the second is the "to" component. Symmetric kinds are
+        /// participant-order-insensitive; the verb canonicalises to
+        /// sorted order before storage.
+        #[arg(long = "participant", value_name = "NAME")]
+        participants: Vec<String>,
+        /// Evidence grade: `strong`, `medium`, or `weak`. `strong`/`medium`
+        /// require at least one `--evidence-field`; `weak` may omit.
+        #[arg(long)]
+        evidence_grade: String,
+        /// Surface-field path that justifies this edge (e.g.
+        /// `Alpha.surface.produces_files`). Repeat for multiple fields.
+        #[arg(long = "evidence-field", value_name = "FIELD")]
+        evidence_fields: Vec<String>,
+        /// One-paragraph human justification citing specific surface
+        /// fields from the input. Required; non-empty.
+        #[arg(long)]
+        rationale: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -759,6 +810,35 @@ async fn dispatch_state(command: StateCommands) -> Result<()> {
                  removed after one release cycle."
             );
             dispatch_related_components(command).await
+        }
+        StateCommands::DiscoverProposals { command } => dispatch_discover_proposals(command),
+    }
+}
+
+fn dispatch_discover_proposals(command: DiscoverProposalsCommands) -> Result<()> {
+    match command {
+        DiscoverProposalsCommands::AddProposal {
+            config,
+            kind,
+            lifecycle,
+            participants,
+            evidence_grade,
+            evidence_fields,
+            rationale,
+        } => {
+            let config_root = resolve_config_dir(config)?;
+            let kind = parse_edge_kind(&kind)?;
+            let lifecycle = parse_lifecycle_scope(&lifecycle)?;
+            let evidence_grade = parse_evidence_grade(&evidence_grade)?;
+            let req = state::discover_proposals::AddProposalRequest {
+                kind,
+                lifecycle,
+                participants: &participants,
+                evidence_grade,
+                evidence_fields,
+                rationale,
+            };
+            state::discover_proposals::run_add_proposal(&config_root, &req)
         }
     }
 }

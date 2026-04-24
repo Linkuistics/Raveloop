@@ -7,10 +7,15 @@
 //! - `session_log` — typed session-log.yaml + latest-session.yaml
 //!   verbs, plus the programmatic append used by
 //!   `phase_loop::GitCommitWork` (R3)
+//! - `discover_proposals` — typed-CLI façade for `discover-proposals.yaml`
+//!   so Stage 2's LLM emits each proposal via `add-proposal` rather than
+//!   writing YAML, letting clap reject a hallucinated `--kind` on the
+//!   single bad call instead of the whole batch
 //! - `migrate` — one-shot per-plan .md → .yaml conversion
 //!   (backlog + memory + session-log/latest-session)
 
 pub mod backlog;
+pub mod discover_proposals;
 pub mod memory;
 pub mod migrate;
 pub mod phase;

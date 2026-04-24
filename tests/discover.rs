@@ -42,19 +42,63 @@ fn run_git(cwd: &Path, args: &[&str]) {
     assert!(s.success(), "git {args:?} in {} failed", cwd.display());
 }
 
+/// Canned Stage 2 proposal, representing a single edge the fake-claude
+/// shim should emit via the `add-proposal` CLI.
+struct Stage2Proposal {
+    kind: &'static str,
+    lifecycle: &'static str,
+    from: &'static str,
+    to: &'static str,
+    evidence_grade: &'static str,
+    evidence_fields: &'static [&'static str],
+    rationale: &'static str,
+}
+
 /// Writes a bash shim to `shim_dir/claude` that, for each invocation,
-/// grabs the `-p <prompt>` argument, detects Stage 1 vs Stage 2 by the
-/// prompt's header, extracts the first `.yaml` path from the prompt
-/// (assumed to be the output-path placeholder), and writes the
-/// appropriate canned YAML to it.
+/// grabs the `-p <prompt>` argument and branches on header marker:
 ///
-/// Brittleness: the `grep | head -n1` extractor assumes the output-path
-/// placeholder appears in the prompt *before* any other yaml paths that
-/// might be inlined via `{{SURFACE_RECORDS_YAML}}`. This holds today
-/// because the Output-format section precedes the Input section in both
-/// discover-stage{1,2}.md. If that ordering inverts, the shim will
-/// point cat at the wrong file.
-fn write_fake_claude(shim_dir: &Path, stage1_yaml: &str, stage2_yaml: &str) -> PathBuf {
+/// * **Stage 1** (`Extract Interaction Surface`): extract the first
+///   `.yaml` path from the prompt and write `stage1_yaml` there. Matches
+///   the legacy Write-a-YAML-file flow Stage 1 still uses.
+/// * **Stage 2** (otherwise): issue one
+///   `ravel-lite state discover-proposals add-proposal` invocation per
+///   entry in `stage2_proposals`. This mirrors the production flow
+///   exactly — proposals land through the CLI, not through a YAML
+///   write — so the validation pipeline is exercised end-to-end.
+///
+/// `ravel_lite_bin` is baked into the shim literally so it works under
+/// any test `PATH` rewrite.
+fn write_fake_claude(
+    shim_dir: &Path,
+    ravel_lite_bin: &Path,
+    config_root: &Path,
+    stage1_yaml: &str,
+    stage2_proposals: &[Stage2Proposal],
+) -> PathBuf {
+    let mut stage2_commands = String::new();
+    for p in stage2_proposals {
+        stage2_commands.push_str(&format!(
+            "{bin:?} state discover-proposals add-proposal \\\n\
+             \t--config {cfg:?} \\\n\
+             \t--kind {kind} \\\n\
+             \t--lifecycle {lifecycle} \\\n\
+             \t--participant {from} \\\n\
+             \t--participant {to} \\\n\
+             \t--evidence-grade {grade} \\\n",
+            bin = ravel_lite_bin,
+            cfg = config_root,
+            kind = p.kind,
+            lifecycle = p.lifecycle,
+            from = p.from,
+            to = p.to,
+            grade = p.evidence_grade,
+        ));
+        for f in p.evidence_fields {
+            stage2_commands.push_str(&format!("\t--evidence-field {f:?} \\\n"));
+        }
+        stage2_commands.push_str(&format!("\t--rationale {:?}\n", p.rationale));
+    }
+
     let script = format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -74,14 +118,11 @@ if grep -q 'Extract Interaction Surface' <<<"$prompt_arg"; then
 {stage1}
 YAML
 else
-  out=$(grep -oE '/[^[:space:]]+\.yaml' <<<"$prompt_arg" | head -n1)
-  cat >"$out" <<'YAML'
 {stage2}
-YAML
 fi
 "#,
         stage1 = stage1_yaml,
-        stage2 = stage2_yaml,
+        stage2 = stage2_commands,
     );
     let path = shim_dir.join("claude");
     std::fs::write(&path, script).unwrap();
@@ -147,8 +188,21 @@ fn discover_writes_proposals_and_apply_merges_them() {
     std::fs::create_dir_all(&shim_dir).unwrap();
     write_fake_claude(
         &shim_dir,
+        &bin_path(),
+        &cfg,
         "purpose: alpha consumes yaml\nconsumes_files: [/data/*.yaml]\n",
-        "generated_at: 2026-04-22T00:00:00Z\nproposals:\n  - kind: generates\n    lifecycle: codegen\n    participants: [Beta, Alpha]\n    evidence_grade: strong\n    evidence_fields:\n      - Beta.surface.produces_files\n      - Alpha.surface.consumes_files\n    rationale: 'beta produces /data/*.yaml that alpha consumes'\n",
+        &[Stage2Proposal {
+            kind: "generates",
+            lifecycle: "codegen",
+            from: "Beta",
+            to: "Alpha",
+            evidence_grade: "strong",
+            evidence_fields: &[
+                "Beta.surface.produces_files",
+                "Alpha.surface.consumes_files",
+            ],
+            rationale: "beta produces /data/*.yaml that alpha consumes",
+        }],
     );
 
     // Run discover.

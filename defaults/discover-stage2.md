@@ -129,31 +129,44 @@ Annotate every proposal with one of:
 be empty only when `evidence_grade: weak` AND `rationale` justifies
 it explicitly.
 
-## Output format
+## Output — invoke the CLI once per edge
 
-Write YAML to `{{PROPOSALS_OUTPUT_PATH}}` matching this shape:
+Do NOT write a YAML file. For each edge you propose, invoke this shell
+command via the `Bash` tool:
 
-```yaml
-generated_at: <ISO-8601 UTC timestamp>
-proposals:
-  - kind: <kebab-case kind from the ontology above>
-    lifecycle: <kebab-case lifecycle from the ontology above>
-    participants: [<name>, <name>]    # see direction rules above
-    evidence_grade: <strong | medium | weak>
-    evidence_fields:
-      - <e.g., "Alpha.surface.produces_files">
-      - <e.g., "Beta.surface.consumes_files">
-    rationale: |
-      <one paragraph citing specific surface fields from the input>
+```bash
+ravel-lite state discover-proposals add-proposal \
+  --config "{{CONFIG_ROOT}}" \
+  --kind <kebab-case kind from the ontology above> \
+  --lifecycle <kebab-case lifecycle from the ontology above> \
+  --participant <name1> \
+  --participant <name2> \
+  --evidence-grade <strong|medium|weak> \
+  --evidence-field "<e.g., Alpha.surface.produces_files>" \
+  --evidence-field "<e.g., Beta.surface.consumes_files>" \
+  --rationale "<one paragraph citing specific surface fields from the input>"
 ```
 
-Do NOT emit `schema_version` or `source_project_states` — those are
-injected by the caller. Only propose edges between components that
-appear in the input. Only use component names exactly as they appear
-in the input — no paths, no aliases.
+Rules:
 
-After writing the YAML, your final message should confirm the path
-written. No other output is required.
+- **One invocation per edge.** A pair with two `(kind, lifecycle)` tuples
+  (§3.5) is two invocations.
+- **Participant order matters for directed kinds.** The first
+  `--participant` is the canonical-order "from" component and the
+  second is the "to" component (e.g. `generates`: first produces,
+  second consumes). For symmetric kinds the CLI canonicalises to
+  alphabetical order internally, so either order is accepted.
+- **Only catalogued components.** Use component names exactly as they
+  appear in the input — no paths, no aliases. The CLI rejects unknown
+  names with a list of the valid ones.
+- **Repeat `--evidence-field` for multiple fields.** Omit the flag
+  entirely only when `--evidence-grade weak` (the CLI will reject
+  empty evidence on `strong`/`medium`).
+
+If an invocation returns a non-zero exit, read the stderr — it will
+cite the invalid argument and list the valid vocabulary or catalog
+entries. Correct the argument and retry. When every edge has been
+proposed, exit. No summary message is required.
 
 ## Input
 
