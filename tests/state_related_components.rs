@@ -438,32 +438,3 @@ fn remove_edge_requires_matching_lifecycle() {
     assert!(yaml.contains("lifecycle: runtime"), "runtime must survive: {yaml}");
     assert!(!yaml.contains("lifecycle: build"), "build must be gone: {yaml}");
 }
-
-#[test]
-fn loading_legacy_v1_filename_hard_errors_with_actionable_message() {
-    let tmp = TempDir::new().unwrap();
-    let (cfg, _plan_dir) = scaffold(tmp.path(), "Me", &[]);
-
-    // Plant a v1 file at the legacy path.
-    std::fs::write(
-        cfg.join("related-projects.yaml"),
-        "schema_version: 1\nedges: []\n",
-    )
-    .unwrap();
-
-    let list = Command::new(bin())
-        .args(["state", "related-components", "list"])
-        .args(["--config", cfg.to_str().unwrap()])
-        .output()
-        .unwrap();
-    assert!(!list.status.success(), "legacy v1 file must hard-error");
-    let stderr = String::from_utf8(list.stderr).unwrap();
-    assert!(
-        stderr.contains("legacy v1 file"),
-        "error must name the legacy file: {stderr}"
-    );
-    assert!(
-        stderr.contains("discover --apply"),
-        "error must point at the regenerate command: {stderr}"
-    );
-}

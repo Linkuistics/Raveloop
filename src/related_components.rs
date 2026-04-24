@@ -7,12 +7,12 @@
 //! per-user `projects.yaml` resolver, the CLI verbs) lives here.
 //!
 //! Schema is v2: every edge carries `(kind, lifecycle, participants,
-//! evidence_grade, evidence_fields, rationale)`. The loader rejects v1
-//! files at either the new path (with `schema_version: 1`) or the legacy
-//! `related-projects.yaml` filename, and points the user at
-//! `discover --apply` for regeneration. There is no in-memory v1 → v2
-//! upgrader — the file is a generated artifact, so delete-and-regenerate
-//! is the supported upgrade path (`docs/component-ontology.md` §12).
+//! evidence_grade, evidence_fields, rationale)`. The loader rejects any
+//! file whose `schema_version` is not 2 (enforced in
+//! `crate::ontology::yaml_io::load_or_default`). There is no in-memory
+//! v1 → v2 upgrader — the file is a generated artifact, so
+//! delete-and-regenerate is the supported upgrade path
+//! (`docs/component-ontology.md` §12).
 
 use std::path::{Path, PathBuf};
 
@@ -50,10 +50,8 @@ pub struct AddEdgeRequest<'a> {
 }
 
 pub const RELATED_COMPONENTS_FILE: &str = "related-components.yaml";
-pub const LEGACY_RELATED_PROJECTS_FILE: &str = "related-projects.yaml";
 
 pub fn load_or_empty(config_root: &Path) -> Result<RelatedComponentsFile> {
-    error_if_legacy_file_present(config_root)?;
     ontology::load_or_default(&config_root.join(RELATED_COMPONENTS_FILE))
 }
 
@@ -83,27 +81,6 @@ pub fn rename_component_in_edges(config_root: &Path, old: &str, new: &str) -> Re
 /// Returns an empty string when the file is absent — graceful default.
 pub fn read_related_plans_markdown(plan_dir: &Path) -> String {
     std::fs::read_to_string(plan_dir.join("related-plans.md")).unwrap_or_default()
-}
-
-/// Hard-error if the legacy v1 file is still present at `config_root`.
-/// The two filenames must not coexist, and the user must run the
-/// documented upgrade path before any read against the new path can
-/// succeed.
-fn error_if_legacy_file_present(config_root: &Path) -> Result<()> {
-    let legacy = config_root.join(LEGACY_RELATED_PROJECTS_FILE);
-    if legacy.exists() {
-        bail!(
-            "legacy v1 file '{}' is still present. Ravel-Lite has moved to the \
-             component-ontology v2 schema; v1 files are not auto-upgraded. \
-             Delete '{}' (and '{}/discover-proposals.yaml' if present), then run \
-             `ravel-lite state related-components discover --apply` to regenerate \
-             v2 edges with direct evidence. See docs/component-ontology.md §12.",
-            legacy.display(),
-            legacy.display(),
-            config_root.display(),
-        );
-    }
-    Ok(())
 }
 
 // ---------- CLI handlers ----------
@@ -322,26 +299,6 @@ mod tests {
         save_atomic(tmp.path(), &file).unwrap();
         let loaded = load_or_empty(tmp.path()).unwrap();
         assert_eq!(loaded, file);
-    }
-
-    #[test]
-    fn load_rejects_legacy_filename() {
-        let tmp = TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join(LEGACY_RELATED_PROJECTS_FILE),
-            "schema_version: 1\nedges: []\n",
-        )
-        .unwrap();
-        let err = load_or_empty(tmp.path()).unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("legacy v1 file"),
-            "error must name the legacy file: {msg}"
-        );
-        assert!(
-            msg.contains("discover --apply"),
-            "error must point at the regenerate command: {msg}"
-        );
     }
 
     #[test]
