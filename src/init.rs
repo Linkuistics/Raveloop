@@ -38,6 +38,7 @@ const EMBEDDED_FILES: &[EmbeddedFile] = &[
     EmbeddedFile { path: "survey-incremental.md", content: include_str!("../defaults/survey-incremental.md") },
     EmbeddedFile { path: "create-plan.md", content: include_str!("../defaults/create-plan.md") },
     EmbeddedFile { path: "discover-stage1.md", content: include_str!("../defaults/discover-stage1.md") },
+    EmbeddedFile { path: "discover-stage2.md", content: include_str!("../defaults/discover-stage2.md") },
     EmbeddedFile { path: "ontology.yaml", content: include_str!("../defaults/ontology.yaml") },
 ];
 
@@ -184,31 +185,42 @@ mod tests {
     }
 
     #[test]
-    fn every_default_coding_style_file_is_embedded() {
-        // Drift guard: if a new defaults/fixed-memory/coding-style-*.md is
-        // added on disk but no matching EmbeddedFile is registered, the new
-        // file silently fails to ship via `init`. This test catches that.
-        let defaults_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("defaults")
-            .join("fixed-memory");
-        let on_disk: Vec<String> = fs::read_dir(&defaults_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().into_string().ok())
-            .filter(|name| name.starts_with("coding-style-") && name.ends_with(".md"))
-            .collect();
-        assert!(!on_disk.is_empty(), "expected at least one coding-style-*.md on disk");
+    fn every_file_under_defaults_is_registered_in_embedded_files() {
+        // Drift guard: every file shipped under `defaults/` must have a
+        // matching `EmbeddedFile` entry, otherwise `init` and
+        // `init --force` silently fail to scaffold or refresh it — the
+        // file ships in the source tree but never reaches the user's
+        // config dir. This generalises an older coding-style-specific
+        // guard so any addition anywhere in `defaults/` is covered. A
+        // missing registration for `discover-stage2.md` is exactly the
+        // bug this replaces.
+        let defaults_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("defaults");
+        let mut on_disk: Vec<String> = Vec::new();
+        collect_files_recursively(&defaults_root, &defaults_root, &mut on_disk);
+        on_disk.sort();
+        assert!(!on_disk.is_empty(), "expected at least one file under defaults/");
 
-        let embedded: std::collections::HashSet<&str> = EMBEDDED_FILES
+        let embedded: std::collections::HashSet<&str> =
+            EMBEDDED_FILES.iter().map(|f| f.path).collect();
+        let missing: Vec<&String> = on_disk
             .iter()
-            .map(|f| f.path)
+            .filter(|p| !embedded.contains(p.as_str()))
             .collect();
-        for name in &on_disk {
-            let expected = format!("fixed-memory/{name}");
-            assert!(
-                embedded.contains(expected.as_str()),
-                "defaults/fixed-memory/{name} is not registered in EMBEDDED_FILES"
-            );
+        assert!(
+            missing.is_empty(),
+            "defaults/ file(s) missing from EMBEDDED_FILES: {missing:?}"
+        );
+    }
+
+    fn collect_files_recursively(root: &Path, current: &Path, out: &mut Vec<String>) {
+        for entry in fs::read_dir(current).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_files_recursively(root, &path, out);
+            } else if path.is_file() {
+                let rel = path.strip_prefix(root).unwrap();
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
         }
     }
 
