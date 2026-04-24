@@ -46,36 +46,44 @@ clear. Don't ask all questions at once; one at a time.
 
 ### 2. Draft the plan
 
-Produce the plan directory as follows. Every state file is initialised
-via its CLI verb rather than by writing raw Markdown, so the typed YAML
-is the source of truth from the first commit.
+The plan directory has already been scaffolded by `ravel-lite create`
+before this session started. The following files exist and are empty
+but valid:
 
-**phase.md** — plain text file containing just `work` (initial phase).
-Create with the {{TOOL_READ}}-equivalent write tool — `state set-phase`
-refuses when `phase.md` does not already exist. Example:
+- `{{PLAN}}/phase.md` containing exactly `work`
+- `{{PLAN}}/backlog.yaml` containing `tasks: []`
+- `{{PLAN}}/memory.yaml` containing `entries: []`
+- `{{PLAN}}/dream-baseline` containing `0`
 
-```bash
-echo work > {{PLAN}}/phase.md
-```
+**Do not overwrite these files directly.** Populate them through the
+state CLI only. This keeps the typed YAML as the source of truth from
+the first commit and prevents format drift.
 
-**backlog.yaml** — seeded via the CLI's bulk initialiser. Write a
-markdown file containing the initial task blocks (one per task) with
-the legacy backlog format — title (`### …`), `Category:`, `Status:`,
-`Dependencies:`, description, `Results: _pending_` — then run:
+**backlog** — for each initial task the user described, run:
 
 ```bash
-ravel-lite state backlog init {{PLAN}} --body-file <path-to-seed.md>
+ravel-lite state backlog add {{PLAN}} \
+  --title "<task title>" \
+  --category <category> \
+  --description-file <path-to-description.md>
 ```
 
-`init` refuses a non-empty backlog, so this runs exactly once at
-scaffolding time. Delete the seed file after the call succeeds.
+Pass `--dependencies <id1,id2>` when a task depends on another. Write
+the description body to a temp file; do not try to pass a multi-line
+description inline.
 
-**memory.yaml** — seeded via `ravel-lite state memory init {{PLAN}} --body-file <path>`
-if you have initial memory entries (rare for a new plan). Otherwise
-skip this step; memory starts empty.
+**memory** — rarely needed for a new plan. If the user has surfaced
+standing facts worth capturing up front (coding conventions, invariants,
+prior-incident context), add them via:
+
+```bash
+ravel-lite state memory add {{PLAN}} \
+  --title "<heading>" \
+  --body-file <path-to-body.md>
+```
 
 **session-log.yaml** — does not need explicit initialisation; the first
-`session-log append` creates it.
+`session-log append` creates it at the end of the first work cycle.
 
 **related-plans.md** (optional) — only if the user declared peer-project
 relationships. The file is read at phase-loop entry to seed the

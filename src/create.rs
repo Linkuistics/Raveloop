@@ -19,7 +19,6 @@ use anyhow::{Context, Result};
 use tokio::process::Command as TokioCommand;
 
 use crate::config::{load_agent_config, load_shared_config};
-use crate::dream::seed_dream_baseline_if_missing;
 
 /// Relative path to the create-plan prompt template inside a config dir.
 pub const CREATE_PLAN_PROMPT_PATH: &str = "create-plan.md";
@@ -83,6 +82,45 @@ pub fn validate_target(plan_dir: &Path) -> Result<PathBuf> {
     Ok(abs)
 }
 
+/// Scaffold the minimum set of files a plan directory must contain
+/// before the create-plan LLM session runs. Creates the directory
+/// itself (refusing if it already exists) and writes:
+///
+/// - `phase.md` = `work\n`
+/// - `backlog.yaml` = `tasks: []\n`
+/// - `memory.yaml` = `entries: []\n`
+/// - `dream-baseline` = `0`
+///
+/// Parent directories are NOT created here — `validate_target` handles
+/// that — so this function only succeeds when called against a freshly
+/// validated target path.
+///
+/// After scaffolding, the LLM populates backlog and memory via
+/// `ravel-lite state backlog add` / `state memory add` rather than
+/// writing YAML directly. This keeps the "no LLM-authored mechanical
+/// scaffolding" contract intact.
+pub fn scaffold_plan_dir(abs_plan_dir: &Path) -> Result<()> {
+    fs::create_dir(abs_plan_dir).with_context(|| {
+        format!(
+            "Failed to create plan directory {}",
+            abs_plan_dir.display()
+        )
+    })?;
+
+    let writes: [(&str, &[u8]); 4] = [
+        ("phase.md", b"work\n"),
+        ("backlog.yaml", b"tasks: []\n"),
+        ("memory.yaml", b"entries: []\n"),
+        ("dream-baseline", b"0"),
+    ];
+    for (name, bytes) in writes {
+        let path = abs_plan_dir.join(name);
+        fs::write(&path, bytes)
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+    Ok(())
+}
+
 pub async fn run_create(config_root: &Path, plan_dir: PathBuf) -> Result<()> {
     let shared = load_shared_config(config_root)?;
     if shared.agent != "claude-code" {
@@ -97,6 +135,13 @@ pub async fn run_create(config_root: &Path, plan_dir: PathBuf) -> Result<()> {
         .parent()
         .expect("validated parent exists")
         .to_path_buf();
+
+    // Runner-owned scaffolding runs BEFORE the claude spawn so the LLM
+    // never has to create mechanical files (phase.md, empty YAML shells,
+    // dream-baseline). The create-plan prompt directs it to populate
+    // backlog/memory exclusively through `state backlog add` /
+    // `state memory add` — no raw writes, no `state backlog init`.
+    scaffold_plan_dir(&abs_plan_dir)?;
 
     let prompt_path = config_root.join(CREATE_PLAN_PROMPT_PATH);
     let template = fs::read_to_string(&prompt_path)
@@ -133,21 +178,19 @@ pub async fn run_create(config_root: &Path, plan_dir: PathBuf) -> Result<()> {
         anyhow::bail!("claude exited with status {status}");
     }
 
-    // Post-hoc verification: the defining artifact of a plan is
-    // phase.md. Its presence confirms the session actually created
-    // the plan rather than, say, exiting early after conversation.
-    let phase_md = abs_plan_dir.join("phase.md");
-    if phase_md.exists() {
-        // Runner-owned scaffolding: any plan file that has a mechanical
-        // initial value goes here rather than in the create-plan prompt,
-        // so LLM authorship can't forget or drift.
-        seed_dream_baseline_if_missing(&abs_plan_dir);
-        println!("\nPlan created at {}", abs_plan_dir.display());
-    } else {
+    // Post-hoc verification: scaffolding guarantees phase.md exists
+    // from the pre-spawn write, so a still-empty backlog signals that
+    // the LLM session exited before populating any tasks. Anything
+    // stricter (e.g. requiring N tasks) would fight single-task plans.
+    let backlog = crate::state::backlog::read_backlog(&abs_plan_dir)
+        .context("Failed to read scaffolded backlog.yaml after claude session")?;
+    if backlog.tasks.is_empty() {
         eprintln!(
-            "\nwarning: {} does not exist — the session may have exited before the plan was written.",
-            phase_md.display()
+            "\nwarning: {} still has no tasks — the session may have exited before the plan was populated.",
+            abs_plan_dir.display()
         );
+    } else {
+        println!("\nPlan created at {}", abs_plan_dir.display());
     }
 
     Ok(())
@@ -237,5 +280,43 @@ mod tests {
         let resolved = validate_target(&target).unwrap();
         assert!(resolved.is_absolute(), "validate_target must return an absolute path");
         assert_eq!(resolved.file_name().unwrap(), "new-plan");
+    }
+
+    #[test]
+    fn scaffold_plan_dir_creates_directory_and_required_files() {
+        let tmp = TempDir::new().unwrap();
+        let plan = tmp.path().join("plan-name");
+        scaffold_plan_dir(&plan).unwrap();
+        assert!(plan.is_dir(), "plan directory must exist after scaffold");
+        assert_eq!(fs::read_to_string(plan.join("phase.md")).unwrap(), "work\n");
+        assert_eq!(fs::read_to_string(plan.join("backlog.yaml")).unwrap(), "tasks: []\n");
+        assert_eq!(fs::read_to_string(plan.join("memory.yaml")).unwrap(), "entries: []\n");
+        assert_eq!(fs::read_to_string(plan.join("dream-baseline")).unwrap(), "0");
+    }
+
+    #[test]
+    fn scaffold_plan_dir_writes_cli_parseable_state_files() {
+        // The YAML shells must parse via the canonical readers so the
+        // LLM's first `state backlog add` / `state memory add` lands on
+        // valid files rather than triggering a format error.
+        let tmp = TempDir::new().unwrap();
+        let plan = tmp.path().join("plan-name");
+        scaffold_plan_dir(&plan).unwrap();
+
+        let backlog = crate::state::backlog::read_backlog(&plan).unwrap();
+        assert!(backlog.tasks.is_empty(), "scaffolded backlog must have no tasks");
+
+        let memory = crate::state::memory::read_memory(&plan).unwrap();
+        assert!(memory.entries.is_empty(), "scaffolded memory must have no entries");
+    }
+
+    #[test]
+    fn scaffold_plan_dir_refuses_existing_directory() {
+        let tmp = TempDir::new().unwrap();
+        let err = scaffold_plan_dir(tmp.path()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("create plan directory"),
+            "scaffold_plan_dir must error when the plan dir already exists; got: {err:#}"
+        );
     }
 }
