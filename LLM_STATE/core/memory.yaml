@@ -502,7 +502,7 @@ entries:
 - id: backlog-transitions-token-computed-by-src-backlog-transitions-rs
   title: '{{BACKLOG_TRANSITIONS}} token computed by src/backlog_transitions.rs'
   body: |
-    `src/backlog_transitions.rs` diffs `backlog.yaml` at the work-baseline SHA against the current state. Covers status flips, result additions/modifications, added/deleted tasks, dependency changes, and handoff changes. Soft-fails to a human-readable placeholder on any error. Wired into `phase_loop.rs` `AnalyseWork` branch alongside `{{WORK_TREE_STATUS}}`; `analyse-work.md` step 9 directs the LLM to draw the commit title and body from this block.
+    `src/backlog_transitions.rs` diffs `backlog.yaml` at the work-baseline SHA against the current state. Covers status flips, result additions/modifications, added/deleted tasks, dependency changes, and handoff changes. Soft-fails to a human-readable placeholder on any error. Wired into `phase_loop.rs` `AnalyseWork` branch alongside `{{WORK_TREE_STATUS}}`; `analyse-work.md` presents the block as context for understanding what moved — the commit title must describe the shape of the changes (e.g., "Extract auth module", "Remove deprecated sync path"), not cite task ids. Step 9 explicitly forbids authoring commit titles or bodies around these task ids.
 - id: work-baseline-is-prior-triage-commit-triage-additions-bleed-into-backlog-transitions
   title: Work-baseline is prior triage commit; triage additions bleed into {{BACKLOG_TRANSITIONS}}
   body: |
