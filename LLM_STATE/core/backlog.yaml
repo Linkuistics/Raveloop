@@ -2,7 +2,7 @@ tasks:
 - id: implement-multi-commit-splitting-by-path-in-analyse-work
   title: Implement multi-commit splitting by path in analyse-work
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Implement multi-commit splitting in analyse-work so a single phase's diff can be committed as multiple logical commits when it spans clearly independent concerns.
@@ -36,6 +36,113 @@ tasks:
     ## Verification
 
     Run a full work → analyse-work cycle where the diff spans at least two independent top-level directories. Confirm the resulting git log shows multiple commits, each scoped to its partition with an informative message.
+  results: |
+    ## What was done
+
+    Replaced the analyse-work two-commit flow (LLM-issued source commit + Rust
+    plan-state commit via `commit-message.md`) with a single `commits.yaml`
+    spec authored by the LLM and applied by Rust. The spec is an ordered list
+    of `{paths, message}` entries; `git-commit-work` reads it, applies each
+    commit scoped to the project subtree, and removes the file.
+
+    ### Code changes
+
+    - `src/git.rs` (+~300 lines incl. tests):
+      - New `CommitSpec` / `CommitsSpec` serde types.
+      - New `apply_commits_spec(project_dir, plan_dir, plan_name, phase_name)`
+        entry point, plus private helpers `apply_parsed_spec`,
+        `commit_whole_subtree`, `unstage_subtree`.
+      - Spec file is read-and-deleted before any `git add` — prevents
+        `paths: ["."]` from sweeping the spec into its own commit and then
+        leaving a dirty "deleted" entry.
+      - Fallback on missing/malformed/empty spec: single catch-all commit of
+        the whole subtree with message `run-plan: {phase} ({plan})`.
+      - 10 new unit tests: single-commit, multi-commit ordering, missing/
+        malformed/empty-list fallback, glob pathspec scoping, untracked-file
+        staging, empty-match non-commit, spec-file cleanup, monorepo subtree
+        scoping.
+
+    - `src/phase_loop.rs`: `ScriptPhase::GitCommitWork` now calls
+      `apply_commits_spec(project_dir, plan_dir, …)` and iterates the
+      `Vec<CommitResult>` for logging. Reflect/Dream/Triage handlers are
+      unchanged — they keep using `git_commit_plan` because those phases
+      legitimately only touch plan-state files.
+
+    - `defaults/phases/analyse-work.md`:
+      - Step 6 rewritten from "stage + commit source" to "review tree and
+        revert accidental edits" — the LLM no longer issues any `git add` or
+        `git commit` itself.
+      - Step 9 rewritten from `commit-message.md` (plan-state-only commit)
+        to `commits.yaml` (ordered list covering the whole work diff).
+      - "One commit per cycle is the default" is stated explicitly, with
+        multi-commit splitting positioned as an escape hatch for genuinely
+        independent concerns — directly resolving the user's bug report that
+        plan-state should not get its own commit when source also changed.
+      - Title rules carry over: imperative mood, max 72 chars, no task ids /
+        session numbers / phase names / plan-bookkeeping framing.
+
+    ## How this resolves the adjacent bug
+
+    The user raised this task after observing commit messages like
+    "Record results and flip status for the completed task" appearing on
+    every plan-state commit — a shape-describing template that the prior
+    step 9 literally listed as a suggested example (`analyse-work.md:182`).
+    The fix is not "pick a better example" but "stop producing a separate
+    plan-state commit at all when source also changed". The new default —
+    one commit, source-describing message, plan-state folded in implicitly —
+    lands this directly.
+
+    ## Verification
+
+    - `cargo build`: clean.
+    - `cargo clippy --all-targets`: clean (no warnings; the crate has
+      `warnings = "deny"`).
+    - `cargo test --lib`: 552 tests pass, 0 failures.
+    - `cargo test --lib git::`: 19 tests pass including all 10 new
+      `apply_commits_spec_*` cases.
+    - Live end-to-end validation: deferred to the next analyse-work run,
+      which is the first real invocation of the new flow. The tree was
+      intentionally left dirty for analyse-work per the work-phase
+      hand-off convention — so that analyse-work commits its own
+      implementation using the commits.yaml mechanism it ships.
+
+    ## Deviations from the task description
+
+    - **Task framed the feature as multi-commit-first.** I inverted the
+      emphasis: "one commit per cycle is the default; splitting is an
+      escape hatch". Rationale: the user's adjacent bug report showed the
+      common case is "source + plan-state in one commit" and the rare case
+      is "genuinely independent concerns". The mechanism is identical; only
+      the prompt framing differs.
+    - **Task listed `commits.yaml` shape as `{ commits: [{ paths, message }] }`.**
+      Delivered exactly that. Pathspecs are passed to `git add` verbatim so
+      standard git features (globs, `:!` exclusions) work with no custom
+      glob engine.
+    - **Task suggested default partition by top-level directory.** That
+      guidance is in the prompt as guidance for the splitting case, but the
+      default is now the simpler "one entry with `paths: ["."]`".
+    - **Task mentioned depending on work-baseline-timing-fix landing first.**
+      That task is already `done` (`work-baseline` is the reflect commit
+      SHA as of commit `7b65870 run-plan: triage (core)`), so the dependency
+      is satisfied.
+
+    ## What this suggests next
+
+    - `docs/analysis/llm-work-audit.md` has stale references to
+      `commit-message.md` and rows A5/A9 that describe the pre-change
+      behaviour. Intentionally left untouched here — the audit is human
+      reference material, not wired to automation, and refreshing it is
+      orthogonal scope. A doc-sync pass is a candidate new backlog item.
+    - The adjacent task
+      `add-phase-summary-render-cli-verb-for-deterministic-triage-reflect-summaries`
+      contemplates a similar mechanical extraction for triage/reflect/dream
+      output labels. `commits.yaml` sets a precedent for "LLM writes a
+      declarative YAML spec; Rust applies it" that could inform that
+      design. Worth cross-referencing when that task comes up.
+    - `git_commit_plan` (used by reflect/dream/triage, still consumes
+      `commit-message.md`) and `apply_commits_spec` (used by work) share a
+      lot of shape. A future refactor could unify them, but the cost/
+      benefit is thin — they're 40 and 90 lines respectively.
 - id: add-backlog-render-cli-verb-for-deterministic-markdown-table-output
   title: Add 'backlog render' CLI verb for deterministic markdown-table output
   category: core

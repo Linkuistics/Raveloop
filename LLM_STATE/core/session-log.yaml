@@ -774,3 +774,18 @@ sessions:
     - Incremental noop path required extra care: without injection there, an older prior would carry LLM-inferred counts forward indefinitely. Added injection in the noop branch using already-loaded snapshots — cheap and self-healing.
     - Full `cargo test` (542 lib tests) and `cargo clippy --all-targets -- -D warnings` both clean.
     - The sibling tasks `add-backlog-render-cli-verb-for-deterministic-markdown-table-output` and `add-phase-summary-render-cli-verb-for-deterministic-triage-reflect-summaries` share the same extraction pattern established here (struct + method on the typed source of truth, injector over LLM output, prompt update) and are both now unblocked.
+- id: session-52
+  timestamp: 2026-04-24T14:10:10Z
+  phase: work
+  body: |
+    ### Session 52 (2026-04-24T14:10:10Z) — Implement commits.yaml spec-driven multi-commit flow
+
+    - Replaced analyse-work's two-commit model (LLM-issued source commit + Rust plan-state commit via `commit-message.md`) with a single `commits.yaml` spec authored by the LLM and applied by Rust via a new `apply_commits_spec` entry point in `src/git.rs`.
+    - The spec is an ordered list of `{paths, message}` entries; `git-commit-work` reads it, applies each commit scoped to the project subtree, and removes the file before staging to prevent self-inclusion.
+    - Fallback on missing/malformed/empty spec: single catch-all commit of the whole subtree — keeps the change backwards-compatible.
+    - `src/phase_loop.rs` updated so `ScriptPhase::GitCommitWork` calls `apply_commits_spec` and iterates the returned `Vec<CommitResult>`; Reflect/Dream/Triage handlers keep using `git_commit_plan` unchanged.
+    - `defaults/phases/analyse-work.md` rewritten: step 6 is now "review tree, revert accidentals" (LLM no longer issues any git commands); step 9 is now "write commits.yaml covering the whole work diff".
+    - 10 new unit tests added: single-commit, multi-commit ordering, missing/malformed/empty-list fallback, glob pathspec scoping, untracked-file staging, empty-match non-commit, spec-file cleanup, monorepo subtree scoping.
+    - Build, clippy, and tests all pass (552 tests).
+    - The root bug — every cycle producing a `run-plan: work` plan-state commit with a template-derived message like "Record results and flip status" — is resolved: plan-state is now folded into the single source-describing commit by default.
+    - What to try next: run a full work → analyse-work cycle on a real task that spans two top-level directories and verify the multi-commit path works end-to-end in practice.

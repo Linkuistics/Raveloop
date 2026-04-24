@@ -1,17 +1,15 @@
-id: session-51
-timestamp: 2026-04-24T12:49:27Z
+id: session-52
+timestamp: 2026-04-24T14:10:10Z
 phase: work
 body: |
-  ### Session 51 (2026-04-24T12:49:27Z) — Inject unblocked/blocked/received survey counts from Rust
+  ### Session 52 (2026-04-24T14:10:10Z) — Implement commits.yaml spec-driven multi-commit flow
 
-  - Implemented `PlanRowCounts` struct in `src/state/backlog/schema.rs` alongside `TaskCounts`, holding `unblocked`, `blocked`, and `received` fields computed in a single pass over `BacklogFile::plan_row_counts()`.
-  - Added `inject_plan_row_counts()` in `src/survey/schema.rs` mirroring `inject_task_counts`; wired into cold survey path, incremental survey path, and the `is_noop` fast-path so pre-extraction priors are self-healed on first contact with a current binary.
-  - Updated `defaults/survey.md` and `defaults/survey-incremental.md`: removed the three fields from the LLM emission schema, expanded the injected-fields NOTE, and updated the `recommended_invocation_order` rubric to reference the injected `received` count.
-  - Updated render key comment in `src/survey/render.rs` to reflect the handoff-based `received` semantics.
-  - Added `PlanRowCounts` to the `src/state/backlog/mod.rs` re-export list; added `plan_row_counts: None` initializer in test helpers in `compose.rs` and `delta.rs`.
-  - 9 unit tests pass: 7 in `schema.rs` (backlog) covering dep-readiness, unknown-dep-id safety, status=Blocked union, in_progress/done exclusion, handoff counting, and empty backlog; 2 in `schema.rs` (survey) covering overwrite of LLM values, unmatched-map skip, and serde-default deserialisation.
-  - Deviated from the task description's narrow `count_blocked = status==blocked` definition: inspection of `src/survey/render.rs:20` confirmed the column key uses the broader union (`status=blocked OR not_started with unmet deps`); preserving that keeps displayed numbers stable. The task description was the audit author's shorthand.
-  - Deviated from `received = tasks that transitioned to in_progress/done this cycle` (session-log diff): `SessionRecord` carries only `id/timestamp/phase/body` — no structured backlog snapshot. Used handoff-based definition instead, matching the semantic of the legacy `## Received` section.
-  - Incremental noop path required extra care: without injection there, an older prior would carry LLM-inferred counts forward indefinitely. Added injection in the noop branch using already-loaded snapshots — cheap and self-healing.
-  - Full `cargo test` (542 lib tests) and `cargo clippy --all-targets -- -D warnings` both clean.
-  - The sibling tasks `add-backlog-render-cli-verb-for-deterministic-markdown-table-output` and `add-phase-summary-render-cli-verb-for-deterministic-triage-reflect-summaries` share the same extraction pattern established here (struct + method on the typed source of truth, injector over LLM output, prompt update) and are both now unblocked.
+  - Replaced analyse-work's two-commit model (LLM-issued source commit + Rust plan-state commit via `commit-message.md`) with a single `commits.yaml` spec authored by the LLM and applied by Rust via a new `apply_commits_spec` entry point in `src/git.rs`.
+  - The spec is an ordered list of `{paths, message}` entries; `git-commit-work` reads it, applies each commit scoped to the project subtree, and removes the file before staging to prevent self-inclusion.
+  - Fallback on missing/malformed/empty spec: single catch-all commit of the whole subtree — keeps the change backwards-compatible.
+  - `src/phase_loop.rs` updated so `ScriptPhase::GitCommitWork` calls `apply_commits_spec` and iterates the returned `Vec<CommitResult>`; Reflect/Dream/Triage handlers keep using `git_commit_plan` unchanged.
+  - `defaults/phases/analyse-work.md` rewritten: step 6 is now "review tree, revert accidentals" (LLM no longer issues any git commands); step 9 is now "write commits.yaml covering the whole work diff".
+  - 10 new unit tests added: single-commit, multi-commit ordering, missing/malformed/empty-list fallback, glob pathspec scoping, untracked-file staging, empty-match non-commit, spec-file cleanup, monorepo subtree scoping.
+  - Build, clippy, and tests all pass (552 tests).
+  - The root bug — every cycle producing a `run-plan: work` plan-state commit with a template-derived message like "Record results and flip status" — is resolved: plan-state is now folded into the single source-describing commit by default.
+  - What to try next: run a full work → analyse-work cycle on a real task that spans two top-level directories and verify the multi-commit path works end-to-end in practice.
