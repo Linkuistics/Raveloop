@@ -531,3 +531,11 @@ entries:
   title: Analyse-work writes commits.yaml; git-commit-work applies it
   body: |
     `analyse-work.md` step 9 writes a `commits.yaml` spec (ordered `{paths, message}` list) covering the full work diff. `GitCommitWork` calls `apply_commits_spec` in `src/git.rs`, applies each commit scoped to the project subtree, then removes the spec file before staging to prevent self-inclusion. Fallback on missing/malformed/empty spec: single catch-all commit of the whole subtree. Plan-state is folded into the first/only source commit by default; no separate plan-state commit is produced. See: `Analyse-work commits all non-plan paths`.
+- id: phase-summary-render-computes-structural-labels-only
+  title: phase-summary render computes structural labels only
+  body: |
+    `state phase-summary render` computes structural labels only. Intent-required labels (e.g., a purposeful `[REPRIORITISED]`) are excluded because a diff alone cannot distinguish a deliberate reorder from an accidental one; the LLM preamble carries that reasoning. Structural label sets: `[DONE]`, `[NEW]`, `[OBSOLETE]`, `[REPRIORITISED]` (triage); `[NEW]`, `[OBSOLETE]`, `[STALE]` (reflect/dream); `[STATS]` (dream). Implementation in `src/phase_summary.rs`. See: `LLM reasoning preamble in reflect/dream/triage is a preserved feature`.
+- id: phase-summary-render-prompt-wiring-needs-orchestrator-baseline
+  title: phase-summary render prompt wiring needs orchestrator baseline
+  body: |
+    Triage/reflect/dream output-format sections cannot yet invoke `state phase-summary render` because the orchestrator does not write the baseline file the command must `cat`. Backlog task `wire-orchestrator-baseline-capture-for-reflect-dream-triage-phases` tracks the prerequisite. Wire prompts only after orchestrator baseline capture lands.
