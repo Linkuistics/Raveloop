@@ -455,3 +455,11 @@ entries:
   title: ontology/cli.rs imports from super, not related_components
   body: |
     `src/ontology/cli.rs` imports `{EdgeKind, LifecycleScope, EvidenceGrade}` via `super::`, not via `related_components` re-exports. Avoids a dependency inversion that would block Atlas's standalone ontology crate extraction.
+- id: create-spawn-binds-purpose-via-invariant-in-prompt-and-template
+  title: '`create` spawn binds purpose via INVARIANT in prompt and template'
+  body: |
+    `compose_create_prompt` in `src/create.rs` appends an INVARIANT paragraph after the path instruction. `defaults/create-plan.md` §0 leads with the invariant heading before the §1 clarification dialogue. Without both, the agent interprets a concrete problem description (bug report, feature request) as a pivot signal and skips plan creation. Single-task plans are explicitly named as valid to prevent "only one thing to do" being treated as a non-plan.
+- id: compose-prompt-asserts-plan-only-output-invariant-guards-the-create-invariant
+  title: '`compose_prompt_asserts_plan_only_output_invariant` guards the create INVARIANT'
+  body: |
+    `compose_prompt_asserts_plan_only_output_invariant` in `src/create.rs` tests asserts both key phrases are present in the composed prompt. Guards the INVARIANT binding against drift. See: `create` spawn binds purpose via INVARIANT in prompt and template.
