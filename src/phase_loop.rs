@@ -9,8 +9,8 @@ use crate::backlog_transitions::backlog_transitions;
 use crate::dream::{seed_dream_baseline_if_missing, should_dream, update_dream_baseline};
 use crate::format::phase_info;
 use crate::git::{
-    git_commit_plan, git_save_work_baseline, paths_changed_since_baseline, work_tree_snapshot,
-    working_tree_status,
+    apply_commits_spec, git_commit_plan, git_save_work_baseline, paths_changed_since_baseline,
+    work_tree_snapshot, working_tree_status,
 };
 use crate::prompt::compose_prompt;
 use crate::subagent::dispatch_subagents;
@@ -220,8 +220,16 @@ async fn handle_script_phase(
         ScriptPhase::GitCommitWork => {
             append_session_log(plan_dir)?;
             write_phase(plan_dir, Phase::Llm(LlmPhase::Reflect))?;
-            let result = git_commit_plan(plan_dir, &name, "work")?;
-            log_commit(ui, "work", &scope, &result);
+            // Unlike the reflect/dream/triage commits (which only touch
+            // plan-state files and use `git_commit_plan`), the work commit
+            // spans the whole subtree — source, docs, config, and plan
+            // state together. `apply_commits_spec` reads commits.yaml and
+            // applies one-or-more scoped commits in order, falling back
+            // to a single catch-all when no spec is present.
+            let results = apply_commits_spec(project_dir, plan_dir, &name, "work")?;
+            for result in &results {
+                log_commit(ui, "work", &scope, result);
+            }
             warn_if_project_tree_dirty(ui, project_dir, plan_dir);
             Ok(true)
         }
