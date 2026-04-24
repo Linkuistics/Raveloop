@@ -274,7 +274,7 @@ entries:
 - id: planrow-carries-duplicate-count-fields-pending-migration
   title: '`PlanRow` carries duplicate count fields pending migration'
   body: |
-    `PlanRow` has both Rust-injected `task_counts: Option<TaskCounts>` and LLM-inferred `unblocked`/`blocked`/`done`/`received` fields. The LLM fields require dep-traversal reasoning; keep until downstream consumers migrate to `task_counts`.
+    `PlanRow` has both Rust-injected `task_counts: Option<TaskCounts>` and LLM-inferred `unblocked`/`blocked`/`done`/`received` fields. `unblocked`/`blocked`/`received` require full-backlog dep-traversal and are top extraction candidates (see: `Triage prose-dep reconciliation is a mechanical scan`). Keep until downstream consumers migrate to `task_counts`.
 - id: state-session-log-provides-full-verb-surface
   title: '`state session-log` provides full verb surface'
   body: |
@@ -483,3 +483,15 @@ entries:
   title: Clap empty-string normalisation belongs at dispatch boundary
   body: |
     Clap `value_delimiter` + `--arg ""` hands back `[""]`, not `[]`. Unit tests miss this (they receive `&[String]` directly and never exercise the clap parse path); only CLI integration tests surface it. Normalise empty strings at dispatch in `main.rs`, not inside the library verb, to keep the library contract clean.
+- id: triage-prose-dep-reconciliation-is-a-mechanical-scan
+  title: Triage prose-dep reconciliation is a mechanical scan
+  body: |
+    Triage currently walks all tasks to reconcile prose-mentioned deps with task dependency fields. Pure deterministic scan; extractable to a `backlog lint-dependencies` Rust verb.
+- id: analyse-work-stale-status-repair-is-a-mechanical-scan
+  title: Analyse-work stale-status repair is a mechanical scan
+  body: |
+    Analyse-work currently walks all tasks to flip stale in-progress/blocked statuses. Pure deterministic scan; extractable to a `backlog repair-stale-statuses` Rust verb.
+- id: datalog-evaluator-deferred-imperative-verbs-sufficient
+  title: Datalog evaluator deferred; imperative verbs sufficient
+  body: |
+    A Datalog query evaluator for backlog queries was considered and explicitly deferred. All current LLM query needs (dep-traversal, count derivation) are satisfiable by purpose-built imperative Rust verbs; Datalog adds complexity without corresponding expressiveness gain.
