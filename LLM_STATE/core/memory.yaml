@@ -170,7 +170,7 @@ entries:
 - id: ravel-lite-survey-emits-structured-yaml
   title: '`ravel-lite survey` emits structured YAML'
   body: |
-    `src/survey/schema.rs` defines the output schema with `Serialize` derives and a `schema_version` marker. `input_hash` is seeded in Rust post-parse. `task_counts` is injected by Rust via `inject_task_counts` / `collect_task_counts`; survey prompts forbid the LLM from emitting `task_counts`. `survey-format` subcommand renders YAML output to human-readable form.
+    `src/survey/schema.rs` defines the output schema with `Serialize` derives and a `schema_version` marker. `input_hash` is seeded in Rust post-parse. `task_counts` is injected by Rust via `inject_task_counts` / `collect_task_counts`; `unblocked`, `blocked`, and `received` are injected via `inject_plan_row_counts` / `plan_row_counts`. Survey prompts forbid the LLM from emitting any of these injected fields. `survey-format` subcommand renders YAML output to human-readable form. See: `PlanRowCounts injects unblocked/blocked/received into survey`.
 - id: survey-compose-wraps-content-in-yaml-fences
   title: Survey compose wraps content in YAML fences
   body: |
@@ -270,11 +270,7 @@ entries:
 - id: backlogfile-task-counts-injects-counts-into-survey
   title: '`BacklogFile::task_counts` injects counts into survey'
   body: |
-    `TaskCounts { total, not_started, in_progress, done, blocked }` lives in `state::backlog::schema`. `collect_task_counts` gathers per-plan counts; `inject_task_counts` in `survey/schema.rs` writes them onto `PlanRow`. Survey prompts (`survey.md`, `survey-incremental.md`) explicitly forbid the LLM from emitting `task_counts`.
-- id: planrow-carries-duplicate-count-fields-pending-migration
-  title: '`PlanRow` carries duplicate count fields pending migration'
-  body: |
-    `PlanRow` has both Rust-injected `task_counts: Option<TaskCounts>` and LLM-inferred `unblocked`/`blocked`/`done`/`received` fields. `unblocked`/`blocked`/`received` require full-backlog dep-traversal and are top extraction candidates (see: `Triage prose-dep reconciliation is a mechanical scan`). Keep until downstream consumers migrate to `task_counts`.
+    `TaskCounts { total, not_started, in_progress, done, blocked }` lives in `state::backlog::schema`. `collect_task_counts` gathers per-plan counts; `inject_task_counts` in `survey/schema.rs` writes them onto `PlanRow`. Survey prompts (`survey.md`, `survey-incremental.md`) explicitly forbid the LLM from emitting `task_counts`. See: `PlanRowCounts injects unblocked/blocked/received into survey` for the analogous dep-traversal-based injection.
 - id: state-session-log-provides-full-verb-surface
   title: '`state session-log` provides full verb surface'
   body: |
@@ -528,3 +524,15 @@ entries:
   title: Headless output filters `---` HR lines in Rust
   body: |
     `src/format.rs` strips bare `---` horizontal-rule lines from headless phase output (reflect, dream, triage). Only `---` is filtered; `***` and `___` variants are not (the reported issue was `---` only). Replaces a fragile prose instruction that asked the LLM not to emit HR separators.
+- id: planrowcounts-injects-unblocked-blocked-received-into-survey
+  title: PlanRowCounts injects unblocked/blocked/received into survey
+  body: |
+    `PlanRowCounts { unblocked, blocked, received }` lives in `state::backlog::schema`. `BacklogFile::plan_row_counts()` computes all three in one dep-traversal pass. `inject_plan_row_counts()` in `survey/schema.rs` writes them onto `PlanRow`; wired into cold path, incremental path, and the `is_noop` fast-path so stale priors self-heal on first contact with a current binary. Survey prompts forbid the LLM from emitting `unblocked`, `blocked`, or `received`. See: `survey blocked count is status-blocked-or-dep-unmet union`; `survey received count is handoff-based not session-diff`.
+- id: survey-received-count-is-handoff-based-not-session-diff
+  title: survey received count is handoff-based not session-diff
+  body: |
+    `PlanRow.received` counts tasks in the current backlog that carry handoff data (a `[HANDOFF]` block). It is NOT the count of tasks that transitioned to in_progress/done this cycle. `SessionRecord` carries only id/timestamp/phase/body — no structured backlog snapshot — making a cycle-diff computation impossible. See: `PlanRowCounts injects unblocked/blocked/received into survey`.
+- id: survey-blocked-count-is-status-blocked-or-dep-unmet-union
+  title: survey blocked count is status-blocked-or-dep-unmet union
+  body: |
+    `PlanRow.blocked` (computed by `plan_row_counts()`) counts tasks with `status=blocked` OR `status=not_started` with at least one unmet dependency. Matches the `blocked` column key in `src/survey/render.rs:20`. Narrow `status==blocked`-only definitions undercount. See: `PlanRowCounts injects unblocked/blocked/received into survey`.
