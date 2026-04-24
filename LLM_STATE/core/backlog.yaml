@@ -1,47 +1,8 @@
 tasks:
-- id: extract-component-ontology-to-workspace-crate-phase-b
-  title: Extract component-ontology to workspace crate (Phase B)
-  category: refactor
-  status: not_started
-  dependencies: []
-  description: |
-    **Priority: LOW (deferred).** Phase B of the extraction plan. Do not start until entry criteria below are met.
-
-    **Depends on:** the CLI + Stage 1 hints task.
-
-    ## Entry criteria (from `docs/component-ontology.md` §11.2)
-
-    - Phase A (the v2 ontology in `src/ontology/`) has been stable for ≥1 release.
-    - A second consumer inside Ravel-Lite is on the near horizon (e.g., a phase prompt renderer that walks the graph to inject context about a plan's component neighbours). If no second consumer is imminent, do not extract — the single-consumer crate is unjustified churn.
-
-    ## Scope
-
-    - Move `src/ontology/` → `crates/component-ontology/` in a Cargo workspace.
-    - Convert the root `Cargo.toml` to a workspace manifest if it isn't already.
-    - Update Ravel-Lite's `Cargo.toml` to depend on `component-ontology` via `path = "crates/component-ontology"`.
-    - Verify zero Ravel-Lite-specific concepts in the extracted crate: no `LLM_STATE`, no phases, no plans, no backlog, no subagents. The crate's universe is edges, kinds, lifecycles, components, evidence.
-    - Verify the dependency list is minimal (§11.4): `serde`, `serde_yaml`, `anyhow`, `thiserror` only.
-    - Publish `defaults/ontology.yaml` as a crate-vendored file (include via `include_str!` or ship in the crate root and have Ravel-Lite copy at install).
-    - Ship crate at `0.1.0` with a short README describing the standalone use case.
-    - Verify `cargo build -p component-ontology` succeeds independently.
-    - Verify all Ravel-Lite tests still pass.
-
-    ## Out of scope
-
-    - Publication to crates.io (Phase C; deferred until a second out-of-repo consumer exists).
-    - Renaming the crate. `component-ontology` is intentionally the final name.
-    - Introducing a trait registry for edge kinds — the flat enum suffices; premature.
-
-    ## Exit criteria
-
-    - Workspace builds and tests cleanly.
-    - `component-ontology` crate has a standalone README documenting its public API.
-    - No Ravel-Lite code imports `ravel_lite::ontology::…`; all imports route through `component_ontology::…`.
-    - Semver policy documented in the crate README.
 - id: extract-parse-edge-kind-parse-lifecycle-scope-parse-evidence-grade-into-crate-ontology-cli
   title: Extract parse_edge_kind/parse_lifecycle_scope/parse_evidence_grade into crate::ontology::cli
   category: refactor
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Extract `parse_edge_kind`, `parse_lifecycle_scope`, and `parse_evidence_grade` from `src/main.rs` into a new `crate::ontology::cli` submodule (`src/ontology/cli.rs`).
@@ -60,3 +21,82 @@ tasks:
     - `cargo build --release` clean.
     - `cargo test` passes.
     - `main.rs` has zero definitions of these three helpers.
+  results: |
+    ## Summary
+
+    Moved `parse_edge_kind`, `parse_lifecycle_scope`, `parse_evidence_grade` out of `src/main.rs` into a new `src/ontology/cli.rs` submodule. Both dispatchers (`dispatch_related_components`, `dispatch_discover_proposals`) now import from `crate::ontology::cli`.
+
+    ## Changes
+
+    - **New:** `src/ontology/cli.rs` — the three parsers plus six unit tests covering the success and "unknown kebab" failure paths for each. The failure-message test also asserts the vocabulary enumeration stays exhaustive.
+    - **Modified:** `src/ontology/mod.rs` — adds `pub mod cli;`.
+    - **Modified:** `src/main.rs` — removes the three function definitions; adds a single `use crate::ontology::cli::{…}` import alongside the existing `use crate::…` block.
+
+    ## Implementation notes
+
+    - Inside `cli.rs` the parsers reference `super::{EdgeKind, LifecycleScope, EvidenceGrade}` rather than `crate::ontology::…` or `related_components::…`. This removes the cycle-ish hop through `related_components`'s re-exports that the previous main.rs definitions used and keeps the new module crate-path-free, which matters if/when Atlas consumes a standalone ontology crate.
+    - No behaviour change: the error message strings, the enumerated vocabularies, and the return types are identical. Six new unit tests lock that in.
+
+    ## Verification
+
+    - `cargo build --release` — clean, 13.77s.
+    - `cargo test` — every test binary passes; zero failures across 538+ tests.
+    - `cargo test ontology::cli` — the six new unit tests execute and pass.
+    - `grep "fn parse_edge_kind\|fn parse_lifecycle_scope\|fn parse_evidence_grade" src/main.rs` — empty; main.rs holds zero definitions of these helpers.
+
+    ## What this suggests next
+
+    The third-consumer situation the task anticipated still hasn't arrived; the extraction was prophylactic. Watch for a CLI verb that takes an ontology kind/lifecycle/grade but lives outside the two existing dispatchers — that's the signal the prophylaxis was justified. If none appears after another couple of ontology-touching tasks, the module is cheap enough to keep regardless.
+- id: remove-deprecated-state-related-projects-alias-and-retire-migration-doc
+  title: Remove deprecated state related-projects alias and retire migration doc
+  category: refactor
+  status: done
+  dependencies: []
+  description: |
+    Remove the deprecated `state related-projects` CLI alias and retire the `component-ontology-migration.md` doc. The one-release-cycle grace period was self-imposed for hypothetical external consumers; the project has no release tags and no external users, so the grace period has no beneficiaries.
+
+    ## Scope
+
+    - Delete the `RelatedProjects` variant from the `StateCommands` clap enum and its arm in `dispatch_state` in `src/main.rs`.
+    - Delete the `deprecated_related_projects_alias_warns_and_forwards` test in `tests/state_related_components.rs`.
+    - Fix stale prose: `tests/state_related_components.rs` module comment, `tests/discover.rs` header comment.
+    - Delete `docs/component-ontology-migration.md` — §9 conditions 1 and 3 are now satisfied; condition 2 (no v1 files in user config dirs) is a one-shot check for the maintainer.
+
+    ## Out of scope
+
+    - `LEGACY_RELATED_PROJECTS_FILE` constant in `src/related_components.rs` stays: it is the hard-error message when a v1 file is found on disk, not part of the alias surface.
+
+    ## Exit criteria
+
+    - `cargo build --release` clean.
+    - `cargo test` passes.
+    - `grep 'state related-projects\|RelatedProjects' src/ tests/ docs/` returns zero matches (other than `related_components` / `related-components-migration` strings that happen to share a substring).
+  results: |
+    ## Summary
+
+    Removed the deprecated `state related-projects` CLI alias and deleted `docs/component-ontology-migration.md`. The one-release-cycle grace period in the migration doc was paper-only — the project has never cut a versioned release since the alias landed in commit `7db7307`, so the grace period never started; and with no external consumers, no grace period was meaningfully needed.
+
+    ## Changes
+
+    - **`src/main.rs`** — deleted the `RelatedProjects` variant from the `StateCommands` clap enum (lines 264-270) and the matching forwarding arm in `dispatch_state` (lines 806-813). Net removal of ~15 lines.
+    - **`tests/state_related_components.rs`** — deleted `deprecated_related_projects_alias_warns_and_forwards` (~29 lines). Module comment simplified to drop the "plus the deprecated alias" clause. 14 tests remain, all pass.
+    - **`tests/discover.rs`** — header comment fixed: `state related-projects discover` → `state related-components discover`.
+    - **`docs/component-ontology-migration.md`** — deleted. Per §9 of that doc, "After sunset, the only surviving doc is `docs/component-ontology.md`" — the reference spec now stands alone.
+
+    ## Out of scope, intentionally
+
+    - `LEGACY_RELATED_PROJECTS_FILE` constant in `src/related_components.rs`: stays. It is the error-message path for a v1 file still on disk in a user's config dir, not part of the alias surface. The `loading_legacy_v1_filename_hard_errors_with_actionable_message` test continues to guard this.
+
+    ## Verification
+
+    - `cargo build --release` — clean, 7.83s.
+    - `cargo test` — all test binaries pass, zero failures. Notable counts: 480 unit tests, 28 integration tests, 14 `state_related_components`, 1 `discover` e2e, 10 `state_backlog`, 4 `state_memory`, 4 `state_session_log`.
+    - `grep 'state related-projects\|RelatedProjects' src/ tests/ docs/` — zero matches (excluding substring matches on `related_components`).
+
+    ## Maintainer follow-up
+
+    Migration doc §9 condition 2 was: "No remaining v1 `related-projects.yaml` files are known to exist in any user config directory the maintainer can reach." That is a one-shot check outside the code — worth running `find ~ -name 'related-projects.yaml' -not -path '*/target/*' -not -path '*/.git/*'` on the main dev machine to confirm, and deleting any hits (the loader rejects them with an actionable error anyway, so stragglers are a nuisance rather than a risk).
+
+    ## What this suggests next
+
+    No immediate follow-up. The v1→v2 ontology migration is now fully retired at the source level. If a future ontology bump (v3) arises, the pattern is set: introduce an alias, cut at least one release, remove the alias, retire the migration doc.

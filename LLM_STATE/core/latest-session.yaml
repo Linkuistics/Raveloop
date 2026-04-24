@@ -1,11 +1,12 @@
-id: session-34
-timestamp: 2026-04-24T01:39:40Z
+id: session-35
+timestamp: 2026-04-24T02:05:18Z
 phase: work
 body: |
-  ### Session 34 (2026-04-24T01:39:40Z) — Stage 2 discover: CLI-per-proposal replaces YAML boundary
+  ### Session 35 (2026-04-24T02:05:18Z) — Ontology CLI extraction and deprecated alias removal
 
-  - **What was attempted:** Implemented `stage-2-discover-emit-proposals-via-cli-drop-yaml-boundary` — replace Stage 2's write-a-YAML-then-serde-parse flow with per-edge `ravel-lite state discover-proposals add-proposal` CLI invocations, mirroring the main phase-loop pattern.
-  - **What worked:** Full implementation complete. New `src/state/discover_proposals/` module (mod.rs + verbs.rs) with four validation layers: clap enum parsing, participant count, catalog-membership, `Edge::validate()`, and exact-duplicate rejection. `run_stage2` in `src/discover/stage2.rs` now pre-initialises `discover-proposals.yaml`, spawns claude with `--allowed-tools Bash --add-dir <config_root>`, and loads the accumulated file after exit. The `RawStage2Output` struct and post-hoc YAML parse are gone. `defaults/discover-stage2.md` prompt rewrites the Output section to CLI invocation template. Integration test shim in `tests/discover.rs` now issues `add-proposal` CLI calls for Stage 2 (Stage 1 unchanged). All 536 tests pass; 7 new unit tests for add-proposal, 1 regression guard asserting `{{PROPOSALS_OUTPUT_PATH}}` absent and `add-proposal` present in the shipped prompt.
-  - **What didn't work:** N/A — implementation proceeded cleanly in one session with no significant detours.
-  - **What this suggests next:** The `fake-claude-stage-2-shim-greedily-extracts-first-yaml-path` memory entry (if it still exists) is now stale and should be deleted. If real discover runs surface v1 edge kinds post-deployment, a negative-prompt stanza ("These were v1 and are forbidden: parent-of, sibling-of, child-of") could be added to reinforce the closed vocab. The `parse_edge_kind`/`parse_lifecycle_scope`/`parse_evidence_grade` helpers in `src/main.rs` are now used by two dispatchers and could be extracted to `crate::ontology::cli` — small refactor, not blocking.
-  - **Key learnings:** Pre-initialising the proposals file before spawning claude cleanly handles the "LLM makes zero calls" edge case (file is valid-but-empty, load succeeds). Seeding Stage 1 failures into the initial file means they survive the CLI round-trip regardless of Stage 2 output. The `--add-dir` flag is required alongside `--allowed-tools Bash` when `--setting-sources project,local` is in effect — without it, the subprocess's writes to `<config_root>` are blocked (established pattern from the memory entry about claude spawn with file-write).
+  - Attempted and completed two refactor tasks: (1) extract three ontology parse helpers from `src/main.rs` into a new `src/ontology/cli.rs` submodule, and (2) remove the deprecated `state related-projects` CLI alias along with its test and migration doc.
+  - Both tasks succeeded fully. `cargo build --release` clean, `cargo test` passing (538+ tests total including 6 new unit tests in `ontology::cli`).
+  - Also deleted five stale design/plan documents (`docs/r7-related-projects-discovery-design.md`, `docs/r7-related-projects-discovery-plan.md`, `docs/structured-backlog-r1-plan.md`, `docs/structured-plan-state-design.md`, `docs/survey-pivot-design.md`) that had been superseded by the current backlog-driven workflow — net removal of ~6.6k lines of obsolete docs.
+  - `docs/architecture.md` and `docs/component-ontology.md` were updated for accuracy (expanded file tree, corrected stale descriptions).
+  - Key learning from the `cli.rs` extraction: the new module uses `super::{EdgeKind, LifecycleScope, EvidenceGrade}` rather than going through `related_components`'s re-exports, which avoids a subtle dependency inversion if/when Atlas extracts a standalone ontology crate.
+  - No blockers. Backlog is now empty after these two completions.
