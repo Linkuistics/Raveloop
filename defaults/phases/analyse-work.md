@@ -1,9 +1,10 @@
 You are running the ANALYSE-WORK phase of a multi-session backlog plan.
 This phase runs headlessly immediately after the interactive work phase
 exits. Its job is to examine the actual changes made during the work
-session, **commit every source-file change on behalf of the session**,
-and produce a session log entry plus a git commit message for the
-plan-state files.
+session, produce a session log entry, and author a `commits.yaml` spec
+that the subsequent `git-commit-work` script phase will apply to the
+work tree. You never issue `git commit` yourself — staging and
+committing is entirely the script phase's responsibility.
 
 You are analysing what happened from the ground truth (the diff), not
 from an LLM's self-report. The diff is the authoritative record of what
@@ -39,7 +40,7 @@ as baseline context.
 
 **Do not author commit titles or bodies around these task ids.** Commit
 messages describe the work that happened in the tree, not the backlog
-bookkeeping that framed it — see step 6 and step 9 for the full rule.
+bookkeeping that framed it — see step 9 for the full rule.
 
 ## Required reads
 
@@ -73,36 +74,29 @@ bookkeeping that framed it — see step 6 and step 9 for the full rule.
    unblocks `blocked` tasks whose structural dependencies are all now
    `done`. It emits a YAML report of any repairs applied — if a repair
    occurred and it materially changed the backlog shape, note the
-   *kind* of repair in the plan-state commit body (step 9) without
+   *kind* of repair in the relevant commit body (step 9) without
    naming specific task ids. If no drift is present this step is a
    no-op.
 
-6. **Commit the source-file changes.** The work phase no longer commits
-   its own source edits — that is this phase's responsibility. Using the
-   work-tree snapshot above as ground truth:
+6. **Review the work tree; revert accidental edits.** You do not
+   issue `git add` or `git commit` in this phase — the subsequent
+   `git-commit-work` script phase stages and commits everything per
+   the `commits.yaml` spec you write in step 9. Your job here is only
+   to clean the tree of anything you do NOT want committed:
 
-   - Stage every path outside `{{PLAN}}/` that appears in the snapshot
-     with `git add <path>` (or `git add -A -- :!{{PLAN}}` if the set is
-     large — but explicit paths are preferred).
-   - Commit with a descriptive message in the imperative mood that
-     summarises the session's code/docs/config changes. The message
-     describes what changed in the tree — the function added, the
-     behaviour fixed, the file renamed. **Do not reference backlog
-     task ids, session numbers, or phase names** (no
-     `fix-work-baseline`, no `session 47`, no
-     `during analyse-work`). Those belong to the plan state, not the
-     source history. This is the commit that must make sense to anyone
-     reading `git log` a year from now; it stands on its own without
-     the plan-execution context. The plan-bookkeeping commit happens
-     separately from `commit-message.md` (step 9).
-   - If any path in the snapshot is intentionally **not** committed
-     (e.g. a user scratch file, an accidental edit that should be
-     reverted), you MUST name each such path explicitly in the session
-     record (next step) with a one-sentence justification. Unjustified
-     uncommitted paths will trigger a TUI warning.
+   - Using the `{{WORK_TREE_STATUS}}` snapshot as ground truth,
+     identify any accidental edits — a debug print left in, a stray
+     save in a file you didn't mean to touch, an experimental change
+     the session decided against.
+   - Revert tracked accidentals with `git checkout -- <path>` and
+     remove untracked accidentals with `rm <path>`.
+   - Anything still in the tree after this step will end up committed
+     by `git-commit-work`, so be deliberate.
 
-   Do not commit files inside `{{PLAN}}/` here — those are reserved for
-   the subsequent `git-commit-work` script phase.
+   If something is intentionally uncovered by any spec entry in step
+   9 (rare), name it in the session record with a one-sentence
+   justification. Uncommitted residue after `git-commit-work` applies
+   the spec triggers a TUI warning.
 
 7. Determine the session number by counting records returned from
    `ravel-lite state session-log list {{PLAN}}`, then add one. Record
@@ -160,47 +154,91 @@ bookkeeping that framed it — see step 6 and step 9 for the full rule.
      hand-off blocks from completed tasks before deleting them (see
      `defaults/phases/triage.md` step 3).
 
-9. Write `{{PLAN}}/commit-message.md` with a git commit message for the
-   **plan-state commit** (the one `git-commit-work` will make next).
-   `commit-message.md` is a one-shot scratch file, not a
-   state-CLI-managed one, so write it directly. This is distinct from
-   the source-file commit you made in step 6 and narrates the plan
-   bookkeeping itself — the *kinds* of mutations that happened in
-   `backlog.yaml`, `memory.yaml`, and the session log. Keep it tight:
+9. Write `{{PLAN}}/commits.yaml` with an ordered list of the commits
+   you want `git-commit-work` to apply. `commits.yaml` is a one-shot
+   scratch file, not a state-CLI-managed one, so write it directly;
+   the script phase reads it, applies each entry in order, and
+   removes the file afterwards.
 
+   Shape:
+
+   ```yaml
+   commits:
+     - paths: [<git pathspec>, <git pathspec>, ...]
+       message: |
+         <title — imperative mood, max 72 chars>
+
+         <optional body, 2-5 lines>
    ```
-   <title — imperative mood, max 72 chars, describes the kind of bookkeeping>
 
-   <body — what kinds of bookkeeping and why, 2-5 lines>
+   Pathspecs are passed straight to `git add`, so standard git
+   features work: literal paths, globs (`src/**`), and exclusions
+   (`:!src/generated/`). Use `"."` to mean "everything in the
+   subtree".
+
+   **One commit per cycle is the default.** Unless the session
+   genuinely spanned two independent concerns, write a single entry
+   covering the whole subtree. The commit then spans source, docs,
+   config, AND plan-state files together:
+
+   ```yaml
+   commits:
+     - paths: ["."]
+       message: |
+         Wire the greeting path through the new renderer
+
+         Renames the intermediate struct to match its new role and
+         updates the two call sites. Plan-state updates for this
+         session are included.
    ```
 
-   **Describe the change by shape, not by slot.** Use the
-   `Backlog transitions since baseline` block above to understand what
-   moved, then summarise in generic terms — the *kind* of change, not
-   the identities it applied to. Good titles:
+   Plan-state mutations (backlog status flip, results block, session
+   log append) are implicit in every analyse-work cycle — they must
+   NOT drive the commit title. The title is about what changed in
+   the tree; bookkeeping is background noise.
 
-   - `Record results and flip status for the completed task`
-   - `Add two new backlog tasks and update one description`
-   - `Promote a hand-off to the backlog`
-   - `Update backlog and memory` (fine as a catch-all for mixed sessions)
+   **Split only when the diff genuinely spans independent concerns.**
+   If the session legitimately covered two unrelated tracks — a
+   source fix in `src/` plus an unrelated docs update in `docs/`
+   that would confuse a reader if bundled — split into multiple
+   entries partitioned by top-level directory (`src/`, `docs/`,
+   `tests/`, `defaults/`, `scripts/`, `{{PLAN}}/`). If a single file
+   mixes independent concerns, that is a cue the work was scoped
+   wrong; bundle it into one commit with an honest message and
+   split along semantic lines next cycle.
 
-   Bad titles — do NOT use these patterns:
+   **Plan-state-only cycles.** If the only changed paths are under
+   `{{PLAN}}/`, frame the title around the *shape* of the plan-state
+   mutation — e.g. `Update backlog description and reprioritise`,
+   `Promote a hand-off to the backlog`, `Reprioritise backlog and
+   archive a hand-off`. "Record results and flip status" is not a
+   useful title — every cycle does that — so describe what actually
+   moved instead.
 
-   - `Mark fix-work-baseline done, record results` — names a task id
-   - `Add add-backlog-repair-stale-statuses to backlog` — names a task id
-   - `run-plan: triage (core)` — names a phase and plan name
-   - `Session 47 bookkeeping` — names a session number
+   **Title rules** (apply to every entry):
 
-   The body expands on the kinds of bookkeeping that happened and why,
-   in one or two sentences. It does not name specific task ids, session
-   numbers, phase names, or plan slugs. If the only way to describe the
-   change is by task id, the commit scope is wrong — split the underlying
-   work along semantic lines first.
+   - Imperative mood, max 72 chars.
+   - Describe what changed in the tree — the function added, the
+     behaviour fixed, the file renamed, the shape of plan-state
+     movement.
+   - Do NOT reference backlog task ids (`fix-work-baseline`),
+     session numbers (`session 47`), phase names
+     (`during analyse-work`), or plan-bookkeeping framing
+     (`mark task X done, record results`).
+   - If the only way to describe the change is by task id, the
+     commit scope is wrong — split the underlying work along
+     semantic lines first.
 
-   The title should still be specific enough to be useful in
-   `git log --oneline` — it describes the *shape* of the bookkeeping
-   (new tasks added, statuses flipped, a hand-off promoted), just not
-   the identities involved.
+   **Coverage.** Every path in the work-tree snapshot must be
+   reachable from at least one entry's `paths` list (or intentionally
+   reverted in step 6). Uncommitted residue after the script phase
+   applies the spec triggers a TUI warning.
+
+   **Fallback.** If you omit `commits.yaml` entirely or the file is
+   malformed, `git-commit-work` falls back to a single catch-all
+   commit of the whole subtree under the default message
+   `run-plan: work ({{PLAN}})`. This is a safety net, not an
+   intended path — always write the spec.
 
 10. Run `ravel-lite state set-phase {{PLAN}} git-commit-work`.
 
@@ -208,5 +246,5 @@ bookkeeping that framed it — see step 6 and step 9 for the full rule.
 
 ## Output format
 
-After completing all writes, print nothing. The driver displays the
-commit message.
+After completing all writes, print nothing. The driver displays each
+commit's subject line as the script phase applies the spec.
