@@ -30,7 +30,7 @@ entries:
 - id: analyse-work-commits-all-non-plan-paths
   title: Analyse-work commits all non-plan paths
   body: |
-    Analyse-work stages and commits every path outside the plan dir, or justifies each skipped path in the session log.
+    Analyse-work stages and commits every path outside the plan dir, or justifies each skipped path in the session log. Mechanism: `commits.yaml` spec authored in step 9; see `Analyse-work writes commits.yaml; git-commit-work applies it`.
 - id: analyse-work-receives-dirty-tree-snapshot-as-work-tree-status
   title: Analyse-work receives dirty-tree snapshot as `{{WORK_TREE_STATUS}}`
   body: |
@@ -46,7 +46,7 @@ entries:
 - id: phase-contract-test-validates-per-phase-file-writes
   title: Phase contract test validates per-phase file writes
   body: |
-    `phase_contract_round_trip_writes_expected_files` runs `phase_loop` from `analyse-work` via `ContractMockAgent`; 6 assertions cover latest-session.md, commit-message.md consumed, memory.md updated, backlog.md updated, phase.md ends at `work`, and git log subjects.
+    `phase_contract_round_trip_writes_expected_files` runs `phase_loop` from `analyse-work` via `ContractMockAgent`; assertions cover latest-session.md, memory.md updated, backlog.md updated, phase.md ends at `work`, and git log subjects. `commit-message.md` is no longer part of the flow; analyse-work now authors `commits.yaml` instead. See: `Analyse-work writes commits.yaml; git-commit-work applies it`.
 - id: tool-read-token-scoped-to-work-md-only
   title: '`{{TOOL_READ}}` token scoped to `work.md` only'
   body: |
@@ -536,3 +536,7 @@ entries:
   title: survey blocked count is status-blocked-or-dep-unmet union
   body: |
     `PlanRow.blocked` (computed by `plan_row_counts()`) counts tasks with `status=blocked` OR `status=not_started` with at least one unmet dependency. Matches the `blocked` column key in `src/survey/render.rs:20`. Narrow `status==blocked`-only definitions undercount. See: `PlanRowCounts injects unblocked/blocked/received into survey`.
+- id: analyse-work-writes-commits-yaml-git-commit-work-applies-it
+  title: Analyse-work writes commits.yaml; git-commit-work applies it
+  body: |
+    `analyse-work.md` step 9 writes a `commits.yaml` spec (ordered `{paths, message}` list) covering the full work diff. `GitCommitWork` calls `apply_commits_spec` in `src/git.rs`, applies each commit scoped to the project subtree, then removes the spec file before staging to prevent self-inclusion. Fallback on missing/malformed/empty spec: single catch-all commit of the whole subtree. Plan-state is folded into the first/only source commit by default; no separate plan-state commit is produced. See: `Analyse-work commits all non-plan paths`.
