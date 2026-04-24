@@ -114,7 +114,7 @@ entries:
 - id: cli-integration-tests-use-cargo-bin-exe-ravel-lite
   title: CLI integration tests use `CARGO_BIN_EXE_ravel-lite`
   body: |
-    `tests/integration.rs` shells out via `CARGO_BIN_EXE_ravel-lite` and asserts on-disk effects; the Cargo-idiomatic pattern for end-to-end CLI testing.
+    CLI integration tests shell out via `CARGO_BIN_EXE_ravel-lite` and assert on-disk effects; the Cargo-idiomatic pattern for end-to-end CLI testing.
 - id: build-rs-emits-timestamp-git-describe-and-sha
   title: '`build.rs` emits timestamp, git-describe, and SHA'
   body: |
@@ -146,7 +146,7 @@ entries:
 - id: handoff-integration-tests-guard-promote-vs-archive-cycle
   title: '`[HANDOFF]` integration tests guard promote-vs-archive cycle'
   body: |
-    `handoff_marker_in_analyse_work_is_promoted_by_triage` and `handoff_marker_in_analyse_work_is_archived_by_triage` in `tests/integration.rs` run the full analyse-work → git-commit-work → reflect → git-commit-reflect → triage → git-commit-triage cycle. CI-protects the hand-off convention. See: `ContractMockAgent has opt-in handoff injection`.
+    `handoff_marker_in_analyse_work_is_promoted_by_triage` and `handoff_marker_in_analyse_work_is_archived_by_triage` in `tests/phase_loop.rs` run the full analyse-work → git-commit-work → reflect → git-commit-reflect → triage → git-commit-triage cycle. CI-protects the hand-off convention. See: `ContractMockAgent has opt-in handoff injection`.
 - id: contractmockagent-has-opt-in-handoff-injection
   title: '`ContractMockAgent` has opt-in handoff injection'
   body: |
@@ -194,7 +194,7 @@ entries:
 - id: integration-tests-use-three-level-project-llm-state-plan-layout
   title: Integration tests use three-level `<project>/LLM_STATE/<plan>` layout
   body: |
-    `tests/integration.rs` and `src/multi_plan.rs` tests construct `<project>/LLM_STATE/<plan>` directory trees matching ravel-lite convention. New integration tests must follow this layout.
+    Integration tests and `src/multi_plan.rs` tests construct `<project>/LLM_STATE/<plan>` directory trees matching ravel-lite convention. New integration tests must follow this layout.
 - id: format-result-text-renders-as-continuation-lines
   title: '`format_result_text` renders `→` as continuation lines'
   body: |
@@ -218,7 +218,7 @@ entries:
 - id: related-plans-stored-as-global-name-indexed-edge-list
   title: '`related-components.yaml` stores global name-indexed edge list'
   body: |
-    `related-components.yaml` stores project-level (not plan-level) edges keyed by component name, shareable across all plans in a project. Schema version 2; uses v2 `EdgeKind` vocabulary. Full CRUD with `Edge::validate` (rejects self-loops, unsorted symmetric participants). Legacy v1 `related-projects.yaml` hard-errors on read. See: `run_rename needs a Trait registry before fourth cascade`.
+    `related-components.yaml` stores project-level (not plan-level) edges keyed by component name, shareable across all plans in a project. Schema version 2; uses v2 `EdgeKind` vocabulary. Full CRUD with `Edge::validate` (rejects self-loops, unsorted symmetric participants). See: `run_rename needs a Trait registry before fourth cascade`.
 - id: sibling-edges-dedup-by-sorted-participants-parent-of-by-order
   title: Sibling edges dedup by sorted participants; parent-of by order
   body: |
