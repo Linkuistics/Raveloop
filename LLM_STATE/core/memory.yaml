@@ -243,10 +243,6 @@ entries:
   title: '`state::memory` parses `^## ` headings; empty body is an error'
   body: |
     `parse_md.rs` in `state::memory` splits on `^## ` (not `### ` as backlog uses). An entry with an empty body after the heading is a parse error, not silently skipped. See: `split_into_task_blocks splits on ### headings`.
-- id: structured-plan-state-design-at-docs-structured-plan-state-design-md
-  title: Structured plan-state design at `docs/structured-plan-state-design.md`
-  body: |
-    `docs/structured-plan-state-design.md` holds Q1–Q8 design decisions for `ravel-lite state <file> <verb>` CLI. See: `Four Rust readers bypass plan-state CLI`.
 - id: src-projects-rs-holds-projectscatalog
   title: '`src/projects.rs` holds `ProjectsCatalog`'
   body: |
@@ -294,7 +290,7 @@ entries:
 - id: r7-design-llm-driven-related-projects-discovery
   title: 'R7 design: LLM-driven related-projects discovery'
   body: |
-    `state related-components discover` fans out one subagent per project (two-stage pipeline: per-project interaction-surface extraction then global edge proposal) and writes `discover-proposals.yaml`; `discover-apply` merges after human review. Cache key is `(tree_sha, dirty_hash)` pair; see `Discover cache key is tree_sha + dirty_hash pair`. Full design at `docs/r7-related-projects-discovery-design.md`; TDD plan at `docs/r7-related-projects-discovery-plan.md`.
+    `state related-components discover` fans out one subagent per project (two-stage pipeline: per-project interaction-surface extraction then global edge proposal) and writes `discover-proposals.yaml`; `discover-apply` merges after human review. Cache key is `(tree_sha, dirty_hash)` pair; see `Discover cache key is tree_sha + dirty_hash pair`.
 - id: state-migrate-force-required-when-yaml-predates-md
   title: state migrate --force required when .yaml predates .md
   body: |
@@ -403,10 +399,6 @@ entries:
   title: project_root_for_plan uses canonicalize; latent catalog-path mismatch risk
   body: |
     `project_root_for_plan` in `src/git.rs:153` uses `canonicalize` with a raw-path fallback; `plan_project_path` and `projects::run_add` both use `std::path::absolute`. On macOS with symlinks in `/Users` or `/Development`, `canonicalize` introduces `/private/...` prefixes that desynchronise lookup from catalog-stored paths. No current consumer cross-compares the two outputs. Fix `project_root_for_plan` to use `std::path::absolute` only if a comparison against a catalog-stored path is introduced.
-- id: docs-r7-related-projects-discovery-design-md-audit-deferred-post-ontology-v2
-  title: docs/r7-related-projects-discovery-design.md is a historical record
-  body: |
-    `docs/r7-related-projects-discovery-design.md` has been audited post-ontology-v2. Status is "Shipped. Historical design record."; a top-of-file banner redirects to `docs/component-ontology.md` and `docs/component-ontology-migration.md` as authoritative vocabulary. v1 edge-kind prose is either removed or marked historical.
 - id: edgekind-has-17-variants-task-briefs-may-cite-16
   title: EdgeKind has 17 variants; task briefs may cite 16
   body: |
@@ -447,14 +439,10 @@ entries:
   title: Stage 2 hints-as-priors enforcement is prose-only; hard assertion deferred
   body: |
     Stage 2 `priors-not-verdicts` section is currently prose only. If real discover runs show Stage 2 over-weighting `interaction_role_hints` (e.g., proposing `strong` edges where the only evidence is a hint), consider adding a per-edge hard assertion: "evidence_fields must include at least one non-hint field for strong-grade proposals." Hold off until there is real discover output to judge; the prompt change alone may be sufficient.
-- id: r7-discovery-plan-md-has-stale-v1-vocabulary
-  title: r7-discovery-plan.md has stale v1 vocabulary
-  body: |
-    `docs/r7-related-projects-discovery-plan.md` has ~15 occurrences of `related-projects` and v1 edge-kind references. It is a frozen implementation record; leave as-is unless a consumer references it directly.
 - id: docs-architecture-md-not-audited-for-v1-vocabulary
   title: docs/architecture.md has no v1 edge-kind vocabulary
   body: |
-    `docs/architecture.md` carries no v1 edge-kind vocabulary or `related-projects` references. Matches for `sibling`/`parent`/`child` are filesystem or process-context English, not ontology edge kinds. The source-tree section (lines 407–435) has generic drift (missing `ontology/`, `state/`, `discover/`, `related_components.rs`, `survey/` subdirs); separate task needed for doc drift unrelated to v1 migration.
+    `docs/architecture.md` carries no v1 edge-kind vocabulary or `related-projects` references. Matches for `sibling`/`parent`/`child` are filesystem or process-context English, not ontology edge kinds.
 - id: stage-2-writes-proposals-via-per-edge-add-proposal-cli
   title: Stage 2 writes proposals via per-edge add-proposal CLI
   body: |
@@ -463,3 +451,7 @@ entries:
   title: Pre-initialise output file before CLI-driven spawn
   body: |
     Pre-initialise the output file before spawning an LLM with CLI write tools: the zero-calls case produces a valid empty file (load succeeds) rather than a missing-file error. Seed prior-phase failures into the initial file so they survive the round-trip regardless of LLM output. `run_stage2` demonstrates this: creates `discover-proposals.yaml` with Stage 1 failures before spawning Stage 2.
+- id: ontology-cli-rs-imports-from-super-not-related-components
+  title: ontology/cli.rs imports from super, not related_components
+  body: |
+    `src/ontology/cli.rs` imports `{EdgeKind, LifecycleScope, EvidenceGrade}` via `super::`, not via `related_components` re-exports. Avoids a dependency inversion that would block Atlas's standalone ontology crate extraction.
