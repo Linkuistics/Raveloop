@@ -246,7 +246,7 @@ entries:
 - id: src-projects-rs-holds-projectscatalog
   title: '`src/projects.rs` holds `ProjectsCatalog`'
   body: |
-    `ProjectsCatalog` (schema_version 1) maps project names to absolute paths. `auto_add` is pure and returns `AlreadyCatalogued`/`Added`/`NameCollision`. `ensure_in_catalog_interactive` is generic over `Read + Write`. Atomic save.
+    `ProjectsCatalog` (schema_version 1) maps project names to absolute in-memory paths. On disk, paths are stored relative to the catalog file via the `RawProjectsCatalog`/`RawProjectEntry` DTO layer; resolved to absolute on load, relativised on save. `auto_add` is pure and returns `AlreadyCatalogued`/`Added`/`NameCollision`. `ensure_in_catalog_interactive` is generic over `Read + Write`. Atomic save. See: `projects.yaml DTO layer separates serde from in-memory shape`.
 - id: state-projects-add-rejects-relative-paths
   title: state projects add resolves relative paths against CWD
   body: |
@@ -463,3 +463,11 @@ entries:
   title: '`compose_prompt_asserts_plan_only_output_invariant` guards the create INVARIANT'
   body: |
     `compose_prompt_asserts_plan_only_output_invariant` in `src/create.rs` tests asserts both key phrases are present in the composed prompt. Guards the INVARIANT binding against drift. See: `create` spawn binds purpose via INVARIANT in prompt and template.
+- id: projects-yaml-dto-layer-separates-serde-from-in-memory-shape
+  title: projects.yaml DTO layer separates serde from in-memory shape
+  body: |
+    `RawProjectsCatalog`/`RawProjectEntry` handle serde; rich in-memory `ProjectsCatalog`/`ProjectEntry` own logic without derive macros. Load-time resolves relative disk paths to absolute; save-time relativises back via `pathdiff::diff_paths` + `PathClean`. Reuse this pattern for any catalog struct needing on-disk/in-memory shape divergence.
+- id: projects-yaml-migrates-silently-to-relative-paths-on-first-save
+  title: projects.yaml migrates silently to relative paths on first save
+  body: |
+    Pre-existing all-absolute `projects.yaml` files load without error and are rewritten to relative form on the next mutating command. No explicit migration step needed; users with git-shared catalogs benefit automatically.
