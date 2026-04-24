@@ -484,9 +484,9 @@ entries:
   body: |
     Clap `value_delimiter` + `--arg ""` hands back `[""]`, not `[]`. Unit tests miss this (they receive `&[String]` directly and never exercise the clap parse path); only CLI integration tests surface it. Normalise empty strings at dispatch in `main.rs`, not inside the library verb, to keep the library contract clean.
 - id: triage-prose-dep-reconciliation-is-a-mechanical-scan
-  title: Triage prose-dep reconciliation is a mechanical scan
+  title: '`backlog lint-dependencies` detects prose-dep drift'
   body: |
-    Triage currently walks all tasks to reconcile prose-mentioned deps with task dependency fields. Pure deterministic scan; extractable to a `backlog lint-dependencies` Rust verb.
+    `state backlog lint-dependencies <PLAN_DIR>` reports drift between prose task-id mentions in task descriptions and structured `dependencies:` fields. Byte-scan whole-word matching; `[a-zA-Z0-9_-]` chars are id-body, any other byte is a boundary. Output is `LintReport`/`TaskDrift` serde types (YAML/JSON). Linter output is advisory, not authoritative; triage uses `set-dependencies` to reconcile. Triage prompt leads with a **Preflight** directive instructing the LLM to run the linter before triage work.
 - id: analyse-work-stale-status-repair-is-a-mechanical-scan
   title: Analyse-work stale-status repair is a mechanical scan
   body: |
