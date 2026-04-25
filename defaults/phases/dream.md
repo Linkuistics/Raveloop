@@ -46,25 +46,12 @@ tracked in git.
 
 ## Output format
 
-After completing the rewrite, print a brief summary using this structure.
-Each entry is **two lines**: the label line carries the pre-change state;
-a continuation line beginning with `→` carries the post-change state.
+After your narrative preamble, run:
 
-```
-[OVERLAPPING] <heading A> + <heading B>
-           → <result heading>
-[VERBOSE] <heading> — <what was wordy>
-       → <how it's now tightened>
-[AWKWARD] <heading> — <old phrasing>
-       → <new phrasing>
-[STATS] <before word count>
-     → <after word count>
-```
+    ravel-lite state phase-summary render {{PLAN}} --phase dream \
+        --baseline $(cat {{PLAN}}/dream-baseline 2>/dev/null || echo "")
 
-Labels name the **state that caused the change**, not the action taken
-(e.g. VERBOSE, not TIGHTENED). Two lines per significant change — old
-on top, new under it. Minor prose edits can be omitted. End with the
-STATS entry.
+and emit its output verbatim. Do not add, remove, or reorder lines.
 
 You may precede the action list with a brief reasoning preamble — what
 patterns you noticed across the memory, what consolidations you

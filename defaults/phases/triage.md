@@ -118,22 +118,12 @@ Rules:
 
 ## Output format
 
-After completing all writes, print a brief summary using this structure:
+After your narrative preamble, run:
 
-```
-[DONE] <task title> — completed, captured in memory
-[NEW] <task title> — <why>
-[PROMOTED] <hand-off title> — from <completed task title>
-[ARCHIVED] <hand-off title> — to memory, from <completed task title>
-[BLOCKER] <task title> — extracted from <parent task>
-[REPRIORITISED] <task title> — <old priority → new>
-[OBSOLETE] <task title> — <why no longer relevant>
-[DISPATCH] <kind>: <target path> — <summary>
-[NO DISPATCH] <reason>
-```
+    ravel-lite state phase-summary render {{PLAN}} --phase triage \
+        --baseline $(cat {{PLAN}}/triage-baseline 2>/dev/null || echo "")
 
-Labels name the **state that caused the change**, not the action taken
-(e.g. OBSOLETE, not REMOVED; DONE, not DELETED). One line per entry.
+and emit its output verbatim. Do not add, remove, or reorder lines.
 
 You may precede the action list with a brief reasoning preamble — what
 patterns you saw across the backlog, what drove reprioritisations or

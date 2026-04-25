@@ -2,7 +2,7 @@ tasks:
 - id: update-triage-reflect-dream-prompts-to-invoke-state-phase-summary-render
   title: Update triage/reflect/dream prompts to invoke state phase-summary render
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Replace the `## Output format` blocks in triage, reflect, and dream prompts with a single directive to run `state phase-summary render` and emit its output verbatim.
@@ -36,6 +36,38 @@ tasks:
     ## Dependencies
 
     - `wire-orchestrator-baseline-capture-for-reflect-dream-triage-phases` — baseline files must exist before prompts can reliably `cat` them. Prompts still work without baselines (empty fallback), but landing baseline wiring first produces cleaner output from day one.
+  results: |
+    Replaced the `## Output format` block in `defaults/phases/{triage,reflect,dream}.md` with the directive form from the task brief. Each new block instructs the LLM to invoke
+
+        ravel-lite state phase-summary render {{PLAN}} --phase <phase> \
+            --baseline $(cat {{PLAN}}/<phase>-baseline 2>/dev/null || echo "")
+
+    after its narrative preamble, and emit the renderer output verbatim. The closing "preamble guidance" paragraph (`You may precede the action list with a brief reasoning preamble — ...`) was preserved verbatim per the brief's "does not change the preamble instructions" note.
+
+    Net diff: 28 lines removed across the three prompts; structural label templates (`[NEW]`, `[IMPRECISE]`, `[OVERLAPPING]`, `[STATS]`, etc.) and the "Labels name the state that caused the change" notes are gone. The renderer now owns mechanical transcription; intent-required labels remain the LLM's job in the preamble.
+
+    ## Test fallout
+
+    `init::tests::init_force_overwrites_existing_files` (`src/init.rs:279`) used `[NEW]` / `[IMPRECISE]` as a content sentinel for "embedded default was written, not the stale placeholder." Swapped the sentinel to `state phase-summary render` — durable across future template tweaks and unmistakably the new canonical content. All 585 lib tests + 71 integration tests pass.
+
+    ## Verification
+
+    - `cargo test` — clean (585 + 71 passing, no failures).
+    - `ravel-lite state phase-summary render LLM_STATE/core --phase triage --baseline ""` — exits 0 and emits sensible `[NEW]` lines for the current backlog (first-cycle path works).
+    - `{{PLAN}}` token confirmed registered at `src/prompt.rs:46`, so the dangling-tokens guard will accept the new prompts.
+
+    ## What was deliberately NOT touched
+
+    - `defaults/phases/triage.md:70` still says "emit `[ARCHIVED] <hand-off title>` in the summary" inside step 3 of the behaviour section. The task brief scopes the change to the `## Output format` block only, and explicitly notes that intent-required labels (`[PROMOTED]`, `[ARCHIVED]`, etc.) are now the LLM's responsibility via the narrative preamble. There's a small wording tension here — "the summary" now means the renderer's verbatim output, but step 3 still tells the LLM to inject `[ARCHIVED]` into it — which a future cycle may want to clarify. Not in scope for this task.
+
+    ## Sibling task subsumed
+
+    Per the brief, this also closes `triage-should-not-emit-the-no-dispatch-label-in-its-output`: the `[NO DISPATCH]` line lived only in the removed structural template and the renderer doesn't emit it.
+
+    ## Suggests next
+
+    - A small clarification pass on triage step 3 wording ("emit in the summary" → "include in your narrative preamble") would fully complete the intent-label migration. Cheap follow-up task if reflect/triage decides it's worth the churn.
+    - The `--baseline $(...)` fallback idiom is now duplicated three times across prompts — if it ever needs to change, a helper script (`scripts/phase-baseline.sh <phase>`) would centralise it. Not worth it yet at three copies.
 - id: fix-stale-references-in-llm-work-audit-md-2-9-and-git-rs-32-doc-comment
   title: Fix stale references in llm-work-audit.md §2.9 and git.rs:32 doc-comment
   category: core

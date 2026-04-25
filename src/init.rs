@@ -276,7 +276,7 @@ mod tests {
         // Phase prompt restored from embedded default.
         let content = fs::read_to_string(&reflect_path).unwrap();
         assert_ne!(content, "STALE CONTENT\n");
-        assert!(content.contains("[NEW]") || content.contains("[IMPRECISE]"),
-            "expected new state-based labels in the refreshed prompt");
+        assert!(content.contains("state phase-summary render"),
+            "expected refreshed prompt to delegate summary rendering to the CLI");
     }
 }

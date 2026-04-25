@@ -57,17 +57,12 @@ the Memory style rules.
 
 ## Output format
 
-After completing all writes, print a brief summary using this structure:
+After your narrative preamble, run:
 
-```
-[NEW] <heading> — <one-line description>
-[IMPRECISE] <heading> — <what was imprecise and how it's now sharpened>
-[STALE] <heading> — <what was stale: old → new>
-[OBSOLETE] <heading> — <why no longer relevant>
-```
+    ravel-lite state phase-summary render {{PLAN}} --phase reflect \
+        --baseline $(cat {{PLAN}}/reflect-baseline 2>/dev/null || echo "")
 
-Labels name the **state that caused the change**, not the action taken
-(e.g. OBSOLETE, not REMOVED). One line per memory entry.
+and emit its output verbatim. Do not add, remove, or reorder lines.
 
 You may precede the action list with a brief reasoning preamble — what
 you noticed in the session, what trade-offs drove your choices. Separate
