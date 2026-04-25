@@ -1,118 +1,65 @@
 tasks:
-- id: add-commits-yaml-highlight-rule-to-analysework-phase
-  title: Add commits.yaml highlight rule to AnalyseWork phase
+- id: fix-latest-session-yaml-highlight-rule-extension-in-format-rs
+  title: Fix latest-session.yaml highlight rule extension in format.rs
   category: core
-  status: done
+  status: not_started
   dependencies: []
   description: |
-    Add a `HighlightRule` for `commits.yaml` to `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` in `src/format.rs` so that the TUI shows progress feedback when the analyse-work phase writes its commit spec.
+    Fix the `latest-session.md` highlight rule in `src/format.rs` — the pattern `latest-session\.md$` has never matched because Ravel-Lite writes `latest-session.yaml`. Change to `latest-session\.yaml$` so the "Writing session log" TUI label actually fires during analyse-work.
 
-    ## What
+    ## Problem
 
-    `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` currently has only one rule:
+    `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` contains:
 
     ```rust
     HighlightRule { pattern: Regex::new(r"latest-session\.md$").unwrap(), label: "Writing session log" },
     ```
 
-    The other major file write in analyse-work — `commits.yaml` — has no matching rule, so no progress label appears in the TUI when that write happens. Adding:
+    But `ravel-lite state session-log set-latest` writes to `LLM_STATE/core/latest-session.yaml` (confirmed by `ls LLM_STATE/core/latest-session*`). The `.md` extension was written when the file was `.md`; a later rename to `.yaml` wasn't reflected here.
+
+    ## Fix
 
     ```rust
-    HighlightRule { pattern: Regex::new(r"commits\.yaml$").unwrap(), label: "Writing commit spec" },
+    HighlightRule { pattern: Regex::new(r"latest-session\.yaml$").unwrap(), label: "Writing session log" },
     ```
 
-    would give the user visible feedback for both of analyse-work's primary outputs.
-
-    ## Why
-
-    The `commit-message.md` removal session (`remove-dead-commit-message-md-branch-from-git-commit-plan`) deleted the old highlight rule alongside the dead branch. The `commits.yaml` mechanism that replaced it has no corresponding rule. This is a minor UX gap — the TUI goes silent during the commit-spec write even though it takes a non-trivial amount of time for large sessions.
-
-    ## Scope
-
-    - Add the `commits.yaml` `HighlightRule` to `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` at `src/format.rs`.
-    - No other changes required; the highlight infrastructure is already in place.
+    One-line change in `src/format.rs`.
 
     ## Verification
 
     - `cargo test --quiet` passes.
-    - Manual run of analyse-work phase shows "Writing commit spec" label in TUI when `commits.yaml` is being written.
-  results: |
-    Added the `commits.yaml` `HighlightRule` to `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` in `src/format.rs`, mirroring the existing `latest-session.md` rule's shape (anchored regex, "Writing …" label parallel to the existing entry).
-
-    ## What worked
-
-    - Drop-in addition to the existing `vec![…]` literal — the highlight infrastructure (iteration, dedup via `shown_highlights`, span styling) already handles arbitrary numbers of rules, so this is purely a data-table extension.
-    - All 50 tests pass (`cargo test --quiet`); `cargo clippy --lib --all-targets` is clean.
-    - The two AnalyseWork rules use mutually exclusive filenames (`latest-session.md` vs `commits.yaml`), so iteration order doesn't matter for correctness — first match wins.
-
-    ## Not in scope (deliberate)
-
-    - The pre-existing `latest-session.md` rule still references `.md`, but the actual file Ravel-Lite produces is `latest-session.yaml` (per memory notes that catalogue plan-state file paths). That extension mismatch is a separate bug — the rule never fires today, so the AnalyseWork phase TUI shows no progress feedback at all currently. Worth a follow-up task: either rename the rule's pattern to match reality, or confirm the file actually is `.md` and update the memory note. Did NOT change here because the task description only asked for the `commits.yaml` addition.
-
-    ## Suggests next
-
-    - Verify the `latest-session.md` regex actually matches a real write path during analyse-work. If the file is `.yaml`, fix the rule (one-character change) so the existing label fires and pair the two writes visibly.
-    - Consider whether the highlight-rule mechanism deserves a small unit test per rule (currently only `memory.md` for Reflect is tested in `format_tool_call_highlight_memory`). Adding rule-by-rule tests would be cheap insurance against future regex regressions.
-- id: fix-clippy-unnecessary-sort-by-in-render-rs-and-enforce-clean-clippy-in-ci
-  title: Fix clippy unnecessary_sort_by in render.rs and enforce clean clippy in CI
-  category: core
-  status: done
+    - Manual analyse-work run shows "Writing session log" label.
+- id: add-minimal-github-actions-ci-workflow-build-test-clippy
+  title: 'Add minimal GitHub Actions CI workflow: build, test, clippy'
+  category: infra
+  status: not_started
   dependencies: []
   description: |
-    Fix the pre-existing clippy `unnecessary_sort_by` warning at `src/state/backlog/render.rs:95` and add `cargo clippy --lib -- -D warnings` to the CI check (or pre-commit hook) so future violations surface immediately.
-
-    ## What
-
-    `cargo clippy --lib` on `main` warns at `src/state/backlog/render.rs:95`:
-
-    ```
-    warning: use of `sort_by` with a comparison function that can be replaced with `sort_by_key`
-      --> src/state/backlog/render.rs:95:N
-       |
-       |     .sort_by(|a, b| a.something.cmp(&b.something))
-       |                                                         ^ help: try: `.sort_by_key(|k| k.something)`
-    ```
-
-    The fix is a one-line mechanical replacement: `sort_by(|a, b| a.x.cmp(&b.x))` → `sort_by_key(|k| k.x)`.
+    Add a minimal `.github/workflows/ci.yml` that runs on every push and pull request targeting `main`, exercising the three gates: `cargo build`, `cargo test --quiet`, and `cargo clippy --lib --all-targets`.
 
     ## Why
 
-    The `add-snapshot-test` cycle surfaced this as a pre-existing warning. It was out of scope for that task (unrelated to the snapshot test) but is worth addressing so `cargo clippy -- -D warnings` can be added to CI without noise. A clean clippy baseline makes future violations visible the moment they land rather than accumulating into a backlog.
+    `Cargo.toml` already declares `[lints.rust] warnings = "deny"`, which makes `cargo clippy` strict for any developer who runs it locally. But nothing forces a developer to run it before pushing. The `fix-clippy` cycle surfaced this gap: the first GitHub Actions workflow closes the automatic enforcement loop without requiring any changes to the manifest-level strictness settings.
 
     ## Scope
 
-    1. Fix the `unnecessary_sort_by` at `src/state/backlog/render.rs:95`.
-    2. Run `cargo clippy --lib -- -D warnings`; if other pre-existing warnings surface, fix them in the same commit (do not suppress with `#[allow(...)]` unless there is a documented reason).
-    3. Add `cargo clippy --lib -- -D warnings` to whatever CI script / Makefile target runs checks.
+    - One file: `.github/workflows/ci.yml`
+    - Triggers: `push` and `pull_request` on `main`
+    - Steps: checkout → `actions/cache` for `~/.cargo` and `target/` → `cargo build` → `cargo test --quiet` → `cargo clippy --lib --all-targets`
+    - No matrix (single `ubuntu-latest` runner is sufficient for enforcement; the binary is cross-compiled for release separately via cargo-dist)
+    - Rust toolchain: `stable`; pin to a channel, not a specific version
+
+    ## Decisions already made
+
+    - No `--no-deps` on clippy; all-targets is the right scope.
+    - The `[lints.rust] warnings = "deny"` manifest setting already propagates `-D warnings` to clippy lint evaluation, so no extra flags are needed in the workflow body.
+    - `cargo-dist` will supply its own release workflow via `cargo dist generate`; this CI workflow is strictly for correctness gating on every commit, not for release automation.
 
     ## Verification
 
-    - `cargo clippy --lib -- -D warnings` exits 0.
-    - `cargo test --quiet` passes with no regressions.
-  results: |
-    Fixed the `unnecessary_sort_by` lint at `src/state/backlog/render.rs:95` by replacing `sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()))` with `sort_by_key(|a| a.to_lowercase())`. `cargo clippy --lib --all-targets` is clean; all tests still pass.
-
-    ## What worked
-
-    - Mechanical one-line fix matching clippy's own suggested rewrite.
-    - Both forms recompute the lowercase string per comparison — `sort_by_key` is not a perf change, just an idiom change. The category-name input is small enough that `sort_by_cached_key` would be over-engineering.
-
-    ## Discovery: CI step is already partially in place
-
-    The task asked me to add `cargo clippy --lib -- -D warnings` to "whatever CI script / Makefile target runs checks." Investigation:
-
-    - There is no `.github/workflows/`, no `Justfile`, no `Makefile`, no `scripts/check.sh`. Quality enforcement is run-locally-and-trust-the-developer.
-    - However, `Cargo.toml` already declares `[lints.rust] warnings = "deny"`. Because clippy emits its lints through rustc's lint infrastructure, the `-D warnings` derived from this manifest setting denies clippy lints too — this is exactly why the original `unnecessary_sort_by` surfaced as an `error:` (not a `warning:`) when I ran `cargo clippy --lib`. So the strict-clippy behaviour is already in effect for any developer who runs `cargo clippy`.
-    - The remaining gap is *behavioural*: nobody is *forced* to run `cargo clippy` before commit. Closing that gap means introducing CI infrastructure (a GitHub Actions workflow) or a pre-commit hook — neither exists today, both are bigger commitments than this task scoped for.
-
-    I did not add CI infrastructure on my own initiative because:
-    1. Spinning up the first GitHub Actions workflow is a project-level decision (cache strategy, matrix, what else gets gated) that warrants its own task.
-    2. The manifest setting already makes `cargo clippy --lib` strict locally, which is the meaningful enforcement for developers.
-
-    ## Suggests next
-
-    - **Promote to a separate backlog task**: "Add minimal GitHub Actions CI: cargo build, cargo test, cargo clippy --lib --all-targets". This is the natural follow-up that closes the *automatic* enforcement gap. Scope: one `.github/workflows/ci.yml`, runs on push and PR, uses the existing manifest-level `warnings = "deny"` so the workflow body stays trivial.
-    - Consider also adding `[lints.clippy] all = "warn"` (or similar) to `Cargo.toml` to opt in to broader clippy categories than the default. Currently clippy only catches its default set; opting into `pedantic` or specific extra groups would surface more issues earlier.
+    - Workflow runs green on a test push to a branch.
+    - A deliberate clippy violation introduced on a branch causes the workflow to fail.
+    - Merge to main only after the workflow passes.
 - id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
   title: 'Write tutorial walk-through: install through further-cycles with worked example'
   category: docs
@@ -171,149 +118,13 @@ tasks:
   status: not_started
   dependencies:
   - write-user-guide-covering-install-update-init-config-projects-plans-and-running
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
   description: |
     Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
-- id: reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
-  title: 'Reference mini-site skeleton: directory layout, manifest entries, index page, AsciiDoc template'
-  category: docs
-  status: done
-  dependencies: []
-  description: |
-    Establish the reference mini-site that all subsequent reference pages plug into: directory layout under `docs/reference/`, manifest entries in `docs/manifest.txt`, a navigable landing `index.adoc`, and an AsciiDoc style template that every other page copies.
-
-    ## Why this is foundational
-
-    Every other reference task in this split assumes the skeleton, manifest entries, and AsciiDoc template are in place. Without this, each per-page task would have to re-decide the structural questions, producing inconsistent pages and forcing rework later.
-
-    ## Scope
-
-    - Directory layout: `docs/reference/<topic>.adoc`. The existing build pipeline flattens these into `projects/ravel-lite/reference-<topic>.html` per `scripts/build-docs.sh`.
-    - Manifest entries in `docs/manifest.txt` for the index plus placeholder entries for every planned page (so the manifest is honest about what's coming, even if pages are stub-only initially). Decide a sensible chapter ordering: index → concepts → phase-cycle → file-format pages → CLI pages.
-    - `docs/reference/index.adoc`: short orientation paragraph framing the reference as the spec (vs the tutorial as the narrative), then a navigable TOC organised by the three pillars — Workflow, File Formats, CLI — with one-sentence descriptions per page.
-    - AsciiDoc style template that all subsequent pages copy: heading levels, `:doctype:`/`:toc:` attribute block at the top of each file, conventions for command examples (literal blocks vs `[source,bash]`), schema examples (`[source,yaml]` with field comments), and prose voice (friendly, second-person, present-tense).
-    - Verify `scripts/build-docs.sh` produces valid HTML for the new entries and that the prev/next chapter navigation behaves sensibly with the expanded manifest.
-
-    ## Style guidance (applies to every reference page in this mini-site)
-
-    Friendly prose, minimal lists, no emoji. Each command/format entry covers: invocation/schema, flags/fields, what it does, side effects, gotchas. The reference is the spec; the tutorial is the narrative — cross-link to the tutorial rather than re-narrating worked examples here.
-
-    ## Verification
-
-    - `scripts/build-docs.sh` succeeds and emits `projects/ravel-lite/reference-index.html` into the configured `OUTPUT_DIR`.
-    - Index page renders cleanly in the linkuistics chrome with a TOC that lists every planned reference page (even stubs).
-    - AsciiDoc compiles without warnings.
-    - Manifest order produces sensible prev/next chrome links between reference pages.
-
-    ## Out of scope
-
-    Writing the actual content of the per-pillar pages — those are separate tasks (concepts, phase cycle, four file-format pages, three CLI pages) that depend on this skeleton.
-  results: |
-    Established the reference mini-site scaffolding: directory layout under `docs/reference/`, expanded manifest with 9 new entries, real index page with a 3-pillar TOC, 8 stub pages so the manifest is honest about what's coming, and an AsciiDoc style/conventions block in `docs/manifest.txt` that all future page tasks copy from.
-
-    ## What landed
-
-    - **`docs/manifest.txt`** rewritten: kept the original `tutorial/00-overview.adoc` entry, added the 9 reference entries (index first, then concepts, phase-cycle, the three file-format pages, then the three CLI pages). Added a comment header documenting AsciiDoc conventions (heading levels, code-block syntax, link syntax for built-page-to-built-page references, "no `:doctype:` block needed because chrome comes from `page-shell.html`"). Style guidance ("friendly prose, minimal lists, no emoji") is captured in the same comment block.
-    - **`docs/reference/index.adoc`** — real content, ~30 lines: orientation paragraph framing the reference as the spec (vs the tutorial as the narrative), then a navigable TOC organised by the three pillars (Workflow, File Formats, CLI) with one-sentence descriptions per page. Cross-links to `tutorial-00-overview.html` and to every other reference page.
-    - **8 stub pages** (`docs/reference/{concepts,phase-cycle,state-files,cross-plan-files,config-and-prompts,cli-lifecycle,cli-state,cli-survey}.adoc`) — each has the `= Title` first line, a 1-paragraph description of what the finished page will cover, and a pointer to the corresponding backlog task id. Cross-links to the tutorial overview where it provides interim coverage. Stubs are intentionally minimal (~5 lines each) so future writers replace them rather than editing around them.
-
-    ## Decisions made (template/convention choices)
-
-    - **Stub strategy chosen over manifest-only placeholders.** The build script requires every manifest entry to point at a real file with a `= Title` first line, so "stubs in the manifest" had to mean stub `.adoc` files exist. Side benefit: the index page's TOC links work today, and prev/next chrome composes through the whole reference.
-    - **AsciiDoc conventions documented in the manifest header**, not in every stub file. Single source of truth — a future page-rewrite pulls conventions from the manifest comment block, not from a half-stale stub.
-    - **Manifest order**: tutorial first (front door for new users), then reference index, then reference pages in the order Concepts → Phase cycle → File formats (3 pages) → CLI (3 pages). This matches the index TOC's pillar ordering, so prev/next walks the reference in the same order a reader scans the TOC.
-    - **No `:doctype:`/`:toc:` attribute block in any page.** The page-shell template provides the chrome and supplies the H1; AsciiDoc with `--no-header-footer` strips the doctitle from the body cleanly. Adding attribute blocks would have been duplicate scaffolding.
-
-    ## Verification
-
-    - `scripts/build-docs.sh` exits 0 and emits all 10 pages into `../www.linkuistics.com/projects/ravel-lite/`.
-    - `asciidoctor --no-header-footer --failure-level=WARN` passes on every `docs/**/*.adoc` file (clean compile, no warnings).
-    - Prev/next nav verified at three boundary positions:
-      - First page (`tutorial-00-overview.html`): no prev, next = "Reference →".
-      - Index page (`reference-index.html`): prev = "← Overview", next = "Concepts →".
-      - Last page (`reference-cli-survey.html`): prev = "← CLI: state commands", no next.
-    - File sizes sane: index 5.6 kB (TOC content), stubs 2.1–2.4 kB (chrome footprint + 1 paragraph), tutorial unchanged at 5.0 kB.
-
-    ## Suggests next
-
-    - The 8 child reference tasks are now structurally unblocked. Any of them can be picked up in parallel — they don't depend on each other, only on this skeleton.
-    - The `publish-new-docs` task (depends on tutorial + this skeleton) is also one step closer to unblocked: still gated on the tutorial walkthrough, but the reference half of "what we're publishing" is at minimum a navigable site rather than a single empty page.
-    - No `.gitignore` changes needed: the build script writes HTML into the sibling `www.linkuistics.com` repo, which is outside this repo's tree.
-- id: reference-concepts-page-project-plan-agent-backends-principles-glossary
-  title: 'Reference: concepts page (project, plan, agent backends, principles, glossary)'
-  category: docs
-  status: done
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
-  description: |
-    Write the foundational concepts page that grounds every other reference page. Covers the mental model a reader needs before any other reference page makes sense.
-
-    ## Scope
-
-    - File: `docs/reference/concepts.adoc`
-    - Topics:
-      - **Project**: derivation from plan path (`<plan_dir>/../..`), independent of `.git` location.
-      - **Plan**: the `LLM_STATE/<plan>` directory, what it contains, why it's plural-friendly (multiple plans per project).
-      - **Monorepo subtree behaviour**: pathspec-scoped git operations, sibling-subtree invisibility, baseline SHAs vs query scope.
-      - **Agent backends**: Claude Code vs Pi as selectable subprocesses; how the orchestrator picks; what each one needs from the host.
-      - **The "no magic / visible, auditable, adjustable" principle**: how it manifests in practice (every state file is on disk and editable; every transition writes to the filesystem).
-    - Glossary: phase, cycle, dispatch, baseline, plan-state files, durable memory, hand-off, related component, evidence grade.
-
-    ## Style
-
-    Friendly prose, minimal lists, no emoji. Aim for a reader who has installed ravel-lite and run it once but not yet read source. Cross-link to the relevant detail pages for each concept rather than restating their content.
-
-    ## Verification
-
-    - Page builds via `scripts/build-docs.sh` and renders cleanly in the linkuistics chrome.
-    - Each claim cross-checked against the README and source (project derivation in `src/cli.rs`/orchestrator code; agent backend dispatch in `src/agents/`).
-    - No content overlap with phase-cycle or file-format pages — concepts page introduces, detail pages specify.
-  results: |
-    Wrote `docs/reference/concepts.adoc` (~1100 words, 12 kB rendered HTML) covering project, plan, agent backends, the three principles, and a 9-term glossary cross-linked into the rest of the reference mini-site.
-
-    ## Structure
-
-    - **Project** — derivation from plan path (`<plan_dir>/../..`), independence from `.git` location, monorepo-subtree behaviour with pathspec-scoped git operations, the multi-subtree consequence.
-    - **Plan** — directory layout under `LLM_STATE/<plan>/` with the six expected files in a code block, multi-plan-per-project semantics, cross-link to the state-files reference page for schema detail.
-    - **Agent backends** — Claude Code vs Pi as the two shipped backends, selection via `agent:` in `config.yaml`, the `agents/<name>/` config-dir convention, Pi's additional `subagents/` for brainstorming/TDD/writing-plans.
-    - **The principles** — three numbered items quoted verbatim from the README (no magic / visible-auditable-adjustable / agents are subprocesses), followed by two paragraphs on how the principles play out in practice (no opaque state, complete cycle history in git log).
-    - **Glossary** — 9 terms in a definition list (`Term::` syntax → `<dt class="hdlist1">/<dd>` HTML): phase, cycle, dispatch, baseline, plan-state files, durable memory, hand-off, related component, evidence grade. Each cross-links to its specifying detail page.
-
-    ## Source-grounded claims
-
-    Every factual claim was checked against source before writing:
-
-    - Project derivation: `src/git.rs:321 project_root_for_plan` walks `canonicalize → parent → parent`. Errors on too-shallow paths.
-    - Agent selection: `src/main.rs:1300` matches `shared_config.agent.as_str()` on `"claude-code"` and `"pi"`; anything else bails.
-    - Pathspec scoping: `src/git.rs` comments confirm `git status --porcelain -- <project_dir>` syntax to keep sibling subtrees out of warnings.
-    - Dream trigger: `src/dream.rs::should_dream` uses `count > baseline + headroom` over `memory_content_word_count` (sum of `entry.title + entry.body` whitespace-split). The baseline file is `<plan_dir>/dream-word-count`. (I deliberately deferred the dream-mechanics detail to the phase-cycle page — concepts page just notes "headroom threshold" and links out.)
-    - Three principles: quoted verbatim from `README.md`. The "visible, auditable, adjustable" wording is preserved exactly.
-
-    ## Style decisions
-
-    - **Glossary in conceptual order, not alphabetical.** The `[horizontal]` AsciiDoc list style would have rendered as a two-column layout, but I went with a plain `Term::` definition list — simpler markup, and the asciidoctor-generated `<dt class="hdlist1">` class lets the linkuistics CSS choose the visual style later without requiring a source-side change.
-    - **Cross-links over restatement.** Every place where a detail belongs on another page (state-file schemas, dream-trigger mechanics, related-components edge schema, agent config layout) gets a `link:reference-<page>.html[…]` pointer rather than a duplicated paragraph. This is the contract from the task description: "concepts page introduces, detail pages specify."
-    - **No emoji, friendly second-person prose**, matching the manifest comment block's style guidance.
-
-    ## Verification
-
-    - `scripts/build-docs.sh` exits 0; all 10 pages rebuild.
-    - `asciidoctor --no-header-footer --failure-level=WARN` clean on the new file.
-    - HTML inspection confirms `<dt class="hdlist1">` glossary structure, working `<a href="reference-*.html">` cross-links to phase-cycle / state-files / cross-plan-files / config-and-prompts pages, and prev/next chrome with `← Reference` and `Phase cycle →`.
-    - Page size: 12 kB rendered (vs 2.3 kB stub), representing ~5× content growth.
-    - No content overlap with other (still-stub) reference pages — concepts introduces, the linked detail pages will specify.
-
-    ## Suggests next
-
-    - The concepts page is the natural reference for cross-linking from later pages — the glossary entries lock in vocabulary, so phase-cycle / state-files / cross-plan-files / cli-* pages can use terms like "baseline", "dispatch", "hand-off", "evidence grade" without re-defining them.
-    - Phase-cycle is a strong pick for the next reference task: it's the second pillar of the workflow half, and the dream-trigger detail I deferred from the concepts page wants a home.
-    - The glossary's "Hand-off" entry is the only one that doesn't currently cross-link out, because hand-off semantics aren't on any planned page. Consider whether the state-files page (under backlog.yaml's hand-off block) should pick that up, or whether it warrants a one-paragraph mention on the phase-cycle page where triage acts on it. Worth a triage decision later.
 - id: reference-phase-cycle-page-per-phase-contracts-dream-trigger-triage-dispatch-git-commit-audit-trail
   title: 'Reference: phase cycle page (per-phase contracts, dream trigger, triage dispatch, git-commit-* audit trail)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the phase cycle reference page: every phase in the work → analyse-work → git-commit-work → reflect → git-commit-reflect → [dream?] → dream → git-commit-dream → triage → git-commit-triage cycle, with each phase's input/output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
 
@@ -343,8 +154,7 @@ tasks:
   title: 'Reference: state-file formats (backlog.yaml, memory.yaml, session-log.yaml, latest-session, phase.md, commits.yaml)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the state-file formats reference page: schema, examples, and read/write call sites for the durable plan-state files.
 
@@ -376,8 +186,7 @@ tasks:
   title: 'Reference: cross-plan file formats (subagent-dispatch.yaml, related-components.yaml, evidence grades)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the cross-plan file formats reference page: `subagent-dispatch.yaml` (triage hand-off mechanism) and `related-components.yaml` (peer-project edges), with schema, examples, evidence-grade semantics, and the lifecycle of each file.
 
@@ -414,8 +223,7 @@ tasks:
   title: 'Reference: configuration and prompt-file formats (config.yaml, .local.yaml overlays, embedded defaults, token substitution, per-phase prompts)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the configuration and prompt-file reference page: how `config.yaml` and `*.local.yaml` overlays compose (deep-merge semantics), where embedded defaults sit, how token substitution works in prompts, and how to customise per-phase prompts.
 
@@ -459,8 +267,7 @@ tasks:
   title: 'Reference: CLI lifecycle commands (run, create, init, version, global flags)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the CLI reference page for lifecycle commands: `ravel-lite run`, `create`, `init` (+ `--force`), `version` (+ `--version`), and the global flags that apply to every command (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`).
 
@@ -496,8 +303,7 @@ tasks:
   title: 'Reference: CLI state commands (projects, backlog, memory, session-log, set-phase, related-components)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the CLI reference page for `ravel-lite state` and all its subcommands: projects, backlog, memory, session-log, set-phase, related-components.
 
@@ -531,8 +337,7 @@ tasks:
   title: 'Reference: CLI survey commands (survey, survey-format)'
   category: docs
   status: not_started
-  dependencies:
-  - reference-mini-site-skeleton-directory-layout-manifest-entries-index-page-asciidoc-template
+  dependencies: []
   description: |
     Write the CLI reference page for the survey verbs: `ravel-lite survey` and `ravel-lite survey-format`.
 
@@ -550,33 +355,3 @@ tasks:
 
     - Page builds and renders.
     - Verbs and flags cross-checked against the `clap` derive structure.
-- id: fix-latest-session-yaml-highlight-rule-extension-in-format-rs
-  title: Fix latest-session.yaml highlight rule extension in format.rs
-  category: core
-  status: not_started
-  dependencies: []
-  description: |
-    Fix the `latest-session.md` highlight rule in `src/format.rs` — the pattern `latest-session\.md$` has never matched because Ravel-Lite writes `latest-session.yaml`. Change to `latest-session\.yaml$` so the "Writing session log" TUI label actually fires during analyse-work.
-
-    ## Problem
-
-    `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` contains:
-
-    ```rust
-    HighlightRule { pattern: Regex::new(r"latest-session\.md$").unwrap(), label: "Writing session log" },
-    ```
-
-    But `ravel-lite state session-log set-latest` writes to `LLM_STATE/core/latest-session.yaml` (confirmed by `ls LLM_STATE/core/latest-session*`). The `.md` extension was written when the file was `.md`; a later rename to `.yaml` wasn't reflected here.
-
-    ## Fix
-
-    ```rust
-    HighlightRule { pattern: Regex::new(r"latest-session\.yaml$").unwrap(), label: "Writing session log" },
-    ```
-
-    One-line change in `src/format.rs`.
-
-    ## Verification
-
-    - `cargo test --quiet` passes.
-    - Manual analyse-work run shows "Writing session log" label.
