@@ -84,7 +84,14 @@ dependency — treat the report as advisory, not authoritative.
    changed, out of scope) via `ravel-lite state backlog delete`.
 
 5. Reprioritize based on what the cycle revealed using
-   `ravel-lite state backlog reorder`.
+   `ravel-lite state backlog reorder`. For every reorder you perform,
+   include a
+   `[REPRIORITISED] <task title> — <one-line reason>`
+   line in your narrative preamble. The reason must name the cycle
+   learning that drove the change (a memory entry, a new dependency, a
+   blocker that emerged, etc.) — "felt better here" is not a reason.
+   The renderer's structural `[REPRIORITISED]` line records the *what*;
+   this preamble line records the *why*.
 
 6. **Scan task descriptions for embedded blockers.** A spike, validation
    step, or shared dependency buried inside one task's description is
@@ -134,6 +141,7 @@ Your output has two parts, in order:
 
    - `[PROMOTED] <hand-off title> — <reason>` (step 3)
    - `[ARCHIVED] <hand-off title> — <reason>` (step 3)
+   - `[REPRIORITISED] <task title> — <reason>` (step 5)
    - `[BLOCKER] <new task title> — extracted from <parent task title>` (step 6)
    - `[DISPATCH] <kind>: <target plan name> — <summary>` (cross-plan dispatch)
 

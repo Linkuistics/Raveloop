@@ -785,4 +785,137 @@ mod tests {
         );
     }
 
+    /// End-to-end pin on the two-part output contract: narrative preamble
+    /// (LLM-authored, intent-bearing labels carrying the *why*) + blank-line
+    /// separator + structural label list (renderer-derived, carrying the
+    /// *what*). Surface area covered:
+    ///
+    /// 1. Every intent-bearing label (`PROMOTED`, `ARCHIVED`, `REPRIORITISED`,
+    ///    `BLOCKER`, `DISPATCH`) renders with bold-intent tag + dim reason row.
+    /// 2. Structural labels (`DONE`, `NEW`, `OBSOLETE`, `STATS`) render after
+    ///    the blank-line separator.
+    /// 3. `REPRIORITISED` appears in *both* halves (intent preamble + structural
+    ///    diff) and both occurrences render as styled tag spans.
+    /// 4. Prose paragraph survives unchanged as dim text.
+    /// 5. The two halves are separated by ≥1 blank line.
+    /// 6. The whole output is ANSI-free (renderer-agnostic styling contract).
+    ///
+    /// Targets the regression class introduced by ce240f9 (a prompt-side
+    /// drift that stopped the LLM emitting intent labels and went undetected
+    /// because no test exercised the full pipeline).
+    #[test]
+    fn format_result_text_pins_two_part_triage_output_shape() {
+        let input = "\
+Triage swept the backlog after the cycle's verification work. Two hand-offs were ripe for promotion and one task moved up after the new dependency landed.
+
+[PROMOTED] Decompose ingest pipeline — design settled in this cycle's reflection
+[ARCHIVED] Datalog cross-artifact queries — strategic but not yet concrete
+[REPRIORITISED] Wire health endpoint — moved up after ingest dependency landed
+[BLOCKER] Schema migration spike — extracted from Decompose ingest pipeline
+[DISPATCH] child: APIAnyware-MacOS — propagate verification-tooling pattern
+
+[DONE] Wire health endpoint
+[NEW] Schema migration spike
+[REPRIORITISED] Wire health endpoint
+[OBSOLETE] Legacy ingest path
+[STATS] 2 promoted, 1 archived, 1 dispatched";
+
+        let lines = format_result_text(input);
+
+        // 1. Intent-bearing labels: tag span carries bold-intent, reason span is dim.
+        let intent_cases = [
+            ("PROMOTED",      Intent::Added,   "design settled in this cycle's reflection"),
+            ("ARCHIVED",      Intent::Added,   "strategic but not yet concrete"),
+            ("REPRIORITISED", Intent::Changed, "moved up after ingest dependency landed"),
+            ("BLOCKER",       Intent::Changed, "extracted from Decompose ingest pipeline"),
+            ("DISPATCH",      Intent::Added,   "propagate verification-tooling pattern"),
+        ];
+        for (label, intent, reason) in intent_cases {
+            let tag_span = lines
+                .iter()
+                .flat_map(|l| l.0.iter())
+                .find(|s| s.text.trim() == label && s.style == Style::bold_intent(intent))
+                .unwrap_or_else(|| panic!("missing bold-intent tag span for {label}"));
+            let _ = tag_span;
+            let reason_span = lines
+                .iter()
+                .flat_map(|l| l.0.iter())
+                .find(|s| s.text.contains(reason))
+                .unwrap_or_else(|| panic!("missing reason span for {label}: {reason}"));
+            assert_eq!(reason_span.style, Style::dim(), "{label}: reason span must be dim");
+        }
+
+        // 2. Structural labels render with their own intent (DONE → Added,
+        //    NEW → Added, OBSOLETE → Removed, STATS → dim/none).
+        let structural_cases = [
+            ("DONE",     Some(Style::bold_intent(Intent::Added))),
+            ("NEW",      Some(Style::bold_intent(Intent::Added))),
+            ("OBSOLETE", Some(Style::bold_intent(Intent::Removed))),
+            ("STATS",    Some(Style::dim())),
+        ];
+        for (label, expected_style) in structural_cases {
+            let tag_span = lines
+                .iter()
+                .flat_map(|l| l.0.iter())
+                .find(|s| s.text.trim() == label)
+                .unwrap_or_else(|| panic!("missing structural tag span for {label}"));
+            assert_eq!(
+                Some(tag_span.style),
+                expected_style,
+                "{label}: tag span style mismatch",
+            );
+        }
+
+        // 3. REPRIORITISED appears twice (intent preamble + structural diff).
+        let reprior_tag_count = lines
+            .iter()
+            .flat_map(|l| l.0.iter())
+            .filter(|s| s.text.trim() == "REPRIORITISED")
+            .count();
+        assert_eq!(
+            reprior_tag_count, 2,
+            "REPRIORITISED should appear twice (intent + structural), got {reprior_tag_count}",
+        );
+
+        // 4. Preamble prose paragraph survives as dim text.
+        let prose_anchor = "Two hand-offs were ripe for promotion";
+        let prose_span = lines
+            .iter()
+            .flat_map(|l| l.0.iter())
+            .find(|s| s.text.contains(prose_anchor))
+            .expect("preamble prose must survive");
+        assert_eq!(prose_span.style, Style::dim(), "preamble prose must render as dim");
+
+        // 5. Preamble half ends and structural half begins separated by ≥1 blank.
+        let last_intent_idx = lines
+            .iter()
+            .rposition(|l| l.0.iter().any(|s| s.text.trim() == "DISPATCH"))
+            .expect("DISPATCH row");
+        let first_structural_idx = lines
+            .iter()
+            .position(|l| l.0.iter().any(|s| s.text.trim() == "DONE"))
+            .expect("DONE row");
+        assert!(
+            first_structural_idx > last_intent_idx,
+            "structural half must follow intent half",
+        );
+        let between_blanks = lines[last_intent_idx + 1..first_structural_idx]
+            .iter()
+            .filter(|l| l.is_blank())
+            .count();
+        assert!(
+            between_blanks >= 1,
+            "preamble and structural halves must be separated by ≥1 blank line, got 0",
+        );
+
+        // 6. Renderer is ANSI-free end-to-end.
+        for line in &lines {
+            for span in &line.0 {
+                assert!(
+                    !span.text.contains('\x1b'),
+                    "ANSI byte leaked into rendered output: {span:?}",
+                );
+            }
+        }
+    }
 }

@@ -421,10 +421,15 @@ groups:
 Plan-state paths are reported but flagged `commit: false` because
 they are committed by the script phase, not by analyse-work.
 
-**Prompt section replaced.** The LLM no longer partitions; it writes
-one commit message per group (the genuine judgement task) and the
-runner (or a second verb) stages each group and issues the
-`git commit`.
+**Relation to `commits.yaml`.** The LLM still authors `commits.yaml`
+end-to-end under the current flow — paths *and* messages. Partition
+structure is genuine judgement when one logical change straddles path
+groups, so this verb does not aim to remove partitioning from the
+LLM's job. What it adds is a Rust-generated *preview* of the canonical
+path-prefix bucketing that the LLM can accept verbatim, refine, or
+discard before writing `commits.yaml`. The framing is "extract the
+mechanical partition rubric into Rust as a starting point", not
+"introduce partitioning".
 
 **Dependency.** This is the second user-added task
 (`analyse-work-better-analysis-split-commits-by-hunk-better-messages`)

@@ -2,7 +2,7 @@ tasks:
 - id: fix-stale-references-in-llm-work-audit-md-2-9-and-git-rs-32-doc-comment
   title: Fix stale references in llm-work-audit.md §2.9 and git.rs:32 doc-comment
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Fix two stale references surfaced by the sync-docs cycle.
@@ -26,6 +26,47 @@ tasks:
     ## Verification
 
     Confirm the updated doc matches `src/git.rs::apply_commits_spec` behaviour and the current `analyse-work.md` step 9 description.
+  results: |
+    ## What was done
+
+    Two stale references corrected.
+
+    ### `src/git.rs:32` doc comment
+
+    Old comment:
+    ```
+    /// Stage plan directory and commit with the message from commit-message.md
+    /// (or a default message). Returns whether anything was committed.
+    ```
+
+    New comment names the actual mechanism, the actual current callers, and points to the sibling function that handles the work-phase path:
+
+    > Stage the plan directory and commit it. The message comes from `commit-message.md` if present (and the file is removed after read); otherwise the default `run-plan: {phase_name} ({plan_name})` is used. Used by the reflect / dream / triage / save-*-baseline phases — none of which currently author `commit-message.md`, so the default-message branch is what fires in practice today. The work-phase commit is handled separately by `apply_commits_spec` against `commits.yaml`. Returns whether anything was committed.
+
+    ### `docs/analysis/llm-work-audit.md §2.9`
+
+    Replaced the misleading "**Prompt section replaced.** The LLM no longer partitions; it writes one commit message per group …" paragraph with a "**Relation to `commits.yaml`.**" paragraph that:
+
+    - Acknowledges the LLM still authors `commits.yaml` end-to-end (paths *and* messages) under the current flow.
+    - States explicitly that this verb is a Rust-generated *preview* the LLM can accept, refine, or discard — not a removal of partitioning from the LLM's job.
+    - Captures the underlying intent: "extract the mechanical partition rubric into Rust as a starting point", not "introduce partitioning".
+
+    The opening "Shape" sentence already framed the verb as proposing a partition (not as the partition source of record), so it didn't need editing.
+
+    ## Why this mattered (and a discovery)
+
+    The backlog framing claimed `commit-message.md` was deleted and that `git_commit_plan` "now applies `commits.yaml` via `apply_commits_spec`". That isn't quite right: `git_commit_plan` and `apply_commits_spec` are siblings, not a delegation. The function `git_commit_plan` is still alive — it's used by reflect / dream / triage / save-*-baseline. Inside that function, the `commit-message.md` branch is **dead in practice today**: searching `defaults/` and `src/` confirms no current phase prompt authors `commit-message.md` (the only remaining mention in `src/` is a UI highlight rule in `src/format.rs:101`). The work-phase commit goes through `apply_commits_spec` and `commits.yaml`.
+
+    The new doc comment tells this story honestly: legacy branch first, current behaviour second, sibling function for the work-phase path. A reader landing on `git_commit_plan` for the first time now has a map to the actual mechanism without having to grep across the codebase.
+
+    ## What didn't work / wasn't attempted
+
+    - **Did not delete the legacy `commit-message.md` branch from `git_commit_plan`.** The task scope was limited to the doc comment; ripping out dead code would have been scope creep. If the team wants to retire that branch, that's a separate task — at minimum it requires confirming that no out-of-tree plan or external override authors `commit-message.md`, plus removing the `format.rs:101` highlight rule.
+
+    ## What this suggests next
+
+    - A small follow-up task could remove the legacy `commit-message.md` branch (and its highlight rule) once the team is confident no external plan still relies on it. The new doc comment is the discovery vehicle for that decision.
+    - The audit doc has other §2.x entries written before the `commits.yaml` flow landed — worth a sweep to see whether any others now describe a state of the world that no longer exists.
 - id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
   title: 'Write tutorial walk-through: install through further-cycles with worked example'
   category: docs
@@ -97,7 +138,7 @@ tasks:
 - id: add-snapshot-test-for-format-result-text-two-part-output-shape
   title: Add snapshot test for format_result_text two-part output shape
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Add an end-to-end snapshot test in `tests/format_result_text.rs` (or inline in `src/format.rs` tests) that pins the two-part output shape against a representative example LLM response.
@@ -126,3 +167,92 @@ tasks:
     ## Verification
 
     `cargo test` — all existing tests still pass; new test passes.
+  results: |
+    ## What was done
+
+    Added `format_result_text_pins_two_part_triage_output_shape` inline in `src/format.rs` (alongside the other 25+ `format_result_text_*` tests, which is the project's established convention — a separate `tests/format_result_text.rs` would have needed to re-implement the private `flat_text` / `flat_text_all` helpers).
+
+    The test feeds a representative full triage transcript through `format_result_text` — narrative preamble with all five intent-bearing labels, a blank-line separator, and a structural label list mimicking the renderer's diff output — and asserts six contracts simultaneously:
+
+    1. **Every intent-bearing label** (`PROMOTED`, `ARCHIVED`, `REPRIORITISED`, `BLOCKER`, `DISPATCH`) renders with a bold-intent tag span at the correct `Intent` and a dim reason span carrying the right text.
+    2. **Structural labels** (`DONE`, `NEW`, `OBSOLETE`, `STATS`) render after the blank-line separator with their renderer-side intent (`Added`, `Removed`, dim).
+    3. **`REPRIORITISED` appears in *both* halves** (intent preamble + structural diff) and both occurrences render — pins the new label-routing contract added in this same cycle by `triage-must-include-a-reason-for-every-reprioritisation`.
+    4. **Preamble prose** (free-form sentence) survives unchanged as dim text — the pass-through path that's easy to silently break with a regex tweak.
+    5. **The two halves are separated by ≥1 blank line** — pins the visual contract that the renderer's structural list isn't visually fused to the LLM's preamble.
+    6. **Renderer is ANSI-free end-to-end** — guards the renderer-agnostic styling contract documented at `src/format.rs:9-11`.
+
+    A doc-comment on the test names the regression class it targets (commit `ce240f9`, where a prompt-side drift dropped intent labels and went undetected because no test exercised the full pipeline). That's the *why* of this test, captured where any future maintainer touching the test will see it.
+
+    ## Why structural assertions, not a verbatim-string snapshot
+
+    Considered both. The existing 25+ `format_result_text_*` tests in this module all use targeted span lookups (style + text) rather than verbatim string snapshots — that's the deliberate project style. A verbatim-string snapshot would also be brittle to `LABEL_WIDTH` shifts (it changes whenever a new label lands in `ACTION_INTENTS`), producing false positives on innocuous changes. The structural-assertion approach catches the real regression class (any label-class drops out, any intent re-mapping, any pass-through path silently breaks) without false-positive churn.
+
+    ## Verification
+
+    - `cargo test --quiet --lib format::tests::format_result_text_pins_two_part_triage_output_shape` → passes in isolation.
+    - `cargo test --quiet` → 586 lib tests pass (was 585), all integration tests pass.
+
+    ## What didn't work / wasn't attempted
+
+    - **Pre-existing clippy failure surfaced.** While running `cargo clippy --lib` to lint the new test code, it failed on `src/state/backlog/render.rs:95` (`unnecessary_sort_by` — clippy suggests `sort_by_key` over a `cmp` closure). Confirmed pre-existing on `main` via `git stash` + clippy + `git stash pop`. Not in scope for this task; should be its own follow-up. The fix is mechanical (one line) but is unrelated to the snapshot test.
+
+    ## What this suggests next
+
+    - **File a small follow-up backlog task** for the clippy `unnecessary_sort_by` warning at `src/state/backlog/render.rs:95`. Worth adding `cargo clippy --lib -- -D warnings` to a CI check (or a pre-commit hook) so future drifts surface immediately.
+    - If a verbatim snapshot ever becomes desirable (e.g. for snapshot-style review of TUI output), `insta` is the natural choice — but the case for it isn't strong today; structural assertions match the existing test style and are less brittle.
+- id: triage-must-include-a-reason-for-every-reprioritisation
+  title: Triage must include a reason for every reprioritisation
+  category: core
+  status: done
+  dependencies: []
+  description: |
+    Triage currently emits a structural `[REPRIORITISED] <title>` line via the renderer (diffed from the backlog baseline), but the LLM is never asked to supply a reason in the narrative preamble. The other intent-bearing labels (`[PROMOTED]`, `[ARCHIVED]`, `[BLOCKER]`, `[DISPATCH]`) all carry a `subject — reason` form; reprioritisation is the one asymmetry.
+
+    ## What
+
+    Edit `defaults/phases/triage.md`:
+
+    1. In step 5 ("Reprioritize based on what the cycle revealed…"), instruct the LLM to include a `[REPRIORITISED] <task title> — <reason>` line in the narrative preamble for every reorder it performs.
+    2. Add `[REPRIORITISED] <task title> — <reason>` to the bullet list in the "Output format" section (lines 134-138) alongside the other four intent labels.
+
+    Apply to *every* reorder, not a softer threshold — if a reorder isn't worth a one-line justification, it isn't worth doing.
+
+    ## Why
+
+    The two-part output contract is: structural labels (renderer-derived) carry the *what*; intent labels (LLM-authored) carry the *why*. Reprioritisation has the structural half but is missing the intent half — readers of the triage transcript can see that priority changed but not what cycle learning drove the change.
+
+    ## Scope
+
+    - Prose-only edit to one prompt file. No Rust changes — `src/format.rs:134` already classifies `REPRIORITISED` as an intent-bearing label, so the renderer/colorizer is ready.
+
+    ## Verification
+
+    - The amended prompt parses (no syntax issues — it is plain markdown).
+    - The new label format is consistent in punctuation and structure with the other four entries in the Output format section.
+  results: |
+    ## What was done
+
+    Edited `defaults/phases/triage.md` to require the LLM to author a reason for every reprioritisation, restoring symmetry with the other four intent-bearing labels (`[PROMOTED]`, `[ARCHIVED]`, `[BLOCKER]`, `[DISPATCH]`).
+
+    Two prose changes:
+
+    1. **Step 5** ("Reprioritize based on what the cycle revealed…") now spells out that for every reorder performed, the LLM must include a `[REPRIORITISED] <task title> — <one-line reason>` line in the narrative preamble. The inline guidance also explains *what counts as a reason* (the cycle learning that drove the change — a memory entry, a new dependency, a blocker that emerged) and rejects empty justifications ("felt better here" is explicitly disallowed). A short trailing sentence reinforces the structural-vs-intent distinction: the renderer's structural `[REPRIORITISED]` line records the *what*; the new preamble line records the *why*.
+    2. **Output format bullet list** (lines 142-146) now includes `[REPRIORITISED] <task title> — <reason>` (step 5) alongside the other four intent labels, in the order the steps fire.
+
+    No Rust changes were needed — `src/format.rs:134` already classifies `REPRIORITISED` as `Intent::Changed`, so the colorizer / two-row layout in `format_result_text` will pick up the new label naturally.
+
+    ## What worked
+
+    - The change is contained to one prompt file. The two-part output contract (renderer-derived structural labels for *what*, LLM-authored intent labels for *why*) was already cleanly factored, so the missing piece really was a prompt-side asymmetry, not an architectural gap.
+    - Full `cargo test` passes (585 unit + integration tests). Nothing pinned the real prompt content — `tests/phase_loop.rs` and `tests/dream.rs` write a stub `"triage on {{PLAN}}"` body for their fixtures, so prompt-content changes don't ripple into tests.
+
+    ## What didn't work / wasn't attempted
+
+    - The change won't apply to plans that have already been initialised against an older `defaults/phases/triage.md` until the user runs `ravel-lite init --force` against those plans. This is the documented visibility/auditability model (no surprise prompt mutations under the user's feet), so it is intentional rather than a gap — but worth noting if the user expects the new behaviour to apply to existing plans without re-init.
+    - No snapshot test was added for the new label form. A snapshot test for the two-part output shape is already on the backlog as `add-snapshot-test-for-format-result-text-two-part-output-shape`; that task is the natural home for `[REPRIORITISED]`-bearing example coverage. Folding it in now would have widened scope.
+
+    ## What this suggests next
+
+    - When `add-snapshot-test-for-format-result-text-two-part-output-shape` is picked up, ensure the representative example includes a `[REPRIORITISED]` line so the new contract is locked in by a test.
+    - If the user wants this propagated to existing plans (this project's own `LLM_STATE/core/phase.md`-equivalent triage prompt, plus any external Ravel-Lite-managed plans), they will need to run `ravel-lite init --force` against each. Worth surfacing once during reflect / triage if the change is judged broadly important.
+    - Consider whether `analyse-work.md` has any analogous gap — it generates a session log and commit message from the diff and does not currently own intent-label discipline, but a similar audit might find one.
