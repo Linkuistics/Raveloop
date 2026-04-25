@@ -86,7 +86,7 @@ entries:
 - id: work-baseline-seeded-atomically-in-the-triage-commit
   title: Work-baseline seeded atomically in the triage commit
   body: |
-    `GitCommitTriage` calls `git_commit_plan` first, then `git_save_work_baseline`, so `work-baseline` records the triage commit SHA (not the reflect commit). A follow-on save-work-baseline commit lands the file; plan tree is dirty-free at user prompt. `LlmPhase::Work` seeds work-baseline only when the file is absent (first-run fallback).
+    `GitCommitTriage` calls `git_commit_plan` first, then `git_save_baseline(plan_dir, "work-baseline")`, so `work-baseline` records the triage commit SHA (not the reflect commit). A follow-on save-baseline commit lands the file; plan tree is dirty-free at user prompt. `LlmPhase::Work` seeds work-baseline only when the file is absent (first-run fallback). `git_save_baseline(plan_dir, filename)` is the generalized helper used by all four `GitCommit*` handlers.
 - id: llmphase-work-does-not-delete-latest-session-yaml
   title: '`LlmPhase::Work` does not delete `latest-session.yaml`'
   body: |
@@ -104,9 +104,9 @@ entries:
   body: |
     `dream.rs` computes word count by summing title and body text across all parsed `MemoryEntry` values; markdown punctuation is excluded. `update_baseline_counts_entry_titles_and_bodies` regression test pins this contract. `update_dream_baseline` self-corrects after the first successful dream if a prior raw-markdown baseline drifts.
 - id: dream-baseline-seeded-from-three-call-sites
-  title: '`dream-baseline` seeded from three call sites'
+  title: dream-word-count seeded from three call sites
   body: |
-    `seed_dream_baseline_if_missing` in `src/dream.rs` is called from `run_create` (post-session scaffolding), `run_set_phase` (every LLM phase transition including coordinators), and `GitCommitReflect`. Seeds to 0 ("never dreamed"), not current word count; seeding to current count silently delays the first dream by `headroom` words on populated plans.
+    `seed_dream_word_count_if_missing` in `src/dream.rs` is called from `run_create` (post-session scaffolding), `run_set_phase` (every LLM phase transition including coordinators), and `GitCommitReflect`. Seeds `dream-word-count` to 0 ("never dreamed"), not current word count; seeding to current count silently delays the first dream by `headroom` words on populated plans. Migration: if `dream-word-count` is missing and `dream-baseline` parses as a usize, the value is copied and the legacy file is deleted. `dream-baseline` is now a SHA file; `dream-word-count` is the word-count store.
 - id: phase-prompts-use-ravel-lite-state-cli-verbs
   title: Phase prompts use `ravel-lite state` CLI verbs
   body: |
@@ -536,6 +536,10 @@ entries:
   body: |
     `state phase-summary render` computes structural labels only. Intent-required labels (e.g., a purposeful `[REPRIORITISED]`) are excluded because a diff alone cannot distinguish a deliberate reorder from an accidental one; the LLM preamble carries that reasoning. Structural label sets: `[DONE]`, `[NEW]`, `[OBSOLETE]`, `[REPRIORITISED]` (triage); `[NEW]`, `[OBSOLETE]`, `[STALE]` (reflect/dream); `[STATS]` (dream). Implementation in `src/phase_summary.rs`. See: `LLM reasoning preamble in reflect/dream/triage is a preserved feature`.
 - id: phase-summary-render-prompt-wiring-needs-orchestrator-baseline
-  title: phase-summary render prompt wiring needs orchestrator baseline
+  title: phase-summary render prompt wiring is unblocked
   body: |
-    Triage/reflect/dream output-format sections cannot yet invoke `state phase-summary render` because the orchestrator does not write the baseline file the command must `cat`. Backlog task `wire-orchestrator-baseline-capture-for-reflect-dream-triage-phases` tracks the prerequisite. Wire prompts only after orchestrator baseline capture lands.
+    `state phase-summary render --baseline $(cat <plan>/<phase>-baseline)` is now callable from reflect, dream, and triage phase prompts. All orchestrator baseline files are wired: `GitCommitWork` → `reflect-baseline`; `GitCommitReflect` → `dream-baseline` (or `triage-baseline` when skipping dream); `GitCommitDream` → `triage-baseline`; `GitCommitTriage` → `work-baseline`. Task `update-triage-reflect-dream-prompts-to-invoke-state-phase-summary-render` is next.
+- id: each-phase-baseline-holds-the-sha-from-the-preceding-commit
+  title: Each <phase>-baseline holds the SHA from the preceding commit
+  body: |
+    Each `<phase>-baseline` file holds the commit SHA from just before that phase started — written by the preceding `git-commit-*` step, not by the phase itself. Mapping: `reflect-baseline` ← `GitCommitWork`; `dream-baseline` ← `GitCommitReflect`; `triage-baseline` ← `GitCommitDream` (or `GitCommitReflect` when `should_dream` is false); `work-baseline` ← `GitCommitTriage`. Enables `state phase-summary render --baseline $(cat <phase>-baseline)` calls from phase prompts.
