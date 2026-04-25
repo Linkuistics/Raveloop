@@ -113,7 +113,7 @@ fn extract_handoff_from_block(block: &str) -> Option<(String, String)> {
 /// defaults describe. Exists so the integration test can swap in a
 /// "well-behaved model" and detect drift between phase prompts and the
 /// orchestrator's file-read expectations (latest-session.md,
-/// commit-message.md, memory.md/backlog.md updates, phase.md
+/// commits.yaml, memory.md/backlog.md updates, phase.md
 /// transitions).
 struct ContractMockAgent {
     plan_dir: std::path::PathBuf,
@@ -190,10 +190,15 @@ impl Agent for ContractMockAgent {
                        - mock analyse-work output\n",
                 )?;
                 fs::write(
-                    plan.join("commit-message.md"),
-                    "analyse-work: contract test session\n\n\
-                     Written by the ContractMockAgent to exercise the\n\
-                     phase → file-write contract.\n",
+                    plan.join("commits.yaml"),
+                    "commits:\n\
+                     - paths:\n  \
+                         - .\n  \
+                         message: |\n    \
+                             analyse-work: contract test session\n\
+                             \n    \
+                             Written by the ContractMockAgent to exercise the\n    \
+                             phase → file-write contract.\n",
                 )?;
                 // Safety-net simulation: a well-behaved model following
                 // the analyse-work prompt flips stale Status: lines on
@@ -570,11 +575,11 @@ async fn phase_contract_round_trip_writes_expected_files() {
         "latest-session.md should contain a Session heading, got:\n{latest}"
     );
 
-    // Contract assertion 2: commit-message.md was consumed by
+    // Contract assertion 2: commits.yaml was consumed by
     // git-commit-work and is no longer on disk.
     assert!(
-        !plan_dir.join("commit-message.md").exists(),
-        "commit-message.md should have been consumed by git-commit-work"
+        !plan_dir.join("commits.yaml").exists(),
+        "commits.yaml should have been consumed by git-commit-work"
     );
 
     // Contract assertion 3: reflect wrote memory.md in the expected
@@ -625,7 +630,7 @@ async fn phase_contract_round_trip_writes_expected_files() {
     let log_str = String::from_utf8(log.stdout).unwrap();
     assert!(
         log_str.contains("analyse-work: contract test session"),
-        "expected analyse-work commit from custom commit-message.md, got log:\n{log_str}"
+        "expected analyse-work commit from custom commits.yaml, got log:\n{log_str}"
     );
     assert!(
         log_str.contains("reflect"),
@@ -1089,7 +1094,7 @@ async fn analyse_work_receives_snapshot_and_commits_uncommitted_source() {
     );
     assert!(
         log_str.contains("analyse-work: contract test session"),
-        "expected the plan-state commit to use commit-message.md, got log:\n{log_str}"
+        "expected the plan-state commit to use commits.yaml, got log:\n{log_str}"
     );
 }
 

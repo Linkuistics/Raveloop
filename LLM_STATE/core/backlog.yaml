@@ -2,7 +2,7 @@ tasks:
 - id: remove-dead-commit-message-md-branch-from-git-commit-plan
   title: Remove dead commit-message.md branch from git_commit_plan
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Remove the dead `commit-message.md` branch from `git_commit_plan` in `src/git.rs` and its associated highlight rule at `src/format.rs:101`.
@@ -33,6 +33,30 @@ tasks:
 
     - `cargo test --quiet` passes with no regressions.
     - `grep -r "commit-message.md" src/` returns no matches (aside from tests or comments that are now obsolete and also removed).
+  results: |
+    ## What was done
+
+    - **`src/git.rs`** — removed the `commit-message.md` read-and-delete branch from `git_commit_plan`. The function now always uses the default `run-plan: {phase_name} ({plan_name})` message. Doc comment rewritten to describe the default-message-only behaviour and to point at `apply_commits_spec` against `commits.yaml` as the work-phase mechanism.
+    - **`src/format.rs`** — removed the `HighlightRule` for `commit-message.md` (the "Writing commit message" label) from `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]`.
+    - **`tests/phase_loop.rs`** — `ContractMockAgent::invoke_headless` for `AnalyseWork` now writes `commits.yaml` (a single spec entry covering `paths: ["."]` with the legacy custom message) instead of `commit-message.md`. Updated assertion 2 to check `commits.yaml` was consumed by `git-commit-work`. Updated two error-message strings ("expected …commit-message.md" → "…commits.yaml"). Updated the `ContractMockAgent` doc comment.
+    - **`tests/pi_agent.rs`** — fake-pi shell script now `cat`s `commits.yaml` (with the same single-entry shape) instead of `commit-message.md`. Updated the test's doc comment and the log-assertion error message.
+
+    ## What worked
+
+    - The grep across `defaults/` and `LLM_STATE/` confirmed the precondition (no production prompt or plan dir authors `commit-message.md`).
+    - The migration of test mocks from `commit-message.md` → `commits.yaml` is mechanical: `apply_commits_spec` now drives the custom message directly via the YAML spec file, instead of relying on the side-effect chain where `commit-message.md` lingered through `apply_commits_spec` and was consumed by the next `git_commit_plan` call (`save-reflect-baseline`). That side-effect was the actual mechanism the tests were exercising — surfacing it as the task description's "dead branch in `git_commit_plan`" was misleading; the branch was reachable, just only via tests.
+    - Verification: `grep -rn "commit-message" src/ tests/ defaults/` returns zero matches. Full test suite passes (`cargo test` — 586 unit + all integration tests, no failures). `cargo build --tests` clean.
+
+    ## What didn't / wrinkles
+
+    - The backlog precondition only mentioned `defaults/` and `LLM_STATE/` — it did not flag the active test fixtures that still wrote `commit-message.md`. The `(aside from tests or comments that are now obsolete and also removed)` clause in the verification step covered the case but the scope statement could have been more explicit.
+    - The PHASE_HIGHLIGHTS for `AnalyseWork` now has only one rule (`latest-session.md`). It would be reasonable to add a `commits.yaml` highlight rule ("Writing commit spec" or similar) so the UI feedback covers analyse-work's other major file write — but that is scope-creep against this task. Filed as a suggestion below.
+
+    ## What this suggests next
+
+    - Add a `HighlightRule` for `commits.yaml` in `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` to surface the file write in TUI progress.
+    - The memory entries at `memory.yaml:558-561` (`commit-message-md-branch-in-git-commit-plan-is-dead`) and `memory.yaml:65` (`pi_phase_cycle_substitutes_tokens_and_streams_events` description, which still references "audit commit via `commit-message.md`") are now stale. Reflect should retire/update them next cycle.
+    - The task description called the branch "dead in production" but the test fixtures kept it alive via a side-effect chain. Worth a small post-mortem note: if a "dead code" task surfaces again, the precondition check should always include `tests/` not just production prompts.
 - id: fix-clippy-unnecessary-sort-by-in-render-rs-and-enforce-clean-clippy-in-ci
   title: Fix clippy unnecessary_sort_by in render.rs and enforce clean clippy in CI
   category: core
@@ -137,3 +161,40 @@ tasks:
   - write-reference-page-covering-all-user-facing-cli-verbs
   description: |
     Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
+- id: add-commits-yaml-highlight-rule-to-analysework-phase
+  title: Add commits.yaml highlight rule to AnalyseWork phase
+  category: core
+  status: not_started
+  dependencies: []
+  description: |
+    Add a `HighlightRule` for `commits.yaml` to `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` in `src/format.rs` so that the TUI shows progress feedback when the analyse-work phase writes its commit spec.
+
+    ## What
+
+    `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` currently has only one rule:
+
+    ```rust
+    HighlightRule { pattern: Regex::new(r"latest-session\.md$").unwrap(), label: "Writing session log" },
+    ```
+
+    The other major file write in analyse-work — `commits.yaml` — has no matching rule, so no progress label appears in the TUI when that write happens. Adding:
+
+    ```rust
+    HighlightRule { pattern: Regex::new(r"commits\.yaml$").unwrap(), label: "Writing commit spec" },
+    ```
+
+    would give the user visible feedback for both of analyse-work's primary outputs.
+
+    ## Why
+
+    The `commit-message.md` removal session (`remove-dead-commit-message-md-branch-from-git-commit-plan`) deleted the old highlight rule alongside the dead branch. The `commits.yaml` mechanism that replaced it has no corresponding rule. This is a minor UX gap — the TUI goes silent during the commit-spec write even though it takes a non-trivial amount of time for large sessions.
+
+    ## Scope
+
+    - Add the `commits.yaml` `HighlightRule` to `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` at `src/format.rs`.
+    - No other changes required; the highlight infrastructure is already in place.
+
+    ## Verification
+
+    - `cargo test --quiet` passes.
+    - Manual run of analyse-work phase shows "Writing commit spec" label in TUI when `commits.yaml` is being written.

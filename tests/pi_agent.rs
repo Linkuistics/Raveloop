@@ -144,7 +144,7 @@ fn message_kind(msg: &UIMessage) -> Option<&'static str> {
 ///      `UIMessage` variants (Progress for `tool_execution_start`,
 ///      Persist for `message_end`, AgentDone on close).
 ///   4. The cycle advances to `git-commit-work` and produces an
-///      audit commit using the agent's `commit-message.md`.
+///      audit commit using the agent's `commits.yaml`.
 #[tokio::test]
 async fn pi_phase_cycle_substitutes_tokens_and_streams_events() {
     let bin_dir = TempDir::new().unwrap();
@@ -205,11 +205,15 @@ case "$current" in
 ### Session 1 (2026-04-19T00:00:00Z) — pi mock
 - minimal session entry
 SESSION_EOF
-        cat > '__PLAN_DIR__/commit-message.md' <<'COMMIT_EOF'
-analyse-work: pi mock session
+        cat > '__PLAN_DIR__/commits.yaml' <<'COMMITS_EOF'
+commits:
+- paths:
+  - .
+  message: |
+    analyse-work: pi mock session
 
-Written by the fake pi binary in pi_phase_cycle test.
-COMMIT_EOF
+    Written by the fake pi binary in pi_phase_cycle test.
+COMMITS_EOF
         printf 'git-commit-work' > '__PLAN_DIR__/phase.md'
         ;;
     reflect)
@@ -306,7 +310,7 @@ echo '{"type":"message_end","content":[{"type":"text","text":"done"}]}'
     let log_str = String::from_utf8(log.stdout).unwrap();
     assert!(
         log_str.contains("analyse-work: pi mock session"),
-        "expected analyse-work commit using commit-message.md, got log:\n{log_str}"
+        "expected analyse-work commit using commits.yaml, got log:\n{log_str}"
     );
 }
 

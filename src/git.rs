@@ -29,26 +29,14 @@ pub struct CommitsSpec {
     pub commits: Vec<CommitSpec>,
 }
 
-/// Stage the plan directory and commit it. The message comes from
-/// `commit-message.md` if present (and the file is removed after read);
-/// otherwise the default `run-plan: {phase_name} ({plan_name})` is used.
-/// Used by the reflect / dream / triage / save-*-baseline phases — none
-/// of which currently author `commit-message.md`, so the default-message
-/// branch is what fires in practice today. The work-phase commit is
-/// handled separately by `apply_commits_spec` against `commits.yaml`.
+/// Stage the plan directory and commit it with the default message
+/// `run-plan: {phase_name} ({plan_name})`. Used by the
+/// reflect / dream / triage / save-*-baseline phases, none of which
+/// produce a custom commit message. The work-phase commit is handled
+/// separately by `apply_commits_spec` against `commits.yaml`.
 /// Returns whether anything was committed.
 pub fn git_commit_plan(plan_dir: &Path, plan_name: &str, phase_name: &str) -> Result<CommitResult> {
-    let commit_msg_path = plan_dir.join("commit-message.md");
-    let message = if commit_msg_path.exists() {
-        let msg = fs::read_to_string(&commit_msg_path)
-            .context("Failed to read commit-message.md")?
-            .trim()
-            .to_string();
-        fs::remove_file(&commit_msg_path).ok();
-        msg
-    } else {
-        format!("run-plan: {phase_name} ({plan_name})")
-    };
+    let message = format!("run-plan: {phase_name} ({plan_name})");
 
     Command::new("git")
         .current_dir(plan_dir)

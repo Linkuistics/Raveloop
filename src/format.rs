@@ -98,7 +98,6 @@ static PHASE_HIGHLIGHTS: Lazy<HashMap<LlmPhase, Vec<HighlightRule>>> = Lazy::new
     let mut m = HashMap::new();
     m.insert(LlmPhase::AnalyseWork, vec![
         HighlightRule { pattern: Regex::new(r"latest-session\.md$").unwrap(), label: "Writing session log" },
-        HighlightRule { pattern: Regex::new(r"commit-message\.md$").unwrap(), label: "Writing commit message" },
     ]);
     m.insert(LlmPhase::Reflect, vec![
         HighlightRule { pattern: Regex::new(r"memory\.md$").unwrap(), label: "Updating memory" },

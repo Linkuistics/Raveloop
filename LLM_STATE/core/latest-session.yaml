@@ -1,13 +1,12 @@
-id: session-57
-timestamp: 2026-04-25T10:38:53Z
+id: session-58
+timestamp: 2026-04-25T11:05:14Z
 phase: work
 body: |
-  ### Session 57 (2026-04-25T10:38:53Z) — Triage output shape: test, prompt fix, stale doc repairs
+  ### Session 58 (2026-04-25T11:05:14Z) — Remove commit-message.md branch from git_commit_plan
 
-  - Worked three tasks: fix stale references in `git.rs` and `llm-work-audit.md §2.9`; add a snapshot-style test pinning the two-part triage output shape in `src/format.rs`; and update `defaults/phases/triage.md` to require an LLM-authored reason for every reprioritisation.
-  - All three tasks completed cleanly. `cargo test` went from 585 to 586 tests; the new test covers all five intent-bearing labels (including `REPRIORITISED`), the four structural labels, ANSI-free output, and the blank-line separation contract.
-  - A pre-existing `clippy unnecessary_sort_by` warning at `src/state/backlog/render.rs:95` surfaced during linting — confirmed present on `main` before the session; left for a follow-up.
-  - The `git.rs` doc comment investigation revealed that the `commit-message.md` branch inside `git_commit_plan` is dead in practice today (no current phase prompts author that file), and the only remaining reference lives in `src/format.rs:101` as a UI highlight rule. Removal is a separate task.
-  - Discovery in `llm-work-audit.md §2.9`: the old paragraph said "the LLM no longer partitions" which was wrong — the LLM still authors `commits.yaml` end-to-end. The corrected paragraph frames the verb as a Rust-generated preview the LLM can accept, refine, or discard.
-  - The triage prompt change (step 5 + output-format bullet) is a prose-only edit; the renderer already classifies `REPRIORITISED` as `Intent::Changed` at `src/format.rs:134`, so no Rust changes were needed.
-  - What this suggests next: file a follow-up for the `clippy unnecessary_sort_by` at `render.rs:95`; consider retiring the dead `commit-message.md` branch in `git_commit_plan` (requires confirming no out-of-tree plan uses it, plus removing the `format.rs:101` highlight rule); sweep remaining `llm-work-audit.md §2.x` entries for other stale framing from before the `commits.yaml` flow landed.
+  - Removed the legacy `commit-message.md` read-and-delete branch from `git_commit_plan` in `src/git.rs`. The function now always uses the default `run-plan: {phase_name} ({plan_name})` message; the custom-message path for the work phase is handled entirely by `apply_commits_spec` against `commits.yaml`.
+  - Removed the `HighlightRule` for `commit-message.md` ("Writing commit message") from `PHASE_HIGHLIGHTS[LlmPhase::AnalyseWork]` in `src/format.rs`.
+  - Updated `tests/phase_loop.rs` (`ContractMockAgent`) and `tests/pi_agent.rs` (fake-pi shell script) to write `commits.yaml` instead of `commit-message.md`, matching the current mechanism.
+  - Full test suite passes (586 unit + all integration tests). `grep -rn "commit-message" src/ tests/ defaults/` returns zero matches.
+  - Key wrinkle: the task described the branch as "dead in production" but the test fixtures kept it alive via a side-effect chain (the file lingered through `apply_commits_spec` and was consumed by `git_commit_plan` on the next phase call). The branch was reachable, just only through tests. Future "dead code" tasks should always include `tests/` in the precondition grep scope.
+  - The `AnalyseWork` highlight list now has only one rule (`latest-session.md`). Adding a `commits.yaml` highlight rule ("Writing commit spec") would improve TUI feedback during analyse-work — filed as a backlog task.
