@@ -563,3 +563,7 @@ entries:
   title: Dead-code grep must include tests/ scope
   body: |
     A code path that writes no production output may remain live through test fixture side-effects. Precondition greps for dead-code tasks must include `tests/`; production-source-only searches produce false negatives.
+- id: latest-session-md-highlight-rule-targets-wrong-filename
+  title: latest-session.md highlight rule targets wrong filename
+  body: |
+    `src/format.rs` HighlightRule for the AnalyseWork TUI phase targets `latest-session.md`; the actual file written is `latest-session.yaml`. The "Writing session log" label has never fired. A fix task exists in the backlog.
