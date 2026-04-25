@@ -46,14 +46,44 @@ tracked in git.
 
 ## Output format
 
-After your narrative preamble, run:
+Your output has two parts, in order:
 
-    ravel-lite state phase-summary render {{PLAN}} --phase dream \
-        --baseline $(cat {{PLAN}}/dream-baseline 2>/dev/null || echo "")
+1. A narrative preamble — a brief paragraph on the patterns you
+   noticed across memory and the consolidations you considered.
+   **Inside this preamble, include one entry per significant rewrite**
+   using the two-line form below — the label line carries the
+   pre-change state; the continuation line begins with `→` (any
+   leading whitespace; the renderer realigns it under the detail
+   column) and carries the post-change state:
 
-and emit its output verbatim. Do not add, remove, or reorder lines.
+   ```
+   [OVERLAPPING] <heading A> + <heading B>
+          → <result heading>
+   [VERBOSE] <heading> — <what was wordy>
+          → <how it is now tightened>
+   [AWKWARD] <heading> — <old phrasing>
+          → <new phrasing>
+   ```
 
-You may precede the action list with a brief reasoning preamble — what
-patterns you noticed across the memory, what consolidations you
-considered. Separate the preamble from the action list with a blank
-line. Do not introduce other sections.
+   Pick the label that names the **state that caused the rewrite**:
+   OVERLAPPING (consolidated two entries), VERBOSE (wordy → tighter),
+   AWKWARD (clear meaning, awkward phrasing → better phrasing). Minor
+   prose edits can be omitted; the renderer's structural diff still
+   surfaces them as `[STALE]`.
+
+   Intent labels complement — they do not replace — the renderer's
+   structural output below. Structural labels report the "what" per
+   id-level diff; intent labels report the "why" only you can supply.
+
+2. A blank line, then the renderer's structural label list, produced by
+   running:
+
+       ravel-lite state phase-summary render {{PLAN}} --phase dream \
+           --baseline $(cat {{PLAN}}/dream-baseline 2>/dev/null || echo "")
+
+   Emit the renderer's output verbatim. Do not add, remove, or reorder
+   its lines. The renderer ends with a `[STATS] <before>` / `→ <after>`
+   word-count entry so the summary is self-describing even when no
+   intent labels were emitted.
+
+Do not introduce other sections.

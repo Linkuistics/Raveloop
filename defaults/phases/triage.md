@@ -62,12 +62,14 @@ dependency — treat the report as advisory, not authoritative.
      design is concrete — run
      `ravel-lite state backlog add {{PLAN}} --title "<title>" --category <cat> --description-file <path>`
      with the inlined decision content verbatim in the description,
-     and emit `[PROMOTED] <hand-off title>` in the triage summary.
+     and include a `[PROMOTED] <hand-off title> — <one-line reason>`
+     line in your narrative preamble.
    - **Archive to memory** when the design is strategic but not yet
      concrete enough to be a standalone task — run
      `ravel-lite state memory add {{PLAN}} --title "<heading>" --body-file <path>`
-     capturing the design intent and rationale, and emit
-     `[ARCHIVED] <hand-off title>` in the summary.
+     capturing the design intent and rationale, and include an
+     `[ARCHIVED] <hand-off title> — <one-line reason>` line in your
+     narrative preamble.
 
    After every hand-off is extracted, clear the hand-off block with
    `ravel-lite state backlog clear-handoff {{PLAN}} <task-id>`, then
@@ -89,7 +91,9 @@ dependency — treat the report as advisory, not authoritative.
    invisible to future work phases until that task runs — even when it
    could run in parallel today. Promote any such blocker to its own
    top-level task (via `state backlog add`) so it surfaces as
-   executable work.
+   executable work, and include a
+   `[BLOCKER] <new task title> — extracted from <parent task title>`
+   line in your narrative preamble.
 
 ## Cross-plan subagent dispatch
 
@@ -111,6 +115,9 @@ Rules:
 - Use `|` (block scalar) for multi-line summaries
 - Omit the file entirely if there are no dispatches
 - Do **not** attempt to dispatch anything yourself — the driver reads this file after you exit and handles dispatch
+- For each dispatch entry written, include a
+  `[DISPATCH] <kind>: <target plan name> — <one-line summary>` line in
+  your narrative preamble.
 
 7. Run `ravel-lite state set-phase {{PLAN}} git-commit-triage`.
 
@@ -118,14 +125,29 @@ Rules:
 
 ## Output format
 
-After your narrative preamble, run:
+Your output has two parts, in order:
 
-    ravel-lite state phase-summary render {{PLAN}} --phase triage \
-        --baseline $(cat {{PLAN}}/triage-baseline 2>/dev/null || echo "")
+1. A narrative preamble — a brief paragraph on what patterns you saw
+   across the backlog and what drove reprioritisations or hand-off
+   decisions. **Inside this preamble, include one line per
+   intent-bearing action**, using the formats specified above:
 
-and emit its output verbatim. Do not add, remove, or reorder lines.
+   - `[PROMOTED] <hand-off title> — <reason>` (step 3)
+   - `[ARCHIVED] <hand-off title> — <reason>` (step 3)
+   - `[BLOCKER] <new task title> — extracted from <parent task title>` (step 6)
+   - `[DISPATCH] <kind>: <target plan name> — <summary>` (cross-plan dispatch)
 
-You may precede the action list with a brief reasoning preamble — what
-patterns you saw across the backlog, what drove reprioritisations or
-hand-off decisions. Separate the preamble from the action list with a
-blank line. Do not introduce other sections.
+   These complement — they do not replace — the renderer's structural
+   output below. Intent labels capture the "why" the diff cannot
+   recover; structural labels capture the "what".
+
+2. A blank line, then the renderer's structural label list, produced by
+   running:
+
+       ravel-lite state phase-summary render {{PLAN}} --phase triage \
+           --baseline $(cat {{PLAN}}/triage-baseline 2>/dev/null || echo "")
+
+   Emit the renderer's output verbatim. Do not add, remove, or reorder
+   its lines.
+
+Do not introduce other sections.

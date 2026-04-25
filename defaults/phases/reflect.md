@@ -57,14 +57,31 @@ the Memory style rules.
 
 ## Output format
 
-After your narrative preamble, run:
+Your output has two parts, in order:
 
-    ravel-lite state phase-summary render {{PLAN}} --phase reflect \
-        --baseline $(cat {{PLAN}}/reflect-baseline 2>/dev/null || echo "")
+1. A narrative preamble — a brief paragraph on what you noticed in the
+   session and what trade-offs drove your choices. **Inside this
+   preamble, include one line per intent-bearing memory edit** using:
 
-and emit its output verbatim. Do not add, remove, or reorder lines.
+   - `[IMPRECISE] <heading> — <what was vague, how it is now sharper>`
+     for entries you sharpened rather than replaced. The renderer
+     classifies any title-or-body change as `[STALE]`; `[IMPRECISE]`
+     is the subtype that says the prior wording was technically
+     correct but vague — only you can distinguish that from a true
+     replacement.
 
-You may precede the action list with a brief reasoning preamble — what
-you noticed in the session, what trade-offs drove your choices. Separate
-the preamble from the action list with a blank line. Do not introduce
-other sections.
+   These complement — they do not replace — the renderer's structural
+   output below. The renderer reports the "what" (NEW / STALE /
+   OBSOLETE per id-level diff); intent labels report the "why" the
+   diff cannot recover.
+
+2. A blank line, then the renderer's structural label list, produced by
+   running:
+
+       ravel-lite state phase-summary render {{PLAN}} --phase reflect \
+           --baseline $(cat {{PLAN}}/reflect-baseline 2>/dev/null || echo "")
+
+   Emit the renderer's output verbatim. Do not add, remove, or reorder
+   its lines.
+
+Do not introduce other sections.
