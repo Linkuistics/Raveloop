@@ -564,6 +564,10 @@ entries:
   body: |
     A code path that writes no production output may remain live through test fixture side-effects. Precondition greps for dead-code tasks must include `tests/`; production-source-only searches produce false negatives.
 - id: latest-session-md-highlight-rule-targets-wrong-filename
-  title: latest-session.md highlight rule targets wrong filename
+  title: PHASE_HIGHLIGHTS labels unverified end-to-end despite .yaml fix
   body: |
-    `src/format.rs` HighlightRule for the AnalyseWork TUI phase targets `latest-session.md`; the actual file written is `latest-session.yaml`. The "Writing session log" label has never fired. A fix task exists in the backlog.
+    Four `PHASE_HIGHLIGHTS` regex patterns in `src/format.rs` target `.yaml` extensions (fixed from `.md`). `format_tool_call` matches only `Write`/`Edit` tool paths; ravel-lite state commands write via `--body-file <tmp>` with no file extension, and Bash calls carry no shell-redirect markers. Whether the TUI labels actually fire on real runs is unverified. End-to-end verification is a follow-up.
+- id: tests-mirroring-stale-impl-values-cannot-detect-drift
+  title: Tests mirroring stale impl values cannot detect drift
+  body: |
+    When a test hardcodes the same incorrect string as the implementation (e.g., a stale filename extension), both pass and the bug is invisible. The test only exposes the bug when the implementation is corrected — it then fails, revealing its own co-contamination. Test inputs must not copy internal implementation strings; prefer on-disk golden paths or independently-authored constants.
