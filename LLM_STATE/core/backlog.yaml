@@ -2,7 +2,7 @@ tasks:
 - id: fix-latest-session-yaml-highlight-rule-extension-in-format-rs
   title: Fix latest-session.yaml highlight rule extension in format.rs
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Fix the `latest-session.md` highlight rule in `src/format.rs` — the pattern `latest-session\.md$` has never matched because Ravel-Lite writes `latest-session.yaml`. Change to `latest-session\.yaml$` so the "Writing session log" TUI label actually fires during analyse-work.
@@ -29,6 +29,59 @@ tasks:
 
     - `cargo test --quiet` passes.
     - Manual analyse-work run shows "Writing session log" label.
+  results: |
+    ## What was done
+
+    Fixed all four stale highlight-rule extensions in `src/format.rs` (line ~100 onwards) — the task named one (`latest-session\.md$` → `\.yaml$`), but the same rename drift was present for three siblings in the same `PHASE_HIGHLIGHTS` table:
+
+    - `latest-session\.md$` → `latest-session\.yaml$` (AnalyseWork)
+    - `memory\.md$` → `memory\.yaml$` (Reflect)
+    - `memory\.md$` → `memory\.yaml$` (Dream)
+    - `backlog\.md$` → `backlog\.yaml$` (Triage)
+
+    Confirmed against on-disk truth: `LLM_STATE/core/` contains `backlog.yaml`, `memory.yaml`, `latest-session.yaml` — no `.md` siblings. The task focused on one rule but all four had the same cause (the `.md → .yaml` storage rename was never propagated to this file).
+
+    Three test inputs that hardcoded `/plan/memory.md` were also updated — they were tracking the implementation's stale extension rather than the real on-disk contract, so they couldn't have caught this drift:
+
+    - `src/format.rs::format_tool_call_highlight_memory`
+    - `src/format.rs::format_tool_call_deduplicates_highlights`
+    - `src/agent/claude_code.rs::parse_highlight_write_memory`
+
+    ## Verification
+
+    - `cargo test --lib --quiet`: 586 passed, 0 failed
+    - `cargo clippy --lib --all-targets`: clean (no warnings)
+    - Manual inspection: all four highlight rules now match real on-disk filenames
+
+    ## What worked
+
+    The fix is mechanical and low-risk: regex literal change, no logic touched. Tests gave immediate signal — `parse_highlight_write_memory` failed the moment the regex became correct, surfacing the second mirror-the-bug test that needed updating.
+
+    ## What didn't / what this surfaces
+
+    **The highlight may still not fire under the current invocation pattern, even after this fix.** `format_tool_call` only triggers on `Write`/`Edit` tool calls or `Bash` calls whose detail contains `cat ` + `> ` or `echo ` + `> `. But ravel-lite writes these YAML files via subcommands like `ravel-lite state session-log set-latest --body-file <tmp>`, where the LLM's `Write` tool call targets a temp `.md` file (no extension match) and the `Bash` call has no shell-redirect markers. So the user-visible "Writing session log" / "Updating memory" / "Updating backlog" labels likely never fire in practice today — the regex was a necessary-but-not-sufficient piece. Worth a follow-up task to either:
+
+    1. extend `is_bash_write` to recognise `ravel-lite state ... set-* --body-file` as a write, or
+    2. inspect the temp file's *destination* (parsed from the bash command) rather than the bash detail itself.
+
+    **Other call sites with the same `.md → .yaml` drift, out of scope here but worth a follow-up task:**
+
+    - `src/subagent.rs:35-36` — the prompt sent to dispatched subagents reads "Read the target plan's backlog.md and memory.md" and "add/modify tasks in backlog.md, update memory.md if needed". This is an active correctness bug — subagents are being told to read files that don't exist under the current naming.
+    - `src/main.rs:221-222` — survey-command CLI doc comment lists "backlog.md, memory.md, session-log.md and latest-session.md" as covered files; stale.
+    - `src/phase_loop.rs:304` — comment "`latest-session.md` is intentionally NOT touched here" — informational but stale (file is `.yaml`).
+    - `src/format.rs:132,602` — comments and ARCHIVED test text reference "memory.md" as the destination of archived items.
+    - `src/survey/schema.rs:72,86,90,91,92,202` and `src/survey/invoke.rs:200` — multiple doc comments reference `backlog.md`/`memory.md` as the parsed source; stale.
+    - `src/ui.rs:454,457` — UI test using "Read memory.md" as example progress text; cosmetic.
+
+    These are all the same single-rename drift across the codebase. A "backlog/memory/session-log filename references audit" task would close the bug class.
+
+    **Test anti-pattern to flag for future hardening:** three of the highlight tests hardcoded the stale extension that matched the broken implementation. When the implementation's wrong value and the test's input both come from the same uninspected source, drift is invisible. Either (a) anchor highlight tests to a shared constant that the implementation also uses, or (b) parameterise the test inputs from the actual on-disk filenames produced by the state-write CLI commands.
+
+    ## Suggested next tasks
+
+    1. **Audit and fix the remaining `.md → .yaml` filename drift** across `src/subagent.rs`, `src/main.rs`, `src/phase_loop.rs`, `src/format.rs` (comments), `src/survey/{schema,invoke}.rs`, `src/ui.rs`. The `subagent.rs` instance is the only one with active behavioural impact (subagents misled by the prompt); the rest are documentation drift.
+    2. **Verify the highlight code path end-to-end** — confirm whether the regex fixes here actually surface "Writing session log" / "Updating memory" / "Updating backlog" labels during real runs. If not, extend `is_bash_write` detection or change which path is checked.
+    3. **Adopt shared constants for state filenames** — `BACKLOG_FILENAME`, `MEMORY_FILENAME`, `LATEST_SESSION_FILENAME` exposed from one module and consumed everywhere (regex tables, prompts, doc comments, tests). Eliminates the entire bug class structurally.
 - id: add-minimal-github-actions-ci-workflow-build-test-clippy
   title: 'Add minimal GitHub Actions CI workflow: build, test, clippy'
   category: infra
@@ -355,3 +408,33 @@ tasks:
 
     - Page builds and renders.
     - Verbs and flags cross-checked against the `clap` derive structure.
+- id: audit-and-fix-remaining-md-yaml-filename-drift-in-source-and-prompts
+  title: Audit and fix remaining .md → .yaml filename drift in source and prompts
+  category: core
+  status: not_started
+  dependencies: []
+  description: |
+    Audit and fix all remaining `.md → .yaml` filename references scattered across the codebase. The `.yaml` storage rename was propagated to `src/format.rs` highlight rules (session 60) but not to the following locations:
+
+    ## Active correctness bug
+
+    - `src/subagent.rs:35-36` — prompt sent to dispatched subagents reads "Read the target plan's backlog.md and memory.md" and "add/modify tasks in backlog.md, update memory.md if needed". Subagents are being told to read files that don't exist; this is a live behavioural bug.
+
+    ## Documentation drift (no runtime impact)
+
+    - `src/main.rs:221-222` — survey-command CLI doc comment lists "backlog.md, memory.md, session-log.md and latest-session.md"
+    - `src/phase_loop.rs:304` — comment "`latest-session.md` is intentionally NOT touched here"
+    - `src/format.rs:132,602` — comments and ARCHIVED test text reference "memory.md"
+    - `src/survey/schema.rs:72,86,90,91,92,202` — doc comments reference `backlog.md`/`memory.md`
+    - `src/survey/invoke.rs:200` — doc comment references `backlog.md`/`memory.md`
+    - `src/ui.rs:454,457` — UI test uses "Read memory.md" as example progress text
+
+    ## Fix approach
+
+    Fix `src/subagent.rs` first (active bug). For the rest, grep for `\.md` references near filenames `backlog`, `memory`, `session-log`, `latest-session` and update to `.yaml`. All runtime and test files should use the `.yaml` extension; this is a mechanical find-and-replace within comments and string literals.
+
+    ## Verification
+
+    - `cargo test --lib --quiet` passes
+    - `cargo clippy --lib --all-targets` clean
+    - `grep -r 'backlog\.md\|memory\.md\|session-log\.md\|latest-session\.md' src/` returns no hits

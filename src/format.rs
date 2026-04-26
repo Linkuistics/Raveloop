@@ -97,17 +97,17 @@ struct HighlightRule {
 static PHASE_HIGHLIGHTS: Lazy<HashMap<LlmPhase, Vec<HighlightRule>>> = Lazy::new(|| {
     let mut m = HashMap::new();
     m.insert(LlmPhase::AnalyseWork, vec![
-        HighlightRule { pattern: Regex::new(r"latest-session\.md$").unwrap(), label: "Writing session log" },
+        HighlightRule { pattern: Regex::new(r"latest-session\.yaml$").unwrap(), label: "Writing session log" },
         HighlightRule { pattern: Regex::new(r"commits\.yaml$").unwrap(), label: "Writing commit spec" },
     ]);
     m.insert(LlmPhase::Reflect, vec![
-        HighlightRule { pattern: Regex::new(r"memory\.md$").unwrap(), label: "Updating memory" },
+        HighlightRule { pattern: Regex::new(r"memory\.yaml$").unwrap(), label: "Updating memory" },
     ]);
     m.insert(LlmPhase::Dream, vec![
-        HighlightRule { pattern: Regex::new(r"memory\.md$").unwrap(), label: "Rewriting memory" },
+        HighlightRule { pattern: Regex::new(r"memory\.yaml$").unwrap(), label: "Rewriting memory" },
     ]);
     m.insert(LlmPhase::Triage, vec![
-        HighlightRule { pattern: Regex::new(r"backlog\.md$").unwrap(), label: "Updating backlog" },
+        HighlightRule { pattern: Regex::new(r"backlog\.yaml$").unwrap(), label: "Updating backlog" },
         HighlightRule { pattern: Regex::new(r"subagent-dispatch\.yaml$").unwrap(), label: "Dispatching to related plans" },
     ]);
     m
@@ -411,7 +411,7 @@ mod tests {
     fn format_tool_call_highlight_memory() {
         let mut shown = HashSet::new();
         let result = format_tool_call(
-            &ToolCall { name: "Write".to_string(), path: Some("/plan/memory.md".to_string()), detail: None },
+            &ToolCall { name: "Write".to_string(), path: Some("/plan/memory.yaml".to_string()), detail: None },
             Some(LlmPhase::Reflect),
             &mut shown,
         );
@@ -429,14 +429,14 @@ mod tests {
     fn format_tool_call_deduplicates_highlights() {
         let mut shown = HashSet::new();
         let r1 = format_tool_call(
-            &ToolCall { name: "Write".to_string(), path: Some("/plan/memory.md".to_string()), detail: None },
+            &ToolCall { name: "Write".to_string(), path: Some("/plan/memory.yaml".to_string()), detail: None },
             Some(LlmPhase::Reflect),
             &mut shown,
         );
         assert!(r1.persist);
 
         let r2 = format_tool_call(
-            &ToolCall { name: "Edit".to_string(), path: Some("/plan/memory.md".to_string()), detail: None },
+            &ToolCall { name: "Edit".to_string(), path: Some("/plan/memory.yaml".to_string()), detail: None },
             Some(LlmPhase::Reflect),
             &mut shown,
         );

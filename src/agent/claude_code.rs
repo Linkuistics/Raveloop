@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn parse_highlight_write_memory() {
-        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/plan/memory.md","content":"stuff"}}]}}"#;
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/plan/memory.yaml","content":"stuff"}}]}}"#;
         let mut shown = HashSet::new();
         assert!(expect_output(parse_stream_line(line, Some(LlmPhase::Reflect), &mut shown)).persist);
     }
