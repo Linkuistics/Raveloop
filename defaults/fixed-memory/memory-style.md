@@ -1,6 +1,6 @@
 # Memory Style Rules
 
-All `memory.md` entries in a backlog plan follow these rules. Both the
+All `memory.yaml` entries in a backlog plan follow these rules. Both the
 reflect phase (incremental per-session) and the dream phase (periodic
 global rewrite) produce entries in this style.
 

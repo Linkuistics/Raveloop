@@ -11,34 +11,35 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use super::schema::{SessionLogFile, SessionRecord};
+use crate::state::filenames::{LATEST_SESSION_FILENAME, SESSION_LOG_FILENAME};
 
 pub fn session_log_path(plan_dir: &Path) -> PathBuf {
-    plan_dir.join("session-log.yaml")
+    plan_dir.join(SESSION_LOG_FILENAME)
 }
 
 pub fn latest_session_path(plan_dir: &Path) -> PathBuf {
-    plan_dir.join("latest-session.yaml")
+    plan_dir.join(LATEST_SESSION_FILENAME)
 }
 
 pub fn read_session_log(plan_dir: &Path) -> Result<SessionLogFile> {
     let path = session_log_path(plan_dir);
     if !path.exists() {
         bail!(
-            "session-log.yaml not found at {}. Run `ravel-lite state migrate` to convert an existing session-log.md.",
+            "{SESSION_LOG_FILENAME} not found at {}. Run `ravel-lite state migrate` to convert an existing session-log.md.",
             path.display()
         );
     }
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     let parsed: SessionLogFile = serde_yaml::from_str(&text)
-        .with_context(|| format!("Failed to parse {} as session-log.yaml schema", path.display()))?;
+        .with_context(|| format!("Failed to parse {} as {SESSION_LOG_FILENAME} schema", path.display()))?;
     Ok(parsed)
 }
 
 pub fn write_session_log(plan_dir: &Path, log: &SessionLogFile) -> Result<()> {
     let path = session_log_path(plan_dir);
-    let yaml =
-        serde_yaml::to_string(log).with_context(|| "Failed to serialise session-log.yaml")?;
+    let yaml = serde_yaml::to_string(log)
+        .with_context(|| format!("Failed to serialise {SESSION_LOG_FILENAME}"))?;
     atomic_write(&path, yaml.as_bytes())
 }
 
@@ -46,7 +47,7 @@ pub fn read_latest_session(plan_dir: &Path) -> Result<SessionRecord> {
     let path = latest_session_path(plan_dir);
     if !path.exists() {
         bail!(
-            "latest-session.yaml not found at {}. analyse-work is expected to have produced it.",
+            "{LATEST_SESSION_FILENAME} not found at {}. analyse-work is expected to have produced it.",
             path.display()
         );
     }
@@ -64,7 +65,7 @@ pub fn read_latest_session(plan_dir: &Path) -> Result<SessionRecord> {
 pub fn write_latest_session(plan_dir: &Path, record: &SessionRecord) -> Result<()> {
     let path = latest_session_path(plan_dir);
     let yaml = serde_yaml::to_string(record)
-        .with_context(|| "Failed to serialise latest-session.yaml")?;
+        .with_context(|| format!("Failed to serialise {LATEST_SESSION_FILENAME}"))?;
     atomic_write(&path, yaml.as_bytes())
 }
 
@@ -135,8 +136,8 @@ mod tests {
         let err = read_session_log(tmp.path()).unwrap_err();
         let msg = format!("{err:#}");
         assert!(
-            msg.contains("session-log.yaml"),
-            "error must name session-log.yaml: {msg}"
+            msg.contains(SESSION_LOG_FILENAME),
+            "error must name {SESSION_LOG_FILENAME}: {msg}"
         );
         assert!(msg.contains("state migrate"), "error must suggest migrate: {msg}");
     }
@@ -159,8 +160,8 @@ mod tests {
         let err = read_latest_session(tmp.path()).unwrap_err();
         let msg = format!("{err:#}");
         assert!(
-            msg.contains("latest-session.yaml"),
-            "error must name latest-session.yaml: {msg}"
+            msg.contains(LATEST_SESSION_FILENAME),
+            "error must name {LATEST_SESSION_FILENAME}: {msg}"
         );
     }
 }

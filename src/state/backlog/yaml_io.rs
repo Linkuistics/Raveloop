@@ -8,30 +8,31 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use super::schema::BacklogFile;
+use crate::state::filenames::BACKLOG_FILENAME;
 
 pub fn backlog_path(plan_dir: &Path) -> PathBuf {
-    plan_dir.join("backlog.yaml")
+    plan_dir.join(BACKLOG_FILENAME)
 }
 
 pub fn read_backlog(plan_dir: &Path) -> Result<BacklogFile> {
     let path = backlog_path(plan_dir);
     if !path.exists() {
         bail!(
-            "backlog.yaml not found at {}. Run `ravel-lite state migrate` to convert an existing backlog.md.",
+            "{BACKLOG_FILENAME} not found at {}. Run `ravel-lite state migrate` to convert an existing backlog.md.",
             path.display()
         );
     }
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     let parsed: BacklogFile = serde_yaml::from_str(&text)
-        .with_context(|| format!("Failed to parse {} as backlog.yaml schema", path.display()))?;
+        .with_context(|| format!("Failed to parse {} as {BACKLOG_FILENAME} schema", path.display()))?;
     Ok(parsed)
 }
 
 pub fn write_backlog(plan_dir: &Path, backlog: &BacklogFile) -> Result<()> {
     let path = backlog_path(plan_dir);
     let yaml = serde_yaml::to_string(backlog)
-        .with_context(|| "Failed to serialise backlog.yaml")?;
+        .with_context(|| format!("Failed to serialise {BACKLOG_FILENAME}"))?;
     atomic_write(&path, yaml.as_bytes())
 }
 
@@ -110,7 +111,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let err = read_backlog(tmp.path()).unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("backlog.yaml"), "error must name backlog.yaml: {msg}");
+        assert!(msg.contains(BACKLOG_FILENAME), "error must name {BACKLOG_FILENAME}: {msg}");
         assert!(msg.contains("state migrate"), "error must suggest migrate: {msg}");
     }
 }

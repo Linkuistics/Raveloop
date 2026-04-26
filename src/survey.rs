@@ -1,7 +1,7 @@
 // src/survey.rs
 //
-// Multi-project plan status survey. Gathers `phase.md`, `backlog.md`,
-// and `memory.md` from every plan directory under one or more roots,
+// Multi-project plan status survey. Gathers `phase.md`, `backlog.yaml`,
+// and `memory.yaml` from every plan directory under one or more roots,
 // renders them as a single prompt, and shells out to a headless
 // `claude` session for LLM-driven summarisation and prioritisation.
 //

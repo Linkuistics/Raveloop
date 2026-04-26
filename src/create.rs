@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use tokio::process::Command as TokioCommand;
 
 use crate::config::{load_agent_config, load_shared_config};
+use crate::state::filenames::{BACKLOG_FILENAME, MEMORY_FILENAME};
 
 /// Relative path to the create-plan prompt template inside a config dir.
 pub const CREATE_PLAN_PROMPT_PATH: &str = "create-plan.md";
@@ -109,8 +110,8 @@ pub fn scaffold_plan_dir(abs_plan_dir: &Path) -> Result<()> {
 
     let writes: [(&str, &[u8]); 4] = [
         ("phase.md", b"work\n"),
-        ("backlog.yaml", b"tasks: []\n"),
-        ("memory.yaml", b"entries: []\n"),
+        (BACKLOG_FILENAME, b"tasks: []\n"),
+        (MEMORY_FILENAME, b"entries: []\n"),
         ("dream-word-count", b"0"),
     ];
     for (name, bytes) in writes {
@@ -289,8 +290,8 @@ mod tests {
         scaffold_plan_dir(&plan).unwrap();
         assert!(plan.is_dir(), "plan directory must exist after scaffold");
         assert_eq!(fs::read_to_string(plan.join("phase.md")).unwrap(), "work\n");
-        assert_eq!(fs::read_to_string(plan.join("backlog.yaml")).unwrap(), "tasks: []\n");
-        assert_eq!(fs::read_to_string(plan.join("memory.yaml")).unwrap(), "entries: []\n");
+        assert_eq!(fs::read_to_string(plan.join(BACKLOG_FILENAME)).unwrap(), "tasks: []\n");
+        assert_eq!(fs::read_to_string(plan.join(MEMORY_FILENAME)).unwrap(), "entries: []\n");
         assert_eq!(fs::read_to_string(plan.join("dream-word-count")).unwrap(), "0");
     }
 

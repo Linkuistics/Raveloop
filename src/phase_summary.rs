@@ -29,6 +29,7 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 
 use crate::state::backlog::schema::{BacklogFile, Status};
+use crate::state::filenames::{BACKLOG_FILENAME, MEMORY_FILENAME};
 use crate::state::memory::schema::MemoryFile;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -119,7 +120,7 @@ pub fn compute_labels(plan_dir: &Path, phase: Phase, baseline_sha: &str) -> Resu
 
 fn compute_triage_labels_from_disk(plan_dir: &Path, baseline_sha: &str) -> Result<Vec<Label>> {
     let current = crate::state::backlog::read_backlog(plan_dir)?;
-    let baseline = read_baseline_yaml::<BacklogFile>(plan_dir, "backlog.yaml", baseline_sha)?
+    let baseline = read_baseline_yaml::<BacklogFile>(plan_dir, BACKLOG_FILENAME, baseline_sha)?
         .unwrap_or_default();
     Ok(compute_triage_labels(&baseline, &current))
 }
@@ -189,7 +190,7 @@ pub fn compute_triage_labels(baseline: &BacklogFile, current: &BacklogFile) -> V
 
 fn compute_reflect_labels_from_disk(plan_dir: &Path, baseline_sha: &str) -> Result<Vec<Label>> {
     let current = crate::state::memory::read_memory(plan_dir)?;
-    let baseline = read_baseline_yaml::<MemoryFile>(plan_dir, "memory.yaml", baseline_sha)?
+    let baseline = read_baseline_yaml::<MemoryFile>(plan_dir, MEMORY_FILENAME, baseline_sha)?
         .unwrap_or_default();
     Ok(compute_reflect_labels(&baseline, &current))
 }
@@ -243,7 +244,7 @@ pub fn compute_reflect_labels(baseline: &MemoryFile, current: &MemoryFile) -> Ve
 
 fn compute_dream_labels_from_disk(plan_dir: &Path, baseline_sha: &str) -> Result<Vec<Label>> {
     let current = crate::state::memory::read_memory(plan_dir)?;
-    let baseline = read_baseline_yaml::<MemoryFile>(plan_dir, "memory.yaml", baseline_sha)?
+    let baseline = read_baseline_yaml::<MemoryFile>(plan_dir, MEMORY_FILENAME, baseline_sha)?
         .unwrap_or_default();
     Ok(compute_dream_labels(&baseline, &current))
 }

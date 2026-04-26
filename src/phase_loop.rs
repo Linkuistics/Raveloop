@@ -301,7 +301,7 @@ async fn handle_script_phase(
             Ok(true)
         }
         ScriptPhase::GitCommitTriage => {
-            // `latest-session.md` is intentionally NOT touched here:
+            // `latest-session.yaml` is intentionally NOT touched here:
             // analyse-work overwrites it next cycle (see
             // `defaults/phases/analyse-work.md` step 8), and leaving it
             // in place through the triage commit keeps the prior

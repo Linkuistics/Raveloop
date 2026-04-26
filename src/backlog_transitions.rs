@@ -17,6 +17,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::state::backlog::schema::{BacklogFile, Status, Task};
+use crate::state::filenames::BACKLOG_FILENAME;
 
 /// Top-level entry point used by `phase_loop`. Always returns a printable
 /// string; never propagates an error.
@@ -27,7 +28,7 @@ pub fn backlog_transitions(plan_dir: &Path, baseline_sha: &str) -> String {
 
     let current = match crate::state::backlog::read_backlog(plan_dir) {
         Ok(b) => b,
-        Err(e) => return format!("(failed to read current backlog.yaml: {e})"),
+        Err(e) => return format!("(failed to read current {BACKLOG_FILENAME}: {e})"),
     };
 
     let baseline = match read_baseline_backlog(plan_dir, baseline_sha) {
@@ -49,13 +50,13 @@ enum BaselineResult {
 }
 
 /// Retrieve `backlog.yaml` content at `baseline_sha`. Uses
-/// `git ls-files --full-name backlog.yaml` to resolve the path
+/// `git ls-files --full-name <backlog>` to resolve the path
 /// relative to the git repo root, so this works identically in a
 /// single-repo layout and in a monorepo subtree.
 fn read_baseline_backlog(plan_dir: &Path, baseline_sha: &str) -> BaselineResult {
     let full_name_out = Command::new("git")
         .current_dir(plan_dir)
-        .args(["ls-files", "--full-name", "backlog.yaml"])
+        .args(["ls-files", "--full-name", BACKLOG_FILENAME])
         .output();
 
     let full_name = match full_name_out {

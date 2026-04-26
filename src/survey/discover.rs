@@ -13,6 +13,9 @@ use sha2::{Digest, Sha256};
 
 use crate::git::project_root_for_plan;
 use crate::state::backlog::{read_backlog, PlanRowCounts, TaskCounts};
+use crate::state::filenames::{BACKLOG_FILENAME, MEMORY_FILENAME};
+#[cfg(test)]
+use crate::state::filenames::SESSION_LOG_FILENAME;
 use crate::state::memory::read_memory;
 
 /// A single plan's state, bundled for inclusion in the survey prompt.
@@ -91,12 +94,12 @@ pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
         .with_context(|| format!("Failed to read {}", phase_file.display()))?;
     let phase = phase_raw.trim().to_string();
 
-    let backlog_file = if plan_dir.join("backlog.yaml").exists() {
+    let backlog_file = if plan_dir.join(BACKLOG_FILENAME).exists() {
         read_backlog(plan_dir).ok()
     } else {
         None
     };
-    let memory_file = if plan_dir.join("memory.yaml").exists() {
+    let memory_file = if plan_dir.join(MEMORY_FILENAME).exists() {
         read_memory(plan_dir).ok()
     } else {
         None
@@ -106,12 +109,12 @@ pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
         .as_ref()
         .map(serde_yaml::to_string)
         .transpose()
-        .with_context(|| "failed to re-serialise backlog.yaml for survey input")?;
+        .with_context(|| format!("failed to re-serialise {BACKLOG_FILENAME} for survey input"))?;
     let memory = memory_file
         .as_ref()
         .map(serde_yaml::to_string)
         .transpose()
-        .with_context(|| "failed to re-serialise memory.yaml for survey input")?;
+        .with_context(|| format!("failed to re-serialise {MEMORY_FILENAME} for survey input"))?;
 
     let related_plans = fs::read_to_string(plan_dir.join("related-plans.md")).ok();
 
@@ -567,7 +570,7 @@ mod tests {
         fs::create_dir_all(&plan_dir).unwrap();
         fs::write(plan_dir.join("phase.md"), "work\n").unwrap();
         fs::write(
-            plan_dir.join("backlog.yaml"),
+            plan_dir.join(BACKLOG_FILENAME),
             "tasks:\n  - id: bad\n    status: not_a_real_status\n",
         )
         .unwrap();
@@ -602,7 +605,7 @@ mod tests {
         let hash_after_md_log = load_plan(&plan_dir).unwrap().input_hash;
         assert_eq!(hash_initial, hash_after_md_log);
 
-        fs::write(plan_dir.join("session-log.yaml"), "sessions: []\n").unwrap();
+        fs::write(plan_dir.join(SESSION_LOG_FILENAME), "sessions: []\n").unwrap();
         let hash_after_yaml_log = load_plan(&plan_dir).unwrap().input_hash;
         assert_eq!(hash_initial, hash_after_yaml_log);
     }

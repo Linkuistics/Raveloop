@@ -32,8 +32,8 @@ fn build_subagent_prompt(dispatch: &SubagentDispatch) -> String {
         "Plan at {}.\n\
          This is a {} plan that may be affected by recent learnings.\n\n\
          Summary of learnings to apply:\n{}\n\n\
-         Read the target plan's backlog.md and memory.md.\n\
-         Apply relevant updates: add/modify tasks in backlog.md, update memory.md if needed.\n\
+         Read the target plan's backlog.yaml and memory.yaml.\n\
+         Apply relevant updates: add/modify tasks in backlog.yaml, update memory.yaml if needed.\n\
          Be conservative — only change what the summary warrants.",
         dispatch.target, dispatch.kind, dispatch.summary
     )

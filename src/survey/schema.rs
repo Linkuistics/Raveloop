@@ -69,7 +69,7 @@ pub struct PlanRow {
     pub received: usize,
     #[serde(default)]
     pub notes: String,
-    /// SHA-256 hex digest over `phase.md` + `backlog.md` + `memory.md`
+    /// SHA-256 hex digest over `phase.md` + `backlog.yaml` + `memory.yaml`
     /// + `related-plans.md` contents.
     ///
     /// Computed entirely in Rust and injected into each row after the
@@ -83,13 +83,13 @@ pub struct PlanRow {
     #[serde(default)]
     pub input_hash: String,
     /// Per-status task tally computed from the plan's parsed
-    /// `backlog.md` by `BacklogFile::task_counts`. Injected after the
+    /// `backlog.yaml` by `BacklogFile::task_counts`. Injected after the
     /// LLM's response is parsed so the model never has to count tasks
     /// itself — mechanical work belongs in Rust.
     ///
-    /// `None` when `backlog.md` is absent or the legacy markdown parse
-    /// fails; the survey notes surface that as "backlog.md missing" or
-    /// "backlog.md unparseable".
+    /// `None` when `backlog.yaml` is absent or fails to parse; the
+    /// survey notes surface that as "backlog.yaml missing" or
+    /// "backlog.yaml unparseable".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_counts: Option<TaskCounts>,
 }
@@ -199,7 +199,7 @@ pub fn inject_input_hashes(
 /// rather than as a hard error.
 ///
 /// Unlike `inject_input_hashes`, this is NOT a drift check: the map
-/// only carries entries for plans whose `backlog.md` parsed
+/// only carries entries for plans whose `backlog.yaml` parsed
 /// successfully, so a missing key is an expected state rather than a
 /// contract violation.
 pub fn inject_task_counts(

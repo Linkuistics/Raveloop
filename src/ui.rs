@@ -451,10 +451,10 @@ mod tests {
 
         state.handle_message(UIMessage::Progress {
             agent_id: "sub-B".to_string(),
-            line: StyledLine::plain("Read memory.md"),
+            line: StyledLine::plain("Read memory.yaml"),
         });
         let progress = state.progress_groups.get("sub-B").unwrap().progress.as_ref().unwrap();
-        assert_eq!(flat(progress), "Read memory.md");
+        assert_eq!(flat(progress), "Read memory.yaml");
 
         state.handle_message(UIMessage::AgentDone {
             agent_id: "sub-B".to_string(),

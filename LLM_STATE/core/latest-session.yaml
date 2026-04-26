@@ -1,10 +1,14 @@
-id: session-60
-timestamp: 2026-04-26T22:53:35Z
+id: session-61
+timestamp: 2026-04-26T23:29:57Z
 phase: work
 body: |
-  ### Session 60 (2026-04-26T22:53:35Z) — Fix stale .md → .yaml extension in highlight rules
+  ### Session 61 (2026-04-26T23:29:57Z) — Fix .md→.yaml filename drift and centralise filename constants
 
-  - **Attempted:** Fix the `latest-session\.md$` highlight rule in `src/format.rs` that never matched because the file was renamed to `.yaml`. The task named one rule but the full audit revealed four sibling rules with the same drift.
-  - **What worked:** All four `PHASE_HIGHLIGHTS` regex patterns updated to `.yaml` extensions (`latest-session\.yaml$`, `memory\.yaml$` ×2, `backlog\.yaml$`). Three tests in `src/format.rs` and one in `src/agent/claude_code.rs` that hardcoded the stale `.md` paths were updated to reflect the real on-disk names. `cargo test --lib --quiet` passes (586 tests), `cargo clippy --lib --all-targets` is clean.
-  - **What this surfaces:** The highlight rules are now correct but may still not fire in practice — `format_tool_call` matches on `Write`/`Edit` paths, but ravel-lite state commands write via `--body-file <tmp>` with no extension match, and Bash calls lack shell-redirect markers. End-to-end verification of whether the labels actually appear during real runs is a follow-up.
-  - **Key learnings:** When a test's input hardcodes the same stale value as the implementation, the test cannot catch drift. Three tests were mirroring the broken extension; they only caught the bug when the fix changed the regex and they immediately failed, surfacing the second class of stale references.
+  - Completed three related tasks cleaning up the `.md` → `.yaml` storage-rename aftermath
+  - Fixed the active correctness bug in `src/subagent.rs:35-36` where dispatched subagent prompts directed peer plans to read `backlog.md` and `memory.md` — files that no longer exist. Subagents are now directed at `backlog.yaml` / `memory.yaml`.
+  - Fixed scattered doc-comment and test-fixture drift across `src/format.rs`, `src/ui.rs`, `src/phase_loop.rs`, `src/survey/schema.rs`, `src/survey/invoke.rs`, `src/survey.rs`, and `defaults/fixed-memory/memory-style.md`. Deliberately preserved legitimate `.md` references in `src/main.rs` (Migrate subcommand docs) and `src/state/migrate.rs` (legacy file conversion logic).
+  - Extended `src/format.rs::format_tool_call` to detect `ravel-lite state <subcommand>` Bash invocations and map them to canonical filenames so `PHASE_HIGHLIGHTS` regexes fire correctly. Added four new unit tests covering the session-log, memory, and backlog state-CLI paths. Discovered and fixed a `skip_while`/`nth` iterator semantic trap in the first version of `ravel_state_target_file`.
+  - Created `src/state/filenames.rs` with four `pub const` items (`BACKLOG_FILENAME`, `MEMORY_FILENAME`, `SESSION_LOG_FILENAME`, `LATEST_SESSION_FILENAME`) and replaced all literal string occurrences across `src/state/{backlog,memory,session_log}/yaml_io.rs`, `src/state/migrate.rs`, `src/format.rs`, `src/phase_summary.rs`, `src/create.rs`, `src/backlog_transitions.rs`, `src/survey/discover.rs`, and `src/git.rs`.
+  - All tests pass: 590 lib tests (4 new), 0 failures. Clippy clean. Grep for literal filename strings in `src/` returns only the four constant definitions.
+  - The `PHASE_HIGHLIGHTS` regexes now use `filename_suffix_regex(CONSTANT)` via a helper wrapping `regex::escape`, so a future constant rename cascades automatically into highlight detection.
+  - Prompt files (`defaults/*.md`) were left with literal filenames by design — converting them would require token substitution or build-time replacement, adding complexity without proportional benefit.

@@ -6,6 +6,9 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+#[cfg(test)]
+use crate::state::filenames::BACKLOG_FILENAME;
+
 pub struct CommitResult {
     pub committed: bool,
     pub message: String,
@@ -670,7 +673,7 @@ mod tests {
 
         // Simulate a work cycle: one source edit plus one plan-state write.
         fs::write(repo.join("tracked.rs"), "v2\n").unwrap();
-        fs::write(plan_dir.join("backlog.yaml"), "entries: []\n").unwrap();
+        fs::write(plan_dir.join(BACKLOG_FILENAME), "entries: []\n").unwrap();
 
         fs::write(
             plan_dir.join("commits.yaml"),
@@ -699,7 +702,7 @@ mod tests {
         let plan_dir = repo.join("LLM_STATE").join("core");
 
         fs::write(repo.join("src/main.rs"), "fn main() { println!(\"hi\"); }\n").unwrap();
-        fs::write(plan_dir.join("backlog.yaml"), "entries:\n  - id: x\n").unwrap();
+        fs::write(plan_dir.join(BACKLOG_FILENAME), "entries:\n  - id: x\n").unwrap();
 
         // Spec order: source first, plan-state second. Verifies that the
         // applier commits in the order declared (the LLM's intent), not

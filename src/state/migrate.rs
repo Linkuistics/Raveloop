@@ -17,6 +17,9 @@ use anyhow::{bail, Context, Result};
 use crate::state::backlog::{
     parse_backlog_markdown, read_backlog, write_backlog, BacklogFile,
 };
+use crate::state::filenames::{
+    BACKLOG_FILENAME, LATEST_SESSION_FILENAME, MEMORY_FILENAME, SESSION_LOG_FILENAME,
+};
 use crate::state::memory::{
     parse_memory_markdown, read_memory, write_memory, MemoryFile,
 };
@@ -221,7 +224,7 @@ fn plan_backlog_migration(
     options: &MigrateOptions,
 ) -> Result<Option<PendingMigration>> {
     let source = plan_dir.join("backlog.md");
-    let target = plan_dir.join("backlog.yaml");
+    let target = plan_dir.join(BACKLOG_FILENAME);
     if !source.exists() {
         return Ok(None);
     }
@@ -261,7 +264,7 @@ fn plan_memory_migration(
     options: &MigrateOptions,
 ) -> Result<Option<PendingMigration>> {
     let source = plan_dir.join("memory.md");
-    let target = plan_dir.join("memory.yaml");
+    let target = plan_dir.join(MEMORY_FILENAME);
     if !source.exists() {
         return Ok(None);
     }
@@ -301,7 +304,7 @@ fn plan_session_log_migration(
     options: &MigrateOptions,
 ) -> Result<Option<PendingMigration>> {
     let source = plan_dir.join("session-log.md");
-    let target = plan_dir.join("session-log.yaml");
+    let target = plan_dir.join(SESSION_LOG_FILENAME);
     if !source.exists() {
         return Ok(None);
     }
@@ -345,7 +348,7 @@ fn plan_latest_session_migration(
     options: &MigrateOptions,
 ) -> Result<Option<PendingMigration>> {
     let source = plan_dir.join("latest-session.md");
-    let target = plan_dir.join("latest-session.yaml");
+    let target = plan_dir.join(LATEST_SESSION_FILENAME);
     if !source.exists() {
         return Ok(None);
     }
@@ -528,7 +531,7 @@ Paragraph body.
 
         run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
 
-        assert!(tmp.path().join("backlog.yaml").exists());
+        assert!(tmp.path().join(BACKLOG_FILENAME).exists());
         assert!(tmp.path().join("backlog.md").exists(), "default is keep-originals");
 
         let backlog = read_backlog(tmp.path()).unwrap();
@@ -542,7 +545,7 @@ Paragraph body.
 
         run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
 
-        assert!(tmp.path().join("memory.yaml").exists());
+        assert!(tmp.path().join(MEMORY_FILENAME).exists());
         assert!(tmp.path().join("memory.md").exists());
 
         let memory = read_memory(tmp.path()).unwrap();
@@ -590,8 +593,8 @@ Paragraph body.
         };
         run_migrate(tmp.path(), &opts).unwrap();
 
-        assert!(!tmp.path().join("backlog.yaml").exists());
-        assert!(!tmp.path().join("memory.yaml").exists());
+        assert!(!tmp.path().join(BACKLOG_FILENAME).exists());
+        assert!(!tmp.path().join(MEMORY_FILENAME).exists());
     }
 
     #[test]
@@ -643,11 +646,11 @@ Paragraph body.
             "error must name the memory failure: {msg}"
         );
         assert!(
-            !tmp.path().join("backlog.yaml").exists(),
+            !tmp.path().join(BACKLOG_FILENAME).exists(),
             "no write must occur when any parse fails"
         );
         assert!(
-            !tmp.path().join("memory.yaml").exists(),
+            !tmp.path().join(MEMORY_FILENAME).exists(),
             "no write must occur when any parse fails"
         );
     }
@@ -667,7 +670,7 @@ Paragraph body.
 
         run_migrate(tmp.path(), &MigrateOptions::default()).unwrap();
 
-        assert!(tmp.path().join("session-log.yaml").exists());
+        assert!(tmp.path().join(SESSION_LOG_FILENAME).exists());
         assert!(tmp.path().join("session-log.md").exists(), "default is keep-originals");
 
         let log = read_session_log(tmp.path()).unwrap();
@@ -757,11 +760,11 @@ Paragraph body.
             "error must name the session-log failure: {msg}"
         );
         assert!(
-            !tmp.path().join("backlog.yaml").exists(),
+            !tmp.path().join(BACKLOG_FILENAME).exists(),
             "no write must occur when any parse fails"
         );
         assert!(
-            !tmp.path().join("session-log.yaml").exists(),
+            !tmp.path().join(SESSION_LOG_FILENAME).exists(),
             "no write must occur when any parse fails"
         );
     }
@@ -780,7 +783,7 @@ Paragraph body.
 
         assert!(!tmp.path().join("session-log.md").exists());
         assert!(!tmp.path().join("latest-session.md").exists());
-        assert!(tmp.path().join("session-log.yaml").exists());
-        assert!(tmp.path().join("latest-session.yaml").exists());
+        assert!(tmp.path().join(SESSION_LOG_FILENAME).exists());
+        assert!(tmp.path().join(LATEST_SESSION_FILENAME).exists());
     }
 }

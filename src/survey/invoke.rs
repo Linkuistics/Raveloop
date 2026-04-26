@@ -197,7 +197,7 @@ async fn run_cold_survey(
 }
 
 /// Collect `(plan_key, TaskCounts)` entries for snapshots whose
-/// `backlog.md` parsed successfully. Snapshots with `task_counts: None`
+/// `backlog.yaml` parsed successfully. Snapshots with `task_counts: None`
 /// are skipped; downstream `inject_task_counts` leaves their rows'
 /// counts as `None` so the LLM's `notes` can explain the gap.
 fn collect_task_counts<'a, I>(snapshots: I) -> HashMap<String, TaskCounts>

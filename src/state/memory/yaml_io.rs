@@ -5,29 +5,31 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use super::schema::MemoryFile;
+use crate::state::filenames::MEMORY_FILENAME;
 
 pub fn memory_path(plan_dir: &Path) -> PathBuf {
-    plan_dir.join("memory.yaml")
+    plan_dir.join(MEMORY_FILENAME)
 }
 
 pub fn read_memory(plan_dir: &Path) -> Result<MemoryFile> {
     let path = memory_path(plan_dir);
     if !path.exists() {
         bail!(
-            "memory.yaml not found at {}. Run `ravel-lite state migrate` to convert an existing memory.md.",
+            "{MEMORY_FILENAME} not found at {}. Run `ravel-lite state migrate` to convert an existing memory.md.",
             path.display()
         );
     }
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     let parsed: MemoryFile = serde_yaml::from_str(&text)
-        .with_context(|| format!("Failed to parse {} as memory.yaml schema", path.display()))?;
+        .with_context(|| format!("Failed to parse {} as {MEMORY_FILENAME} schema", path.display()))?;
     Ok(parsed)
 }
 
 pub fn write_memory(plan_dir: &Path, memory: &MemoryFile) -> Result<()> {
     let path = memory_path(plan_dir);
-    let yaml = serde_yaml::to_string(memory).with_context(|| "Failed to serialise memory.yaml")?;
+    let yaml = serde_yaml::to_string(memory)
+        .with_context(|| format!("Failed to serialise {MEMORY_FILENAME}"))?;
     atomic_write(&path, yaml.as_bytes())
 }
 
@@ -97,7 +99,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let err = read_memory(tmp.path()).unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("memory.yaml"), "error must name memory.yaml: {msg}");
+        assert!(msg.contains(MEMORY_FILENAME), "error must name {MEMORY_FILENAME}: {msg}");
         assert!(msg.contains("state migrate"), "error must suggest migrate: {msg}");
     }
 }

@@ -4,7 +4,37 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::state::filenames::{
+    BACKLOG_FILENAME, LATEST_SESSION_FILENAME, MEMORY_FILENAME,
+};
 use crate::types::LlmPhase;
+
+fn filename_suffix_regex(name: &str) -> Regex {
+    Regex::new(&format!("{}$", regex::escape(name))).unwrap()
+}
+
+/// Infer the on-disk file a `ravel-lite state` mutation will write to,
+/// from a Bash tool-call's `detail` text. Returns the canonical filename
+/// so the existing `PHASE_HIGHLIGHTS` regexes match on it.
+///
+/// Required because `ravel-lite state` writes via `--body-file <tmp>`,
+/// which carries no `> ` shell-redirect marker and no destination path
+/// in the visible argv. Without this inference the highlight regexes
+/// never fire for state-CLI invocations.
+fn ravel_state_target_file(detail: &str) -> Option<&'static str> {
+    let mut tokens = detail.split_whitespace();
+    while let Some(tok) = tokens.next() {
+        if tok == "ravel-lite" && tokens.next() == Some("state") {
+            return match tokens.next()? {
+                "session-log" => Some(LATEST_SESSION_FILENAME),
+                "memory" => Some(MEMORY_FILENAME),
+                "backlog" => Some(BACKLOG_FILENAME),
+                _ => None,
+            };
+        }
+    }
+    None
+}
 
 // ── Semantic styling types ────────────────────────────────────────────────────
 // Renderer-agnostic: no ANSI codes, no ratatui. Consumers (TUI or otherwise)
@@ -97,18 +127,18 @@ struct HighlightRule {
 static PHASE_HIGHLIGHTS: Lazy<HashMap<LlmPhase, Vec<HighlightRule>>> = Lazy::new(|| {
     let mut m = HashMap::new();
     m.insert(LlmPhase::AnalyseWork, vec![
-        HighlightRule { pattern: Regex::new(r"latest-session\.yaml$").unwrap(), label: "Writing session log" },
-        HighlightRule { pattern: Regex::new(r"commits\.yaml$").unwrap(), label: "Writing commit spec" },
+        HighlightRule { pattern: filename_suffix_regex(LATEST_SESSION_FILENAME), label: "Writing session log" },
+        HighlightRule { pattern: filename_suffix_regex("commits.yaml"), label: "Writing commit spec" },
     ]);
     m.insert(LlmPhase::Reflect, vec![
-        HighlightRule { pattern: Regex::new(r"memory\.yaml$").unwrap(), label: "Updating memory" },
+        HighlightRule { pattern: filename_suffix_regex(MEMORY_FILENAME), label: "Updating memory" },
     ]);
     m.insert(LlmPhase::Dream, vec![
-        HighlightRule { pattern: Regex::new(r"memory\.yaml$").unwrap(), label: "Rewriting memory" },
+        HighlightRule { pattern: filename_suffix_regex(MEMORY_FILENAME), label: "Rewriting memory" },
     ]);
     m.insert(LlmPhase::Triage, vec![
-        HighlightRule { pattern: Regex::new(r"backlog\.yaml$").unwrap(), label: "Updating backlog" },
-        HighlightRule { pattern: Regex::new(r"subagent-dispatch\.yaml$").unwrap(), label: "Dispatching to related plans" },
+        HighlightRule { pattern: filename_suffix_regex(BACKLOG_FILENAME), label: "Updating backlog" },
+        HighlightRule { pattern: filename_suffix_regex("subagent-dispatch.yaml"), label: "Dispatching to related plans" },
     ]);
     m
 });
@@ -129,7 +159,7 @@ static ACTION_INTENTS: Lazy<HashMap<&'static str, Option<Intent>>> = Lazy::new(|
     // backlog task states (triage)
     m.insert("DONE",          Some(Intent::Added));     // task completed → closed
     m.insert("PROMOTED",      Some(Intent::Added));     // handoff → standalone task
-    m.insert("ARCHIVED",      Some(Intent::Added));     // handoff → memory.md entry
+    m.insert("ARCHIVED",      Some(Intent::Added));     // handoff → memory.yaml entry
     m.insert("BLOCKER",       Some(Intent::Changed));   // was buried blocker → promoted
     m.insert("REPRIORITISED", Some(Intent::Changed));   // priority shifted (delta, kept)
     m.insert("DISPATCH",      Some(Intent::Added));     // handoff to another plan
@@ -171,14 +201,21 @@ pub fn format_tool_call(
         tool.name.to_lowercase().as_str(),
         "write" | "edit"
     );
-    let is_bash_write = tool.name.to_lowercase() == "bash"
+    let is_bash = tool.name.eq_ignore_ascii_case("bash");
+    let is_bash_redirect_write = is_bash
         && tool.detail.as_deref().is_some_and(|d| {
             d.contains("cat ") && d.contains("> ") || d.contains("echo ") && d.contains("> ")
         });
+    let inferred_state_target: Option<&'static str> = if is_bash {
+        tool.detail.as_deref().and_then(ravel_state_target_file)
+    } else {
+        None
+    };
 
-    if is_write || is_bash_write {
+    if is_write || is_bash_redirect_write || inferred_state_target.is_some() {
         if let Some(phase) = phase {
             let path_to_check = tool.path.as_deref()
+                .or(inferred_state_target)
                 .or(tool.detail.as_deref())
                 .unwrap_or("");
 
@@ -445,6 +482,89 @@ mod tests {
     }
 
     #[test]
+    fn format_tool_call_highlights_ravel_state_session_log_set_latest() {
+        // analyse-work writes latest-session.yaml via the state CLI, not a
+        // raw shell redirect. The highlight rule must still fire.
+        let mut shown = HashSet::new();
+        let result = format_tool_call(
+            &ToolCall {
+                name: "Bash".to_string(),
+                path: None,
+                detail: Some(
+                    "ravel-lite state session-log set-latest LLM_STATE/core --body-file /tmp/abc"
+                        .to_string(),
+                ),
+            },
+            Some(LlmPhase::AnalyseWork),
+            &mut shown,
+        );
+        assert!(result.persist, "label must persist");
+        assert!(flat_text(&result.lines[0]).contains("Writing session log"));
+    }
+
+    #[test]
+    fn format_tool_call_highlights_ravel_state_memory_add() {
+        // reflect mutates memory.yaml via `state memory add` etc.
+        let mut shown = HashSet::new();
+        let result = format_tool_call(
+            &ToolCall {
+                name: "Bash".to_string(),
+                path: None,
+                detail: Some(
+                    "ravel-lite state memory add LLM_STATE/core --id foo --body-file /tmp/x"
+                        .to_string(),
+                ),
+            },
+            Some(LlmPhase::Reflect),
+            &mut shown,
+        );
+        assert!(result.persist);
+        assert!(flat_text(&result.lines[0]).contains("Updating memory"));
+    }
+
+    #[test]
+    fn format_tool_call_highlights_ravel_state_backlog_set_status() {
+        // triage flips task statuses via `state backlog set-status`.
+        let mut shown = HashSet::new();
+        let result = format_tool_call(
+            &ToolCall {
+                name: "Bash".to_string(),
+                path: None,
+                detail: Some(
+                    "ravel-lite state backlog set-status LLM_STATE/core some-task done"
+                        .to_string(),
+                ),
+            },
+            Some(LlmPhase::Triage),
+            &mut shown,
+        );
+        assert!(result.persist);
+        assert!(flat_text(&result.lines[0]).contains("Updating backlog"));
+    }
+
+    #[test]
+    fn ravel_state_target_file_extracts_subcommand_target() {
+        assert_eq!(
+            ravel_state_target_file("ravel-lite state memory add LLM_STATE/core"),
+            Some(MEMORY_FILENAME)
+        );
+        assert_eq!(
+            ravel_state_target_file("ravel-lite state backlog set-status x done"),
+            Some(BACKLOG_FILENAME)
+        );
+        assert_eq!(
+            ravel_state_target_file("ravel-lite state session-log set-latest x"),
+            Some(LATEST_SESSION_FILENAME)
+        );
+        // Non-mutating subcommands and unrelated commands return None.
+        assert_eq!(
+            ravel_state_target_file("ravel-lite state phase-summary render x"),
+            None
+        );
+        assert_eq!(ravel_state_target_file("git status"), None);
+    }
+
+    #[test]
     fn format_tool_call_skips_phase_md() {
         let mut shown = HashSet::new();
         let result = format_tool_call(
@@ -599,7 +719,7 @@ mod tests {
     fn format_result_text_promoted_and_archived_are_recognised_actions() {
         let lines = format_result_text(
             "[PROMOTED] Handoff A — from completed task\n\
-             [ARCHIVED] Handoff B — to memory.md, from completed task",
+             [ARCHIVED] Handoff B — to memory.yaml, from completed task",
         );
         let promoted = lines.iter().find(|l| flat_text(l).contains("PROMOTED")).unwrap();
         let promoted_tag = promoted.0.iter().find(|s| s.text.trim() == "PROMOTED").unwrap();

@@ -2,7 +2,7 @@ tasks:
 - id: audit-and-fix-remaining-md-yaml-filename-drift-in-source-and-prompts
   title: Audit and fix remaining .md → .yaml filename drift in source and prompts
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Audit and fix all remaining `.md → .yaml` filename references scattered across the codebase. The `.yaml` storage rename was propagated to `src/format.rs` highlight rules (session 60) but not to the following locations:
@@ -29,10 +29,42 @@ tasks:
     - `cargo test --lib --quiet` passes
     - `cargo clippy --lib --all-targets` clean
     - `grep -r 'backlog\.md\|memory\.md\|session-log\.md\|latest-session\.md' src/` returns no hits
+  results: |
+    ## What was done
+
+    Fixed the active correctness bug in `src/subagent.rs:35-36` where dispatched subagent prompts told peer plans to "Read the target plan's `backlog.md` and `memory.md`" — files that no longer exist after the storage rename. Subagents are now correctly directed at `backlog.yaml` / `memory.yaml`.
+
+    Also corrected scattered doc-comment and test-fixture drift across:
+
+    - `src/format.rs:132` — `ARCHIVED` intent comment said "memory.md entry"; now says "memory.yaml entry"
+    - `src/format.rs:602` — test text in `format_result_text_promoted_and_archived_are_recognised_actions`
+    - `src/ui.rs:454,457` — UI lifecycle test used "Read memory.md" as sample progress text
+    - `src/phase_loop.rs:304` — `GitCommitTriage` comment about latest-session preservation
+    - `src/survey/schema.rs:72,86,90-92,202` — five `PlanRow` doc-comment references (`input_hash` digest description, `task_counts` field doc, `inject_task_counts` doc)
+    - `src/survey/invoke.rs:200` — `collect_task_counts` doc comment
+    - Two extras found by grep that the brief did not list: `src/survey.rs:3-4` (module-level comment claiming the survey gathers `backlog.md`/`memory.md`) and `defaults/fixed-memory/memory-style.md:3` (memory-style rules opening line).
+
+    ## What I deliberately did NOT change
+
+    - **`src/main.rs:221-222`** — the brief described this as a "survey-command CLI doc comment", but it is in fact the `Migrate` subcommand's doc comment, where the `.md` references are accurate (Migrate operates on legacy `.md` files and converts them to `.yaml`). Changing those would have introduced new inaccuracy.
+    - `src/state/migrate.rs` (the source-side `.join("backlog.md")` etc.) — same rationale; migrate exists to convert legacy `.md`.
+    - `src/state/{backlog,memory,session_log}/parse_md.rs` — legacy markdown parsers, kept by design.
+    - `src/state/{backlog,memory,session_log}/yaml_io.rs` error messages that say "Run `ravel-lite state migrate` to convert an existing backlog.md" — the literal `backlog.md` here is the user-facing instruction about the legacy file; correct in context.
+    - `src/survey/discover.rs:601` — test that explicitly verifies the input-hash ignores both `.md` (legacy) and `.yaml` (current) session-log files. The comment makes the legacy-vs-current intent clear.
+
+    ## Verification
+
+    - `cargo test --lib --quiet` — 586 passed, 0 failed
+    - `cargo clippy --lib --all-targets` — clean
+    - `grep -rn 'backlog\.md\|memory\.md\|session-log\.md\|latest-session\.md' src/ defaults/` — only legitimate legacy references remain (migrate code, parse_md.rs, yaml_io.rs error messages, the dual-format test, and the misidentified main.rs:221 site documented above).
+
+    ## What this suggests next
+
+    The follow-up task `adopt-shared-constants-for-state-filenames-to-eliminate-rename-drift-bug-class` is the right next move — every site this audit fixed is a literal string that should have been a constant.
 - id: verify-phase-highlights-tui-labels-fire-during-real-runs
   title: Verify PHASE_HIGHLIGHTS TUI labels fire during real runs
   category: core
-  status: not_started
+  status: done
   dependencies:
   - audit-and-fix-remaining-md-yaml-filename-drift-in-source-and-prompts
   description: |
@@ -51,10 +83,54 @@ tasks:
 
     - Run a full phase cycle and confirm "Writing session log", "Updating memory", "Updating backlog" labels appear in the TUI at the expected moments.
     - Or add an integration test exercising the actual `ravel-lite state --body-file` Bash call pattern through `format_tool_call`.
+  results: |
+    ## What was done
+
+    Extended `src/format.rs::format_tool_call` so the `PHASE_HIGHLIGHTS` regex patterns actually fire when phases mutate plan-state via `ravel-lite state` subcommands (rather than via `Write`/`Edit` tools or shell-redirect Bash invocations).
+
+    Specifically:
+
+    1. Added a `ravel_state_target_file(detail: &str) -> Option<&'static str>` helper that scans a Bash tool-call's `detail` text for the leading `ravel-lite state <subcommand>` pattern and maps the subcommand to a canonical filename:
+       - `session-log` → `LATEST_SESSION_FILENAME` (covers analyse-work's `session-log set-latest`)
+       - `memory` → `MEMORY_FILENAME` (covers all reflect/dream `state memory …` mutations)
+       - `backlog` → `BACKLOG_FILENAME` (covers all triage `state backlog …` mutations)
+       - Anything else → `None`
+    2. Wove the inferred target into `format_tool_call`'s decision logic. The function now considers a Bash call a "write-like" action if either it contains shell-redirect markers (the original logic) **or** `ravel_state_target_file` returns `Some(…)`. The inferred filename is used as `path_to_check`, so the existing `PHASE_HIGHLIGHTS` regexes match it.
+
+    This is fix candidate #2 from the task brief — direct subcommand pattern matching — chosen over candidate #1 (parsing `--body-file <tmp>` and inferring destination) because it requires no knowledge of which CLI flags carry destination paths and degrades gracefully when the CLI changes.
+
+    ## Implementation gotcha worth recording
+
+    First version of `ravel_state_target_file` used `iter.skip_while(|tok| !matches!(*tok, "ravel-lite")).nth(1)` and silently returned the wrong token. `Iterator::skip_while` does **not** consume the boundary token: the next element after `skip_while` is the token that terminated the predicate (here, `"ravel-lite"`), so `nth(1)` returned `"state"` rather than `"memory"`. The fix uses an explicit `while let Some(tok) = tokens.next()` loop. This is the same `Option::or` / `skip_while` semantic-trap pattern that occasionally bites elsewhere — worth noting because the unit-test flush caught it cheaply, but a runtime match against an unreachable filename would have been silent.
+
+    ## Tests added
+
+    Four new tests in `src/format.rs`:
+
+    - `format_tool_call_highlights_ravel_state_session_log_set_latest` — AnalyseWork phase + `Bash` + `ravel-lite state session-log set-latest …` → "Writing session log"
+    - `format_tool_call_highlights_ravel_state_memory_add` — Reflect phase + `Bash` + `ravel-lite state memory add …` → "Updating memory"
+    - `format_tool_call_highlights_ravel_state_backlog_set_status` — Triage phase + `Bash` + `ravel-lite state backlog set-status …` → "Updating backlog"
+    - `ravel_state_target_file_extracts_subcommand_target` — pure helper test covering the three positive subcommands plus two negatives (`phase-summary render`, `git status`)
+
+    ## Verification
+
+    - `cargo test --lib` — 590 passed (4 new), 0 failed
+    - `cargo test` (full suite incl. integration) — all green
+    - `cargo clippy --all-targets` — clean
+
+    ## Coverage note
+
+    The `Triage` phase has a second highlight rule for `subagent-dispatch\.yaml$` ("Dispatching to related plans"). That file is still written by direct LLM `Write` rather than via a `ravel-lite state` subcommand, so the original Write-based detection covers it; no adjustment needed.
+
+    The `Dream` phase's "Rewriting memory" label uses the same `MEMORY_FILENAME` regex and so benefits automatically from the new state-CLI detection.
+
+    ## What this suggests next
+
+    End-to-end visual confirmation in a real TUI run is still worth doing one cycle, though all three label-firing paths are now unit-tested through `format_tool_call` directly. If a future cycle observes a label silently missing, the first thing to check is whether a new mutating `state` subcommand appeared without a matching mapping in `ravel_state_target_file` — the hardcoded subcommand vocabulary is the obvious extension point.
 - id: adopt-shared-constants-for-state-filenames-to-eliminate-rename-drift-bug-class
   title: Adopt shared constants for state filenames to eliminate rename-drift bug class
   category: core
-  status: not_started
+  status: done
   dependencies:
   - audit-and-fix-remaining-md-yaml-filename-drift-in-source-and-prompts
   description: |
@@ -74,6 +150,50 @@ tasks:
     - `cargo test --lib --quiet` passes
     - `cargo clippy --lib --all-targets` clean
     - `grep -rn '"backlog\.yaml"\|"memory\.yaml"\|"session-log\.yaml"\|"latest-session\.yaml"' src/` returns only the constant definitions themselves
+  results: |
+    ## What was done
+
+    Created `src/state/filenames.rs` exposing four `pub const` items:
+
+    - `BACKLOG_FILENAME = "backlog.yaml"`
+    - `MEMORY_FILENAME = "memory.yaml"`
+    - `SESSION_LOG_FILENAME = "session-log.yaml"`
+    - `LATEST_SESSION_FILENAME = "latest-session.yaml"`
+
+    Wired the module into `src/state/mod.rs` as `pub mod filenames`.
+
+    Replaced literal string occurrences across the codebase. Substantive call sites:
+
+    - `src/state/{backlog,memory,session_log}/yaml_io.rs` — `*_path()` builders, `bail!` error messages, `serde::to_string` `with_context` calls, and the test-side assertions that verify the user-facing error string contains the filename
+    - `src/state/migrate.rs` — every `target = plan_dir.join(...)` and every test fixture that builds a path; left source-side `.md` literals alone (those are about legacy files by definition)
+    - `src/state/mod.rs` — added the module to the published surface
+    - `src/format.rs` — the `PHASE_HIGHLIGHTS` regex patterns now use `filename_suffix_regex(BACKLOG_FILENAME)` etc. via a small helper that wraps `regex::escape`
+    - `src/phase_summary.rs` — the two `read_baseline_yaml::<…>(plan_dir, "backlog.yaml", …)` and three `read_baseline_yaml::<MemoryFile>(…, "memory.yaml", …)` call sites
+    - `src/create.rs` — the `scaffold_plan_dir` writes table and the test that re-reads the scaffolded files
+    - `src/backlog_transitions.rs` — the `git ls-files` argument and the `(failed to read current backlog.yaml: …)` error string
+    - `src/survey/discover.rs` — `plan_dir.join(BACKLOG_FILENAME).exists()` checks plus error-context strings, with a `cfg(test)` import of `SESSION_LOG_FILENAME` for the test fixture
+    - `src/git.rs` — `cfg(test)` import for test fixtures that seed `backlog.yaml` files
+
+    ## Design notes worth carrying forward
+
+    - The PHASE_HIGHLIGHTS rules now build their regexes via `Regex::new(&format!("{}$", regex::escape(name)))`. This is robust against future filenames that contain regex meta-characters and means a rename of any constant cascades automatically into the highlight detection.
+    - Unused-import scoping: `[lints.rust] warnings = "deny"` in `Cargo.toml` makes any imported-but-test-only constant fatal. `git.rs` and the secondary import in `survey/discover.rs` use `#[cfg(test)] use crate::state::filenames::…` to avoid the lint.
+    - Test assertion strings were converted from `assert!(msg.contains("backlog.yaml"), "...")` to `assert!(msg.contains(BACKLOG_FILENAME), "...")`. This trades the "test catches a const rename" property for the "test cascades automatically" property — which is the correct trade since the assertion's *purpose* is to verify the filename appears in the error, not to anchor the filename string.
+
+    ## What was NOT done
+
+    - Embedded prompt files (`defaults/*.md`, `defaults/phases/*.md`, `defaults/survey*.md`, etc.) reference filenames as natural-language instructions to the LLM. Converting these would require either token substitution (`{{BACKLOG_FILENAME}}`) or a build-time string replace; both add complexity and reduce prompt readability. The Rust-side constants are sufficient because the prompt files are version-controlled alongside the binary that interprets them — a filename rename will still be a coordinated change across both, but it will at least be a single-Rust-file change in the binary and a single-prompt-file pass on the prompt side.
+    - The grep verification `grep -rn '"backlog\.yaml"\|"memory\.yaml"\|"session-log\.yaml"\|"latest-session\.yaml"' src/` now returns *only* the four constant definitions in `src/state/filenames.rs`. Verification criterion satisfied.
+
+    ## Verification
+
+    - `cargo build` — clean
+    - `cargo test --quiet` — full suite passes (586 lib tests plus all integration suites)
+    - `cargo clippy --all-targets` — clean
+
+    ## What this suggests next
+
+    The same drift-prevention pattern likely applies to `subagent-dispatch.yaml`, `commits.yaml`, `phase.md`, `related-components.yaml`, and `dream-word-count` — each of which still appears as a literal string in multiple call sites. A follow-up task to expand `state::filenames` to cover those would close the bug class entirely.
 - id: add-minimal-github-actions-ci-workflow-build-test-clippy
   title: 'Add minimal GitHub Actions CI workflow: build, test, clippy'
   category: infra
