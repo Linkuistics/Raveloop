@@ -2,7 +2,7 @@ tasks:
 - id: add-scripts-release-doctor-sh-prereq-verification-before-release-pipeline
   title: 'Add scripts/release-doctor.sh: prereq verification before release pipeline'
   category: infra
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Add a `scripts/release-doctor.sh` script (or integrate an upfront check into `release-build.sh`) that verifies all four prerequisites for running the release pipeline and emits a punch-list of anything missing.
@@ -42,6 +42,101 @@ tasks:
     - Running `scripts/release-doctor.sh` on a clean machine with all prereqs missing prints four failure lines and exits 1
     - Running it on the dev machine (all prereqs present since v1.0.2) prints four pass lines and exits 0
     - `release-build.sh` (if wired) fails fast with the doctor output rather than progressing to a build failure
+  results: |
+    ## What landed
+
+    Added `scripts/release-doctor.sh` (~100-line bash script, executable)
+    and wired it as the first step of `release-build.sh`'s `main()`.
+
+    ### Doctor script
+
+    - Verifies four prereqs in this order: `zig`, `cargo-zigbuild`, all
+      four rustup targets used by the release pipeline, and `gh auth`
+      status.
+    - Each check has a single failure mode and a single remediation line
+      lifted from the README's "Release tooling prerequisites" section.
+    - Exits 0 when every check passes, 1 otherwise. Crucially does NOT
+      short-circuit on the first failure — every check runs every time, so
+      the user gets the complete punch list in a single invocation.
+    - Pure bash, no external deps. Style matches `release-publish.sh`
+      (strict mode, ERR trap, `main()` at the bottom). All variable
+      expansions quoted, `[[ ... ]]` over `[ ... ]`, `(( ... ))` for
+      arithmetic, `local` inside functions — per the project's bash
+      coding-style guide.
+    - The four rustup targets are duplicated between the doctor and
+      `release-build.sh`'s `TARGETS` array. The doctor has a comment
+      flagging the requirement to keep them in sync; not extracted to a
+      shared file because two duplicates beats the indirection of a
+      third sourced file.
+
+    ### release-build.sh integration
+
+    - One added line in `main()`, right after `cd "$REPO_ROOT"`. With
+      `set -euo pipefail` already in place, a non-zero exit from the
+      doctor kills `release-build.sh` immediately — no toolchain work
+      starts on a misconfigured machine.
+
+    ## Verification
+
+    - **Dev-machine path** (this workstation, all prereqs present from
+      v1.0.2):
+
+      ```
+      ✓ zig: 0.16.0
+      ✓ cargo-zigbuild: available
+      ✓ rustup target: aarch64-apple-darwin
+      ✓ rustup target: x86_64-apple-darwin
+      ✓ rustup target: aarch64-unknown-linux-gnu
+      ✓ rustup target: x86_64-unknown-linux-gnu
+      ✓ gh: authenticated
+      release-doctor: all prerequisites met
+      EXIT=0
+      ```
+
+    - **Clean-machine path** simulated by stripping PATH to `/usr/bin:/bin`
+      so every required tool is absent:
+
+      ```
+      ✗ zig: not on PATH
+            remediation: brew install zig
+      ✗ cargo-zigbuild: not installed
+            remediation: cargo install cargo-zigbuild
+      ✗ rustup: not on PATH
+            remediation: install rustup from https://rustup.rs/
+      ✗ gh: not installed
+            remediation: brew install gh && gh auth login
+      release-doctor: missing prerequisites — fix the items marked above
+      EXIT=1
+      ```
+
+      Matches the task's verification criteria: four failure lines, four
+      remediation hints, exit 1.
+
+    - Both scripts pass `bash -n` syntax check.
+
+    ## What didn't / partial
+
+    - `shellcheck` and `shfmt` aren't installed on this workstation, so
+      style enforcement was reduced to `bash -n`. The script was written
+      to the bash style guide (quoted expansions, `[[`, `(( `, `local`,
+      ERR trap), but a human-or-CI shellcheck pass before publish would be
+      worthwhile.
+    - The intermediate cases — `rustup` present but a target missing,
+      `gh` present but unauthenticated — share their failure paths with
+      the "all missing" simulation. Verified by inspection rather than
+      separate runs, since each branch is a 3-line if/else with no shared
+      state.
+
+    ## Suggests next
+
+    - Install `shellcheck` + `shfmt` on the dev workstation (or add a CI
+      gate) so future bash work is mechanically style-checked.
+    - If the `TARGETS` list ever needs to diverge between doctor and
+      builder, extract `scripts/lib/release-targets.sh` and source it
+      from both. Until then, the duplicate-with-comment is the simpler
+      choice.
+    - Document `release-doctor.sh` in the README's Releasing section as
+      the recommended first step before `cargo release`.
 - id: v1-to-v2-migration-with-auto-cleanup-of-materialised-defaults
   title: v1 to v2 migration with auto-cleanup of materialised defaults
   category: feature
@@ -420,3 +515,144 @@ tasks:
     the embedded-defaults landing (so the doc accurately describes what's
     on disk vs embedded), and the migration landing (so upgrade
     behaviour can be documented from observed reality).
+- id: diagnose-claude-tui-invisible-after-work-phase-banner-on-a-fresh-machine
+  title: 'Diagnose: claude TUI invisible after work-phase banner on a fresh machine'
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    ## Symptom
+
+    On a colleague's machine (macOS, local terminal, no multiplexer),
+    running `ravel-lite run` past the work-phase banner produces a hang:
+    the banner prints, then nothing more renders, and the terminal appears
+    frozen. `ps aux | grep claude` confirms a claude process is alive.
+    Claude version 2.1.119 on the affected machine. Same plan, same repo,
+    same orchestrator binary work normally on the maintainer's machine, so
+    the bug is environmental, not a deterministic code defect.
+
+    ## What we already know rules out
+
+    - **Not a multiplexer/handoff layer issue**: local terminal, no tmux,
+      no screen, no mosh, no nested ssh.
+    - **Not claude itself broken**: `claude` invoked standalone in the
+      same project dir works fine.
+    - **Not a process-death issue**: claude is alive (ps confirms), so
+      ravel-lite's `std::process::Command::new("claude").status()` in
+      `src/agent/claude_code.rs:183` is correctly blocked waiting for
+      claude to exit. The hang is on claude's side.
+    - **Not "no further log lines = hung"**: claude's debug log emits
+      init events only; once it transitions to its Ink TUI the absence of
+      log lines is expected.
+
+    ## Working hypothesis ladder
+
+    **(A) — strongest** — Trust/permission modal claude renders that the
+    user can't see. Trust state lives in `~/.claude.json` per machine and
+    accumulates as users approve directories over time. The
+    maintainer's machine has every directory ravel-lite has ever passed
+    already trusted; a fresh machine doesn't. The colleague's debug log
+    shows claude *applying* a stored rule (`Read(//Users/.../ravel-lite-
+    config/**)`) into localSettings during init — partial pre-existing
+    trust, possibly inconsistent. If `--add-dir <plan_dir>` triggers a
+    fresh modal, the user can't answer it because the modal isn't
+    visible (cursor-position state at handoff with ratatui's inline
+    viewport).
+
+    **(B)** — Inline-viewport handoff bug. ratatui in `src/ui.rs:244` runs
+    in `Viewport::Inline(1)` mode, never enters alt-screen. Modern
+    Claude Code (Ink-based) also draws inline. They compete for cursor-
+    anchored rendering in the same main-screen region. The suspend
+    volley in `src/ui.rs:298` was tuned by trial and error; it may miss
+    a reset that matters on this specific terminal/scrollback state.
+
+    **(C)** — Stale/corrupt entry in the colleague's `~/.claude.json` that
+    puts claude into a bad waiting state on first contact with `--add-
+    dir`. Cousin of (A), distinguished only by remediation: (A) needs
+    the user to grant trust, (C) needs the user to delete a corrupt
+    record.
+
+    ## Side-discovery worth landing regardless
+
+    - **Path-concatenation bug** producing the literal double-slash
+      `/Users/.../ravel-lite-config//fixed-memory/...` in the work-phase
+      prompt body. Whoever composes the fixed-memory section concatenates
+      `<config_root>/` with `/fixed-memory/...` instead of joining
+      cleanly. Cosmetic in the prompt, but the path leaks into claude's
+      saved permission rules — the colleague's localSettings already
+      contains a double-slash `Read(//Users/.../ravel-lite-config/**)`
+      rule that originated from this. Hunt down the join site (likely
+      `src/prompt.rs` or wherever `coding-style.md` is referenced in the
+      embedded work-phase template) and use a proper path join.
+    - **Redundant `--add-dir <plan_dir>` on the work phase**. The plan
+      directory is always a descendant of `ctx.project_dir`, which is the
+      cwd claude is launched in. claude already trusts cwd implicitly. The
+      `--add-dir` adds nothing for trust purposes and may be the trigger
+      for the unseen modal in hypothesis (A). Headless phases use `-p`
+      and need `--add-dir` for their own reasons (per memory note
+      `Claude spawn with file-write needs --allowed-tools`); the work
+      phase does not. Removing it from `invoke_interactive` in
+      `src/agent/claude_code.rs:39` (work-phase only) is a safe
+      simplification and may be a complete fix on its own.
+
+    ## Decisive next test
+
+    Have the affected user run, by hand, the spawn ravel-lite would
+    issue, in a fresh terminal:
+
+    ```bash
+    cd ~/.dev/dull/frontend/apps/launcher-web
+    claude --add-dir ~/.dev/dull/frontend/apps/launcher-web/LLM_STATE/<plan>
+    ```
+
+    Three outcomes:
+
+    - **Locks up identically** → not a ravel-lite handoff bug. The
+      combination of `--add-dir` and their environment alone reproduces
+      it. Fix is on the spawn-args side: drop the redundant `--add-dir`
+      and/or pre-grant trust.
+    - **Works fine** → the bug is in ravel-lite's terminal handoff
+      specifically. Investigation pivots to `src/ui.rs:298` reset volley
+      and the `terminal.clear() + disable_raw_mode()` ordering.
+    - **Shows a visible y/n modal once, then proceeds** → first-run trust
+      is the cause; document a one-time trust acceptance step or fix in
+      ravel-lite by dropping the redundant `--add-dir`.
+
+    ## Cheap parallel bypasses they can try
+
+    1. Inspect their trust state:
+
+       ```bash
+       jq '.projects | keys' ~/.claude.json | grep launcher-web
+       ```
+
+       Absence of the plan-dir path is evidence for (A).
+
+    2. Set `dangerous: true` for the work phase in their plan's
+       `config.lua` so ravel-lite appends `--dangerously-skip-
+       permissions` (read path: `params[<phase>][dangerous]` in
+       `src/agent/claude_code.rs:32-37`). If the lockup disappears, (A) is
+       confirmed. If it persists, dig into (B).
+
+    ## What "done" looks like for this task
+
+    - Root cause identified by either the manual-spawn test or the
+      `dangerous: true` test above.
+    - Either ravel-lite changes (most likely: drop `--add-dir` from
+      `invoke_interactive`, fix the double-slash join in prompt
+      composition) or a documented user-side remediation (one-time
+      trust step).
+    - Regression catch: a smoke note or test that exercises a fresh-
+      trust-state scenario, since the bug is invisible from the
+      maintainer's machine where trust is already granted.
+
+    ## Notes for the next session
+
+    - The colleague has Claude 2.1.119; verify maintainer's version is
+      compatible (mismatched versions can change `--add-dir` semantics).
+    - The colleague's env: macOS, local terminal, no multiplexer, plan
+      at `~/.dev/dull/frontend/apps/launcher-web/LLM_STATE/<plan>`,
+      ravel-lite-config at `~/.dev/ravel-lite-config/`.
+    - Their localSettings already contains a malformed double-slash
+      `Read(//Users/.../ravel-lite-config/**)` rule from a prior run.
+      When fixed, they may want to clean that up too.

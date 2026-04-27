@@ -89,6 +89,7 @@ render_formula() {
 
 main() {
   cd "$REPO_ROOT"
+  "$REPO_ROOT/scripts/release-doctor.sh"
   require_clean_tagged_tree
   local version
   version="$(read_version)"

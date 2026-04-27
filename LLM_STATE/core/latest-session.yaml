@@ -1,13 +1,11 @@
-id: session-66
-timestamp: 2026-04-27T04:53:40Z
+id: session-67
+timestamp: 2026-04-27T08:33:06Z
 phase: work
 body: |
-  ### Session 66 (2026-04-27T04:53:40Z) — Replace disk-read defaults with embedded set and Lua config
+  ### Session 67 (2026-04-27T08:33:06Z) — Add release-doctor.sh prereq verification
 
-  - Attempted and completed two tightly coupled tasks in one session: switching all runtime reads of shipped prompts/agent-definitions from disk to the embedded binary set, and replacing the YAML+local-overlay config model with a layered Lua config.
-  - Both tasks shipped cleanly. All call sites across `src/prompt.rs`, `src/agent/pi.rs`, `src/survey/compose.rs`, and `src/phase_loop.rs` now route through `init::require_embedded` / `init::embedded_entries_with_prefix` rather than `fs::read_to_string`. `src/config.rs` lost the `merge_yaml` / `load_with_optional_overlay` machinery; all loaders delegate to `config_lua::resolve`.
-  - New `src/config_lua.rs` (565 lines) implements the `ravel` Lua global table (`set_agent`, `set_headroom`, `set_model_for`, `set_token`, `append_prompt`, `config` table) backed by `mlua` (vendored Lua 5.4). Global + plan layers resolve in order; `append_prompt` accumulates across both layers in registration order.
-  - `src/init.rs` no longer materialises shipped defaults; `run_init` now writes only a commented-out `config.lua` stub and prunes `RETIRED_PATHS`. The `--force` flag still prunes but has nothing to refresh.
-  - Two new integration test files: `tests/lua_config.rs` (Lua API surface tests) and `tests/embedded_defaults_drift.rs` (drift guard ensuring no source file reads an embedded path from disk).
-  - The previous test suite in `tests/config.rs` was rewritten for the new surface: YAML-fixture-based tests removed, replaced with embedded-defaults and Lua-override tests.
-  - What this suggests next: the v1→v2 migration task is now unblocked (both its dependencies are done); it can be picked up in the next cycle. The drift guard test in `tests/embedded_defaults_drift.rs` should be reviewed to confirm its coverage is complete.
+  - Added `scripts/release-doctor.sh`: a ~100-line pure-bash script that verifies all four prerequisite categories for the release pipeline (zig, cargo-zigbuild, four rustup targets, gh auth) and emits a complete punch-list of anything missing before exiting non-zero
+  - Wired the doctor as the first step in `release-build.sh`'s `main()` so misconfigured machines fail fast before any build work starts
+  - Both paths verified: dev-machine path exits 0 with all-pass markers; simulated clean-machine path (PATH stripped) exits 1 with failure lines and remediation commands for each missing item
+  - The four rustup targets are intentionally duplicated between `release-doctor.sh` and `release-build.sh`'s TARGETS array with a sync comment; no shared sourced file introduced (two duplicates beats the indirection of a third file)
+  - A new backlog task was added to diagnose the claude TUI becoming invisible after the work-phase banner on a fresh machine (a user-reported issue with `--add-dir`, the trust modal, and the inline-viewport handoff)
