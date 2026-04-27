@@ -899,3 +899,13 @@ sessions:
     - All tests pass: 590 lib tests (4 new), 0 failures. Clippy clean. Grep for literal filename strings in `src/` returns only the four constant definitions.
     - The `PHASE_HIGHLIGHTS` regexes now use `filename_suffix_regex(CONSTANT)` via a helper wrapping `regex::escape`, so a future constant rename cascades automatically into highlight detection.
     - Prompt files (`defaults/*.md`) were left with literal filenames by design — converting them would require token substitution or build-time replacement, adding complexity without proportional benefit.
+- id: session-62
+  timestamp: 2026-04-27T01:29:37Z
+  phase: work
+  body: |
+    ### Session 62 (2026-04-27T01:29:37Z) — Expand filename constants and wire cargo-dist for Homebrew
+
+    - Attempted and completed two backlog tasks: expanding `state::filenames` constants to eliminate remaining literal filename strings, and wiring `dist` (cargo-dist) for tag-driven Homebrew bottle distribution.
+    - The filenames expansion succeeded completely. Five new constants (`SUBAGENT_DISPATCH_FILENAME`, `COMMITS_FILENAME`, `PHASE_FILENAME`, `RELATED_COMPONENTS_FILENAME`, `DREAM_WORD_COUNT_FILENAME`) were added to `src/state/filenames.rs` and all non-legacy literal uses replaced across `src/dream.rs`, `src/subagent.rs`, `src/format.rs`, `src/create.rs`, `src/phase_loop.rs`, `src/main.rs`, `src/multi_plan.rs`, `src/git.rs`, `src/state/phase.rs`, and `src/survey/discover.rs`. A bonus consolidation removed the `RELATED_COMPONENTS_FILE` local constant from `src/related_components.rs` (wrong naming convention: `_FILE` vs `_FILENAME`) and routed all five usages through the canonical module. The `src/ontology/yaml_io.rs` test fixtures were renamed from `"related-components.yaml"` to `"edges.yaml"` to preserve the host-agnostic boundary of that library module. All 590 tests pass; clippy clean; grep confirms no stray literals remain.
+    - The cargo-dist wiring succeeded in-session (metadata and workflow generated), but the end-to-end release pipeline (tag push → tarballs → tap formula) cannot be verified until the operator creates the `Linkuistics/homebrew-taps` GitHub repository, generates a PAT with repo scope, and adds `HOMEBREW_TAP_TOKEN` as a secret on `Linkuistics/Ravel-Lite`. The session added `[workspace.metadata.dist]`, `[profile.dist]`, and package metadata to `Cargo.toml`, generated `.github/workflows/release.yml` via `dist init --yes`, and updated `README.md` with prerequisites and pipeline description.
+    - What this suggests next: operator action to provision the tap repository and secret; a first prerelease tag (e.g. `v1.0.2-test1`) to exercise the pipeline without publishing a real formula update.

@@ -10,6 +10,7 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 
 use crate::dream::seed_dream_word_count_if_missing;
+use crate::state::filenames::PHASE_FILENAME;
 use crate::types::Phase;
 
 /// Enumerated for error messages so a typo'd phase string comes back
@@ -33,10 +34,10 @@ pub fn run_set_phase(plan_dir: &Path, phase: &str) -> Result<()> {
             VALID_PHASES.join(", ")
         );
     }
-    let target = plan_dir.join("phase.md");
+    let target = plan_dir.join(PHASE_FILENAME);
     if !target.exists() {
         bail!(
-            "phase.md not found at {}. set-phase refuses to create a new plan dir.",
+            "{PHASE_FILENAME} not found at {}. set-phase refuses to create a new plan dir.",
             target.display()
         );
     }
@@ -75,17 +76,18 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::filenames::DREAM_WORD_COUNT_FILENAME;
     use tempfile::TempDir;
 
     #[test]
     fn set_phase_writes_valid_llm_phase_to_phase_md() {
         let tmp = TempDir::new().unwrap();
         let plan = tmp.path();
-        std::fs::write(plan.join("phase.md"), "work").unwrap();
+        std::fs::write(plan.join(PHASE_FILENAME), "work").unwrap();
 
         run_set_phase(plan, "analyse-work").unwrap();
 
-        let content = std::fs::read_to_string(plan.join("phase.md")).unwrap();
+        let content = std::fs::read_to_string(plan.join(PHASE_FILENAME)).unwrap();
         assert_eq!(content.trim(), "analyse-work");
     }
 
@@ -96,8 +98,8 @@ mod tests {
         // Deliberately no phase.md — simulates a typo'd plan-dir arg.
         let err = run_set_phase(plan, "reflect").unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("phase.md"), "error must name phase.md: {msg}");
-        assert!(!plan.join("phase.md").exists(), "must not silently create phase.md");
+        assert!(msg.contains(PHASE_FILENAME), "error must name {PHASE_FILENAME}: {msg}");
+        assert!(!plan.join(PHASE_FILENAME).exists(), "must not silently create phase.md");
     }
 
     #[test]
@@ -108,12 +110,12 @@ mod tests {
         // path.
         let tmp = TempDir::new().unwrap();
         let plan = tmp.path();
-        std::fs::write(plan.join("phase.md"), "work").unwrap();
-        assert!(!plan.join("dream-word-count").exists());
+        std::fs::write(plan.join(PHASE_FILENAME), "work").unwrap();
+        assert!(!plan.join(DREAM_WORD_COUNT_FILENAME).exists());
 
         run_set_phase(plan, "analyse-work").unwrap();
 
-        let baseline = std::fs::read_to_string(plan.join("dream-word-count")).unwrap();
+        let baseline = std::fs::read_to_string(plan.join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim(), "0");
     }
 
@@ -124,12 +126,12 @@ mod tests {
         // toward the dream threshold.
         let tmp = TempDir::new().unwrap();
         let plan = tmp.path();
-        std::fs::write(plan.join("phase.md"), "work").unwrap();
-        std::fs::write(plan.join("dream-word-count"), "1234").unwrap();
+        std::fs::write(plan.join(PHASE_FILENAME), "work").unwrap();
+        std::fs::write(plan.join(DREAM_WORD_COUNT_FILENAME), "1234").unwrap();
 
         run_set_phase(plan, "analyse-work").unwrap();
 
-        let baseline = std::fs::read_to_string(plan.join("dream-word-count")).unwrap();
+        let baseline = std::fs::read_to_string(plan.join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim(), "1234");
     }
 
@@ -142,13 +144,13 @@ mod tests {
         // its old name to free that name for the SHA writer.
         let tmp = TempDir::new().unwrap();
         let plan = tmp.path();
-        std::fs::write(plan.join("phase.md"), "work").unwrap();
+        std::fs::write(plan.join(PHASE_FILENAME), "work").unwrap();
         std::fs::write(plan.join("dream-baseline"), "5678").unwrap();
 
         run_set_phase(plan, "analyse-work").unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(plan.join("dream-word-count")).unwrap().trim(),
+            std::fs::read_to_string(plan.join(DREAM_WORD_COUNT_FILENAME)).unwrap().trim(),
             "5678"
         );
         assert!(!plan.join("dream-baseline").exists());
@@ -158,7 +160,7 @@ mod tests {
     fn set_phase_rejects_typo_and_lists_valid_phases() {
         let tmp = TempDir::new().unwrap();
         let plan = tmp.path();
-        std::fs::write(plan.join("phase.md"), "work").unwrap();
+        std::fs::write(plan.join(PHASE_FILENAME), "work").unwrap();
 
         let err = run_set_phase(plan, "analyze-work").unwrap_err();
         let msg = format!("{err:#}");
@@ -171,7 +173,7 @@ mod tests {
             assert!(msg.contains(valid), "error must list '{valid}': {msg}");
         }
 
-        let content = std::fs::read_to_string(plan.join("phase.md")).unwrap();
+        let content = std::fs::read_to_string(plan.join(PHASE_FILENAME)).unwrap();
         assert_eq!(content.trim(), "work", "phase.md must be unchanged on error");
     }
 }

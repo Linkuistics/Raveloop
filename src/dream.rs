@@ -2,6 +2,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::state::filenames::DREAM_WORD_COUNT_FILENAME;
 use crate::state::memory::read_memory;
 
 fn word_count(text: &str) -> usize {
@@ -23,7 +24,7 @@ fn memory_content_word_count(plan_dir: &Path) -> Option<usize> {
 
 /// Returns true if memory content has grown beyond baseline + headroom.
 pub fn should_dream(plan_dir: &Path, headroom: usize) -> bool {
-    let baseline_path = plan_dir.join("dream-word-count");
+    let baseline_path = plan_dir.join(DREAM_WORD_COUNT_FILENAME);
 
     let Ok(baseline_str) = fs::read_to_string(&baseline_path) else {
         return false;
@@ -42,7 +43,7 @@ pub fn should_dream(plan_dir: &Path, headroom: usize) -> bool {
 /// memory content. Called after a successful dream phase so the next
 /// dream fires only after `headroom` further words accumulate.
 pub fn update_dream_word_count(plan_dir: &Path) {
-    let baseline_path = plan_dir.join("dream-word-count");
+    let baseline_path = plan_dir.join(DREAM_WORD_COUNT_FILENAME);
 
     if let Some(count) = memory_content_word_count(plan_dir) {
         let _ = fs::write(&baseline_path, count.to_string());
@@ -71,7 +72,7 @@ pub fn update_dream_word_count(plan_dir: &Path) {
 /// as the word-count, copy it to `dream-word-count`, and delete the
 /// legacy file so the SHA writer can claim the name without collision.
 pub fn seed_dream_word_count_if_missing(plan_dir: &Path) {
-    let word_count_path = plan_dir.join("dream-word-count");
+    let word_count_path = plan_dir.join(DREAM_WORD_COUNT_FILENAME);
     if word_count_path.exists() {
         return;
     }
@@ -133,7 +134,7 @@ mod tests {
     fn returns_false_within_headroom() {
         let dir = TempDir::new().unwrap();
         write_memory_with_word_count(dir.path(), 100);
-        fs::write(dir.path().join("dream-word-count"), "50").unwrap();
+        fs::write(dir.path().join(DREAM_WORD_COUNT_FILENAME), "50").unwrap();
         assert!(!should_dream(dir.path(), 1500));
     }
 
@@ -141,7 +142,7 @@ mod tests {
     fn returns_true_beyond_headroom() {
         let dir = TempDir::new().unwrap();
         write_memory_with_word_count(dir.path(), 2000);
-        fs::write(dir.path().join("dream-word-count"), "100").unwrap();
+        fs::write(dir.path().join(DREAM_WORD_COUNT_FILENAME), "100").unwrap();
         assert!(should_dream(dir.path(), 1500));
     }
 
@@ -150,7 +151,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_memory_with_word_count(dir.path(), 500);
         update_dream_word_count(dir.path());
-        let baseline = fs::read_to_string(dir.path().join("dream-word-count")).unwrap();
+        let baseline = fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim().parse::<usize>().unwrap(), 500);
     }
 
@@ -178,7 +179,7 @@ mod tests {
         };
         write_memory(dir.path(), &memory).unwrap();
         update_dream_word_count(dir.path());
-        let baseline = fs::read_to_string(dir.path().join("dream-word-count")).unwrap();
+        let baseline = fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim().parse::<usize>().unwrap(), 9);
     }
 
@@ -192,11 +193,11 @@ mod tests {
         // fallback, effectively freezing them at their current size.
         let dir = TempDir::new().unwrap();
         write_memory_with_word_count(dir.path(), 2000);
-        assert!(!dir.path().join("dream-word-count").exists());
+        assert!(!dir.path().join(DREAM_WORD_COUNT_FILENAME).exists());
 
         seed_dream_word_count_if_missing(dir.path());
 
-        let baseline = fs::read_to_string(dir.path().join("dream-word-count")).unwrap();
+        let baseline = fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim(), "0");
     }
 
@@ -208,11 +209,11 @@ mod tests {
         // and dream could never be reached.
         let dir = TempDir::new().unwrap();
         write_memory_with_word_count(dir.path(), 500);
-        fs::write(dir.path().join("dream-word-count"), "42").unwrap();
+        fs::write(dir.path().join(DREAM_WORD_COUNT_FILENAME), "42").unwrap();
 
         seed_dream_word_count_if_missing(dir.path());
 
-        let baseline = fs::read_to_string(dir.path().join("dream-word-count")).unwrap();
+        let baseline = fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap();
         assert_eq!(baseline.trim(), "42");
     }
 
@@ -225,12 +226,12 @@ mod tests {
         // doesn't collide.
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("dream-baseline"), "777").unwrap();
-        assert!(!dir.path().join("dream-word-count").exists());
+        assert!(!dir.path().join(DREAM_WORD_COUNT_FILENAME).exists());
 
         seed_dream_word_count_if_missing(dir.path());
 
         assert_eq!(
-            fs::read_to_string(dir.path().join("dream-word-count")).unwrap().trim(),
+            fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap().trim(),
             "777",
             "legacy value must carry over to the new file"
         );
@@ -253,7 +254,7 @@ mod tests {
         seed_dream_word_count_if_missing(dir.path());
 
         assert_eq!(
-            fs::read_to_string(dir.path().join("dream-word-count")).unwrap().trim(),
+            fs::read_to_string(dir.path().join(DREAM_WORD_COUNT_FILENAME)).unwrap().trim(),
             "0"
         );
         assert_eq!(

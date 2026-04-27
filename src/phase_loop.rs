@@ -13,6 +13,7 @@ use crate::git::{
     work_tree_snapshot, working_tree_status,
 };
 use crate::prompt::compose_prompt;
+use crate::state::filenames::PHASE_FILENAME;
 use crate::subagent::dispatch_subagents;
 use crate::types::*;
 use crate::ui::UI;
@@ -20,8 +21,8 @@ use crate::ui::UI;
 const HR: &str = "────────────────────────────────────────────────────";
 
 fn read_phase(plan_dir: &Path) -> Result<Phase> {
-    let content = fs::read_to_string(plan_dir.join("phase.md"))
-        .context("Failed to read phase.md")?;
+    let content = fs::read_to_string(plan_dir.join(PHASE_FILENAME))
+        .with_context(|| format!("Failed to read {PHASE_FILENAME}"))?;
     Phase::parse(content.trim())
         .with_context(|| format!("Unknown phase: {}", content.trim()))
 }
@@ -32,7 +33,7 @@ fn read_phase(plan_dir: &Path) -> Result<Phase> {
 /// for the loop's position, so a dropped write would re-invoke the agent on
 /// the same phase and hide the real error.
 fn write_phase(plan_dir: &Path, phase: Phase) -> Result<()> {
-    let path = plan_dir.join("phase.md");
+    let path = plan_dir.join(PHASE_FILENAME);
     fs::write(&path, phase.to_string())
         .with_context(|| format!("Failed to write phase marker: {}", path.display()))
 }
@@ -521,7 +522,7 @@ mod tests {
     fn write_phase_writes_marker_file() {
         let dir = tempfile::TempDir::new().unwrap();
         write_phase(dir.path(), Phase::Llm(LlmPhase::Reflect)).unwrap();
-        let contents = fs::read_to_string(dir.path().join("phase.md")).unwrap();
+        let contents = fs::read_to_string(dir.path().join(PHASE_FILENAME)).unwrap();
         assert_eq!(contents, "reflect");
     }
 
@@ -535,7 +536,7 @@ mod tests {
         let err = write_phase(&missing, Phase::Llm(LlmPhase::Work))
             .expect_err("write should fail on a missing directory");
         assert!(
-            err.to_string().contains("phase.md"),
+            err.to_string().contains(PHASE_FILENAME),
             "error should name the target file: {err}"
         );
     }

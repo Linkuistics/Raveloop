@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 #[cfg(test)]
 use crate::state::filenames::BACKLOG_FILENAME;
+use crate::state::filenames::COMMITS_FILENAME;
 
 pub struct CommitResult {
     pub committed: bool,
@@ -100,7 +101,7 @@ pub fn apply_commits_spec(
     plan_name: &str,
     phase_name: &str,
 ) -> Result<Vec<CommitResult>> {
-    let spec_path = plan_dir.join("commits.yaml");
+    let spec_path = plan_dir.join(COMMITS_FILENAME);
     let default_message = format!("run-plan: {phase_name} ({plan_name})");
 
     // Read and delete the spec BEFORE any git operations. If we left
@@ -676,7 +677,7 @@ mod tests {
         fs::write(plan_dir.join(BACKLOG_FILENAME), "entries: []\n").unwrap();
 
         fs::write(
-            plan_dir.join("commits.yaml"),
+            plan_dir.join(COMMITS_FILENAME),
             "commits:\n  - paths: [\".\"]\n    message: Update tracked and seed backlog\n",
         ).unwrap();
 
@@ -713,7 +714,7 @@ mod tests {
   - paths: ["LLM_STATE/**"]
     message: Seed backlog entry
 "#;
-        fs::write(plan_dir.join("commits.yaml"), spec_yaml).unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), spec_yaml).unwrap();
 
         let results = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
 
@@ -756,7 +757,7 @@ mod tests {
         fs::create_dir_all(&plan_dir).unwrap();
 
         fs::write(repo.join("tracked.rs"), "v2\n").unwrap();
-        fs::write(plan_dir.join("commits.yaml"), "this: is not: a valid: commits spec\n").unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), "this: is not: a valid: commits spec\n").unwrap();
 
         // Malformed YAML must not abort the phase — that would wedge the
         // loop on every bad spec. Fall back to the catch-all commit.
@@ -777,7 +778,7 @@ mod tests {
         // An empty list is syntactically valid but semantically a fallback
         // trigger: no declared commits means no partition preference, so
         // the catch-all commits everything under one default message.
-        fs::write(plan_dir.join("commits.yaml"), "commits: []\n").unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), "commits: []\n").unwrap();
 
         let results = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
         assert_eq!(results.len(), 1);
@@ -805,7 +806,7 @@ mod tests {
   - paths: ["docs/**"]
     message: Update docs
 "#;
-        fs::write(plan_dir.join("commits.yaml"), spec_yaml).unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), spec_yaml).unwrap();
 
         let results = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
         assert_eq!(results.len(), 2);
@@ -845,7 +846,7 @@ mod tests {
   - paths: ["."]
     message: Add new module
 "#;
-        fs::write(plan_dir.join("commits.yaml"), spec_yaml).unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), spec_yaml).unwrap();
 
         let results = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
         assert_eq!(results.len(), 1);
@@ -868,7 +869,7 @@ mod tests {
   - paths: ["src/**"]
     message: Bump src
 "#;
-        fs::write(plan_dir.join("commits.yaml"), spec_yaml).unwrap();
+        fs::write(plan_dir.join(COMMITS_FILENAME), spec_yaml).unwrap();
 
         let results = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
         assert_eq!(results.len(), 2);
@@ -890,12 +891,12 @@ mod tests {
 
         fs::write(repo.join("tracked.rs"), "v2\n").unwrap();
         fs::write(
-            plan_dir.join("commits.yaml"),
+            plan_dir.join(COMMITS_FILENAME),
             "commits:\n  - paths: [\".\"]\n    message: Bump\n",
         ).unwrap();
 
         let _ = apply_commits_spec(repo, &plan_dir, "core", "work").unwrap();
-        assert!(!plan_dir.join("commits.yaml").exists(), "spec file must be removed after apply");
+        assert!(!plan_dir.join(COMMITS_FILENAME).exists(), "spec file must be removed after apply");
     }
 
     #[test]
@@ -923,7 +924,7 @@ mod tests {
         fs::write(subtree.join("src.rs"), "sub v2\n").unwrap();
 
         fs::write(
-            plan_dir.join("commits.yaml"),
+            plan_dir.join(COMMITS_FILENAME),
             "commits:\n  - paths: [\".\"]\n    message: Subtree-only bump\n",
         ).unwrap();
 

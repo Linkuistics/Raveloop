@@ -25,6 +25,7 @@ use crate::config::{load_agent_config, load_shared_config};
 use crate::git::project_root_for_plan;
 use crate::phase_loop;
 use crate::related_components::read_related_plans_markdown;
+use crate::state::filenames::PHASE_FILENAME;
 use crate::survey::{
     compute_survey_response, emit_survey_yaml, load_plan, plan_key, SurveyResponse,
 };
@@ -51,9 +52,9 @@ pub struct SelectionOption {
 pub fn build_plan_dir_map(plan_dirs: &[PathBuf]) -> Result<HashMap<String, PathBuf>> {
     let mut map = HashMap::with_capacity(plan_dirs.len());
     for plan_dir in plan_dirs {
-        if !plan_dir.join("phase.md").exists() {
+        if !plan_dir.join(PHASE_FILENAME).exists() {
             anyhow::bail!(
-                "{}/phase.md not found. Is this a valid plan directory?",
+                "{}/{PHASE_FILENAME} not found. Is this a valid plan directory?",
                 plan_dir.display()
             );
         }
@@ -524,8 +525,8 @@ mod tests {
         let plan_b = tmp.path().join("b").join("Proj").join("LLM_STATE").join("dup");
         fs::create_dir_all(&plan_a).unwrap();
         fs::create_dir_all(&plan_b).unwrap();
-        fs::write(plan_a.join("phase.md"), "work").unwrap();
-        fs::write(plan_b.join("phase.md"), "work").unwrap();
+        fs::write(plan_a.join(PHASE_FILENAME), "work").unwrap();
+        fs::write(plan_b.join(PHASE_FILENAME), "work").unwrap();
         let err = build_plan_dir_map(&[plan_a, plan_b]).unwrap_err();
         assert!(format!("{err:#}").contains("same project/plan key"));
     }

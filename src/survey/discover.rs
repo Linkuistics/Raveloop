@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::git::project_root_for_plan;
 use crate::state::backlog::{read_backlog, PlanRowCounts, TaskCounts};
-use crate::state::filenames::{BACKLOG_FILENAME, MEMORY_FILENAME};
+use crate::state::filenames::{BACKLOG_FILENAME, MEMORY_FILENAME, PHASE_FILENAME};
 #[cfg(test)]
 use crate::state::filenames::SESSION_LOG_FILENAME;
 use crate::state::memory::read_memory;
@@ -76,10 +76,10 @@ fn project_name_for_plan(plan_path: &Path) -> Result<String> {
 /// be silently bypassed by deleting the legacy `.md` originals via
 /// `state migrate --delete-originals`.
 pub fn load_plan(plan_dir: &Path) -> Result<PlanSnapshot> {
-    let phase_file = plan_dir.join("phase.md");
+    let phase_file = plan_dir.join(PHASE_FILENAME);
     if !phase_file.exists() {
         anyhow::bail!(
-            "{} is not a plan directory (no phase.md found)",
+            "{} is not a plan directory (no {PHASE_FILENAME} found)",
             plan_dir.display()
         );
     }
@@ -245,7 +245,7 @@ mod tests {
 
     fn write_plan(plan_dir: &Path, options: &PlanOptions) {
         fs::create_dir_all(plan_dir).unwrap();
-        fs::write(plan_dir.join("phase.md"), options.phase).unwrap();
+        fs::write(plan_dir.join(PHASE_FILENAME), options.phase).unwrap();
         if let Some(backlog) = options.backlog {
             write_backlog(plan_dir, backlog).unwrap();
         }
@@ -418,11 +418,11 @@ mod tests {
 
         // Mutate each section in turn — each mutation must produce a
         // different hash from the initial state.
-        fs::write(plan_dir.join("phase.md"), "triage\n").unwrap();
+        fs::write(plan_dir.join(PHASE_FILENAME), "triage\n").unwrap();
         let hash_phase = load_plan(&plan_dir).unwrap().input_hash;
         assert_ne!(hash_initial, hash_phase);
 
-        fs::write(plan_dir.join("phase.md"), "work\n").unwrap();
+        fs::write(plan_dir.join(PHASE_FILENAME), "work\n").unwrap();
         let backlog_mutated = one_task_backlog("Mutated task");
         write_backlog(&plan_dir, &backlog_mutated).unwrap();
         let hash_backlog = load_plan(&plan_dir).unwrap().input_hash;
@@ -568,7 +568,7 @@ mod tests {
         mark_as_git_project(&project);
         let plan_dir = project.join("plan-a");
         fs::create_dir_all(&plan_dir).unwrap();
-        fs::write(plan_dir.join("phase.md"), "work\n").unwrap();
+        fs::write(plan_dir.join(PHASE_FILENAME), "work\n").unwrap();
         fs::write(
             plan_dir.join(BACKLOG_FILENAME),
             "tasks:\n  - id: bad\n    status: not_a_real_status\n",

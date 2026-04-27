@@ -2,7 +2,7 @@ tasks:
 - id: expand-state-filenames-constants-to-cover-subagent-dispatch-yaml-commits-yaml-phase-md-related-components-yaml-dream-word-count
   title: Expand state::filenames constants to cover subagent-dispatch.yaml, commits.yaml, phase.md, related-components.yaml, dream-word-count
   category: core
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Expand `src/state/filenames.rs` to cover the remaining literal filename strings: `subagent-dispatch.yaml`, `commits.yaml`, `phase.md`, `related-components.yaml`, and `dream-word-count`. Each of these appears in multiple call sites as an unguarded string literal; the refactoring done for the four state-file constants established both the pattern and the module location.
@@ -27,6 +27,71 @@ tasks:
     - `cargo test --quiet` passes.
     - `cargo clippy --all-targets` clean.
     - `grep -rn '"subagent-dispatch\.yaml"\|"commits\.yaml"\|"phase\.md"\|"related-components\.yaml"\|"dream-word-count"' src/` returns only the constant definitions themselves.
+  results: |
+    ## What was done
+
+    Added five constants to `src/state/filenames.rs`:
+
+    - `SUBAGENT_DISPATCH_FILENAME = "subagent-dispatch.yaml"`
+    - `COMMITS_FILENAME = "commits.yaml"`
+    - `PHASE_FILENAME = "phase.md"`
+    - `RELATED_COMPONENTS_FILENAME = "related-components.yaml"`
+    - `DREAM_WORD_COUNT_FILENAME = "dream-word-count"`
+
+    Replaced every non-legacy literal use across `src/`:
+
+    - `src/dream.rs` — all 14 `"dream-word-count"` sites (production + tests).
+    - `src/subagent.rs` — all 3 `"subagent-dispatch.yaml"` sites.
+    - `src/format.rs` — both `filename_suffix_regex(...)` rule sites
+      (`commits.yaml`, `subagent-dispatch.yaml`) plus the `path_to_check.contains("phase.md")` filter at line 239.
+    - `src/create.rs` — scaffold writes and assertions.
+    - `src/phase_loop.rs` — `read_phase`, `write_phase`, plus tests.
+    - `src/main.rs` — `run_phase_loop` plan-dir validation.
+    - `src/multi_plan.rs` — `build_plan_dir_map` validation and tests.
+    - `src/git.rs` — all 11 `"commits.yaml"` sites in `apply_commits_spec`
+      and the test fixtures.
+    - `src/state/phase.rs` — `run_set_phase` target path, error message,
+      and all test fixtures.
+    - `src/survey/discover.rs` — `load_plan` plus 4 test fixtures.
+
+    ## Bonus consolidation
+
+    `src/related_components.rs` previously declared its own
+    `RELATED_COMPONENTS_FILE` constant with a different naming
+    convention (`_FILE` suffix) than the rest of `state::filenames`
+    (`_FILENAME` suffix). Per the universal coding-style rule "Use
+    uniform naming semantics", the local constant was deleted and all
+    five usages (3 in `related_components.rs`, 1 in `projects.rs`, plus
+    test references via `super::*`) now route through
+    `state::filenames::RELATED_COMPONENTS_FILENAME`. One canonical
+    home for every plan-state filename now.
+
+    ## Boundary preserved
+
+    `src/ontology/yaml_io.rs` is a deliberately host-agnostic library
+    module (per its docstring: "Host-agnostic: callers supply the full
+    path to the file, not a config root"). Importing the host's
+    filename constant there would couple the destined-for-workspace-crate
+    library to the host adapter. Instead, the test fixtures in that file
+    were renamed from `"related-components.yaml"` to `"edges.yaml"` —
+    neutral name, signals the library doesn't care, eliminates the grep
+    hit while preserving the architectural boundary.
+
+    ## Verification
+
+    - `cargo build`: clean.
+    - `cargo test --quiet`: 590 unit tests + every integration suite green.
+    - `cargo clippy --all-targets`: clean (no warnings under `[lints.rust] warnings = "deny"`).
+    - `grep -rn '"subagent-dispatch\.yaml"\|"commits\.yaml"\|"phase\.md"\|"related-components\.yaml"\|"dream-word-count"' src/`
+      returns only the five constant definitions in `src/state/filenames.rs`.
+
+    ## What this suggests next
+
+    The rename-drift bug class for plan-state filenames is now fully closed.
+    The same pattern would apply to other scattered filename literals if any
+    remain — none surfaced during this sweep. If a future rename is
+    contemplated (e.g., to disambiguate `dream-word-count` from a more
+    descriptive name), it is now a single-file change.
 - id: add-minimal-github-actions-ci-workflow-build-test-clippy
   title: 'Add minimal GitHub Actions CI workflow: build, test, clippy'
   category: infra
@@ -93,7 +158,7 @@ tasks:
 - id: add-ravel-lite-rb-homebrew-formula-to-linkuistics-homebrew-taps
   title: Ship bottled Homebrew install via cargo-dist (no cargo build on user's machine)
   category: infra
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Ship `brew install linkuistics/taps/ravel-lite` as a **bottled install** — no Rust toolchain required on the user's machine. Mirrors the approach being adopted in the sibling project at `/Users/antony/Development/mdformat/`, which is solving the same problem at the same time with the same tooling; whichever lands first sets the concrete pattern.
@@ -127,6 +192,107 @@ tasks:
     ## Depends on
 
     Nothing blocking, but the dependent task `integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands` assumes a clean `brew install` inside a VM — landing a bottled install makes VM provisioning near-instant, which matters for that task's viability.
+  results: |
+    ## What was done
+
+    Wired `dist` (formerly `cargo-dist`) for tag-driven, bottle-style
+    Homebrew installation via `Linkuistics/homebrew-taps`.
+
+    ### Cargo.toml
+
+    - Added `repository`, `homepage`, `license` to `[package]` (cargo-dist
+      refuses to publish a Homebrew formula without these — `homepage` was
+      surfaced as a `dist plan` warning until added).
+    - Added `[profile.dist]` (release + `lto = "thin"`, the cargo-dist
+      default).
+    - Added `[workspace.metadata.dist]` declaring the four release targets
+      (`aarch64-apple-darwin`, `x86_64-apple-darwin`,
+      `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`), the
+      `homebrew` installer, the tap repository
+      (`Linkuistics/homebrew-taps`), the formula name (`ravel-lite`), and
+      the `homebrew` publish job. Pre-releases are excluded from the tap.
+      No `shell`/`powershell` installers — task scope is bottled brew only.
+
+    ### .github/workflows/release.yml
+
+    - Generated by `dist init --yes` (343 lines, autogen header preserved
+      for round-trip safety).
+    - Trigger: `push.tags: '**[0-9]+.[0-9]+.[0-9]+*'` — matches any
+      semver-shaped tag (so `cargo release patch --execute` flows directly
+      into a release run).
+    - `publish-homebrew-formula` job (line 281) checks out
+      `Linkuistics/homebrew-taps` using `${{ secrets.HOMEBREW_TAP_TOKEN }}`
+      and updates the formula in place.
+    - Final announcement gates on the homebrew job succeeding (or
+      skipping). PR pushes also fire the workflow as a smoke check (no
+      publish step).
+
+    ### README.md
+
+    - Rewrote the `## Releasing` section to describe the new pipeline
+      (cargo-release for the tag → dist for the build → tap for the
+      formula) and added a `### Release pipeline (dist) prerequisites`
+      subsection covering:
+      - Creating the `Linkuistics/homebrew-taps` repository.
+      - Generating a GitHub PAT with `repo` scope and write access.
+      - Adding the token as the `HOMEBREW_TAP_TOKEN` repository secret on
+        `Linkuistics/Ravel-Lite`.
+      - Local commands: `dist plan` to dry-run, `dist init --yes` to
+        regenerate the workflow after editing the metadata block.
+
+    ### Cargo.toml metadata block — note for future editors
+
+    `dist init --yes` rewrites the `[workspace.metadata.dist]` block in
+    canonical form on every run, dropping any in-block comments. So
+    explanatory prose for that block lives in README's "Release pipeline
+    prerequisites" section, not in Cargo.toml comments — the README is
+    durable across regenerations.
+
+    ## Verification
+
+    In-session:
+
+    - `dist init --yes`: clean.
+    - `dist plan`: clean (after `homepage` added). Output lists all four
+      per-target tarballs, the `ravel-lite.rb` formula, checksums, and a
+      source archive.
+    - `cargo check`: clean (Cargo.toml syntactically/semantically valid).
+    - `cargo build`: clean (verified earlier in the same work phase).
+    - `cargo test --quiet`: 590 unit tests + every integration suite
+      green (verified earlier in the same work phase; metadata-only
+      changes can't affect runtime).
+
+    Deferred (require real tag push, out of work-phase scope):
+
+    - Tagging a test release (e.g. `v0.0.0-test1`) and confirming the
+      workflow produces per-target tarballs + an updated `ravel-lite.rb`.
+    - `brew install Linkuistics/taps/ravel-lite` on a clean macOS machine
+      finishing in seconds (bottle install, no cargo build).
+    - Installed `ravel-lite --version` matching the git tag.
+
+    ## Coordination note
+
+    `/Users/antony/Development/mdformat/` was referenced in the task
+    description as a parallel adopter of the same pattern — but that
+    directory does not exist on this machine, so no coordination was
+    performed. The configuration here mirrors cargo-dist's own
+    self-distribution shape (cargo-dist itself is shipped as a
+    Homebrew bottle), which is the canonical reference.
+
+    ## What this suggests next
+
+    - Operator action: create the `Linkuistics/homebrew-taps` GitHub
+      repository, generate the PAT, add the `HOMEBREW_TAP_TOKEN` secret.
+      Until those land, the workflow will run but the homebrew publish job
+      will fail with an authentication error.
+    - First end-to-end test should be a deliberately-cut prerelease tag
+      (e.g. `v1.0.2-test1`) so the publish-prereleases gate skips the tap
+      update — that exercises the full pipeline without committing a real
+      formula update.
+    - Consider gating the cargo-dist version (`cargo-dist-version =
+      "0.31.0"`) the same way the rest of the toolchain is pinned;
+      cargo-dist evolves its workflow generator across versions, so a
+      single source of truth for the version saves hard-to-debug CI drift.
 - id: integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands
   title: Integrate TestAnyware VM for capturing interactive ravel-lite commands
   category: infra

@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use tokio::task::JoinSet;
 
 use crate::agent::Agent;
+use crate::state::filenames::SUBAGENT_DISPATCH_FILENAME;
 use crate::types::SubagentDispatch;
 use crate::ui::UI;
 
@@ -16,7 +17,7 @@ struct DispatchFile {
 }
 
 pub fn parse_dispatch_file(plan_dir: &Path) -> Result<Vec<SubagentDispatch>> {
-    let path = plan_dir.join("subagent-dispatch.yaml");
+    let path = plan_dir.join(SUBAGENT_DISPATCH_FILENAME);
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -88,7 +89,7 @@ pub async fn dispatch_subagents(
         }
     }
 
-    let dispatch_path = plan_dir.join("subagent-dispatch.yaml");
+    let dispatch_path = plan_dir.join(SUBAGENT_DISPATCH_FILENAME);
     if dispatch_path.exists() {
         fs::remove_file(&dispatch_path).ok();
     }
@@ -112,7 +113,7 @@ mod tests {
     fn parse_dispatch_file_with_entries() {
         let dir = TempDir::new().unwrap();
         fs::write(
-            dir.path().join("subagent-dispatch.yaml"),
+            dir.path().join(SUBAGENT_DISPATCH_FILENAME),
             "dispatches:\n  - target: /plans/sub-B\n    kind: child\n    summary: Update backlog\n",
         ).unwrap();
         let result = parse_dispatch_file(dir.path()).unwrap();

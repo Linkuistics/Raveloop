@@ -11,6 +11,7 @@ use ravel_lite::agent::Agent;
 use ravel_lite::config::{load_agent_config, load_shared_config, resolve_config_dir};
 use ravel_lite::git::project_root_for_plan;
 use ravel_lite::ontology::cli::{parse_edge_kind, parse_evidence_grade, parse_lifecycle_scope};
+use ravel_lite::state::filenames::PHASE_FILENAME;
 use ravel_lite::types::{AgentConfig, LlmPhase, PlanContext};
 use ravel_lite::ui::{run_tui, UI};
 use ravel_lite::{
@@ -1264,9 +1265,9 @@ fn register_projects_from_plan_dirs(config_root: &Path, plan_dirs: &[PathBuf]) -
 }
 
 async fn run_phase_loop(config_root: &Path, plan_dir: &Path, dangerous: bool) -> Result<()> {
-    if !plan_dir.join("phase.md").exists() {
+    if !plan_dir.join(PHASE_FILENAME).exists() {
         anyhow::bail!(
-            "{}/phase.md not found. Is this a valid plan directory?",
+            "{}/{PHASE_FILENAME} not found. Is this a valid plan directory?",
             plan_dir.display()
         );
     }

@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn load_or_default_returns_empty_when_file_missing() {
         let tmp = TempDir::new().unwrap();
-        let file = load_or_default(&tmp.path().join("related-components.yaml")).unwrap();
+        let file = load_or_default(&tmp.path().join("edges.yaml")).unwrap();
         assert_eq!(file.schema_version, SCHEMA_VERSION);
         assert!(file.edges.is_empty());
     }
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn save_then_load_round_trips() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("related-components.yaml");
+        let path = tmp.path().join("edges.yaml");
         let mut original = RelatedComponentsFile::default();
         original
             .add_edge(strong_edge(
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn load_rejects_non_matching_schema_version() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("related-components.yaml");
+        let path = tmp.path().join("edges.yaml");
         std::fs::write(&path, "schema_version: 1\nedges: []\n").unwrap();
         let err = load(&path).unwrap_err();
         let msg = format!("{err:#}");
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn load_rejects_invalid_edge() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("related-components.yaml");
+        let path = tmp.path().join("edges.yaml");
         // Self-loop — fails `Edge::validate` on load.
         let body = "\
 schema_version: 2
@@ -152,7 +152,7 @@ edges:
     #[test]
     fn save_atomic_never_leaves_temp_file_behind() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("related-components.yaml");
+        let path = tmp.path().join("edges.yaml");
         save_atomic(&path, &RelatedComponentsFile::default()).unwrap();
         let leftover: Vec<_> = std::fs::read_dir(tmp.path())
             .unwrap()

@@ -20,6 +20,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::ontology::{self, Edge, EvidenceGrade, RelatedComponentsFile};
 use crate::projects::{self, ProjectsCatalog};
+use crate::state::filenames::RELATED_COMPONENTS_FILENAME;
 
 // Re-export the v2 ontology surface that the host needs to construct
 // edges through this adapter — the binary crate (`main.rs`) and tests
@@ -49,14 +50,12 @@ pub struct AddEdgeRequest<'a> {
     pub rationale: String,
 }
 
-pub const RELATED_COMPONENTS_FILE: &str = "related-components.yaml";
-
 pub fn load_or_empty(config_root: &Path) -> Result<RelatedComponentsFile> {
-    ontology::load_or_default(&config_root.join(RELATED_COMPONENTS_FILE))
+    ontology::load_or_default(&config_root.join(RELATED_COMPONENTS_FILENAME))
 }
 
 pub fn save_atomic(config_root: &Path, file: &RelatedComponentsFile) -> Result<()> {
-    ontology::save_atomic(&config_root.join(RELATED_COMPONENTS_FILE), file)
+    ontology::save_atomic(&config_root.join(RELATED_COMPONENTS_FILENAME), file)
 }
 
 /// Cascade for `projects::run_rename`. Loads, rewrites every participant
@@ -64,7 +63,7 @@ pub fn save_atomic(config_root: &Path, file: &RelatedComponentsFile) -> Result<(
 /// any edge file is valid). Symmetric kinds are re-sorted internally by
 /// the ontology layer.
 pub fn rename_component_in_edges(config_root: &Path, old: &str, new: &str) -> Result<()> {
-    let path = config_root.join(RELATED_COMPONENTS_FILE);
+    let path = config_root.join(RELATED_COMPONENTS_FILENAME);
     if !path.exists() {
         return Ok(());
     }
@@ -319,7 +318,7 @@ mod tests {
     fn rename_cascade_is_noop_when_file_absent() {
         let tmp = TempDir::new().unwrap();
         rename_component_in_edges(tmp.path(), "Solo", "SoloRenamed").unwrap();
-        assert!(!tmp.path().join(RELATED_COMPONENTS_FILE).exists());
+        assert!(!tmp.path().join(RELATED_COMPONENTS_FILENAME).exists());
     }
 
     #[test]
@@ -337,7 +336,7 @@ mod tests {
         let msg = format!("{err:#}");
         assert!(msg.contains("Stranger"));
         assert!(msg.contains("state projects add"));
-        assert!(!cfg.join(RELATED_COMPONENTS_FILE).exists());
+        assert!(!cfg.join(RELATED_COMPONENTS_FILENAME).exists());
     }
 
     #[test]
@@ -389,7 +388,7 @@ mod tests {
         };
         let err = run_add_edge(&cfg, &req).unwrap_err();
         assert!(format!("{err:#}").contains("evidence_field"));
-        assert!(!cfg.join(RELATED_COMPONENTS_FILE).exists());
+        assert!(!cfg.join(RELATED_COMPONENTS_FILENAME).exists());
     }
 
     #[test]

@@ -5,7 +5,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::state::filenames::{
-    BACKLOG_FILENAME, LATEST_SESSION_FILENAME, MEMORY_FILENAME,
+    BACKLOG_FILENAME, COMMITS_FILENAME, LATEST_SESSION_FILENAME, MEMORY_FILENAME, PHASE_FILENAME,
+    SUBAGENT_DISPATCH_FILENAME,
 };
 use crate::types::LlmPhase;
 
@@ -128,7 +129,7 @@ static PHASE_HIGHLIGHTS: Lazy<HashMap<LlmPhase, Vec<HighlightRule>>> = Lazy::new
     let mut m = HashMap::new();
     m.insert(LlmPhase::AnalyseWork, vec![
         HighlightRule { pattern: filename_suffix_regex(LATEST_SESSION_FILENAME), label: "Writing session log" },
-        HighlightRule { pattern: filename_suffix_regex("commits.yaml"), label: "Writing commit spec" },
+        HighlightRule { pattern: filename_suffix_regex(COMMITS_FILENAME), label: "Writing commit spec" },
     ]);
     m.insert(LlmPhase::Reflect, vec![
         HighlightRule { pattern: filename_suffix_regex(MEMORY_FILENAME), label: "Updating memory" },
@@ -138,7 +139,7 @@ static PHASE_HIGHLIGHTS: Lazy<HashMap<LlmPhase, Vec<HighlightRule>>> = Lazy::new
     ]);
     m.insert(LlmPhase::Triage, vec![
         HighlightRule { pattern: filename_suffix_regex(BACKLOG_FILENAME), label: "Updating backlog" },
-        HighlightRule { pattern: filename_suffix_regex("subagent-dispatch.yaml"), label: "Dispatching to related plans" },
+        HighlightRule { pattern: filename_suffix_regex(SUBAGENT_DISPATCH_FILENAME), label: "Dispatching to related plans" },
     ]);
     m
 });
@@ -236,7 +237,7 @@ pub fn format_tool_call(
             }
 
             // Silently skip phase.md writes
-            if path_to_check.contains("phase.md") {
+            if path_to_check.contains(PHASE_FILENAME) {
                 return FormattedOutput::empty();
             }
         }

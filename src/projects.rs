@@ -796,7 +796,7 @@ mod tests {
         run_rename(&cfg, "Solo", "SoloRenamed").unwrap();
 
         assert!(
-            !cfg.join(crate::related_components::RELATED_COMPONENTS_FILE).exists(),
+            !cfg.join(crate::state::filenames::RELATED_COMPONENTS_FILENAME).exists(),
             "cascade must not create the file when it wasn't there to begin with"
         );
     }
