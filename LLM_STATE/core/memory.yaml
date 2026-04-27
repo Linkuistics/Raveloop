@@ -574,8 +574,12 @@ entries:
 - id: state-filename-constants-live-in-src-state-filenames-rs
   title: State filename constants live in src/state/filenames.rs
   body: |
-    Four `pub const` items: `BACKLOG_FILENAME`, `MEMORY_FILENAME`, `SESSION_LOG_FILENAME`, `LATEST_SESSION_FILENAME`. All literal string occurrences replaced across `src/state/`, `src/format.rs`, `src/phase_summary.rs`, `src/create.rs`, `src/backlog_transitions.rs`, `src/survey/discover.rs`, and `src/git.rs`. `PHASE_HIGHLIGHTS` regexes use `filename_suffix_regex(CONSTANT)` (wraps `regex::escape`) so a constant rename cascades into highlight detection automatically.
+    Nine `pub const` items: `BACKLOG_FILENAME`, `MEMORY_FILENAME`, `SESSION_LOG_FILENAME`, `LATEST_SESSION_FILENAME`, `SUBAGENT_DISPATCH_FILENAME`, `COMMITS_FILENAME`, `PHASE_FILENAME`, `RELATED_COMPONENTS_FILENAME`, `DREAM_WORD_COUNT_FILENAME`. All literal string occurrences replaced across `src/state/`, `src/dream.rs`, `src/subagent.rs`, `src/format.rs`, `src/create.rs`, `src/phase_loop.rs`, `src/main.rs`, `src/multi_plan.rs`, `src/git.rs`, `src/state/phase.rs`, and `src/survey/discover.rs`. `PHASE_HIGHLIGHTS` regexes use `filename_suffix_regex(CONSTANT)` (wraps `regex::escape`) so a constant rename cascades into highlight detection automatically.
 - id: defaults-md-prompt-files-keep-literal-filenames-by-design
   title: defaults/*.md prompt files keep literal filenames by design
   body: |
     Prompt files under `defaults/` use literal filenames (e.g., `backlog.yaml`, `memory.yaml`) rather than referencing constants from `src/state/filenames.rs`. Converting them would require token substitution or build-time replacement; complexity without proportional benefit. Only `src/` code uses the filename constants — prompts are deliberately out-of-scope.
+- id: cargo-dist-wired-homebrew-pipeline-needs-operator-provisioning
+  title: cargo-dist wired; Homebrew pipeline needs operator provisioning
+  body: |
+    `[workspace.metadata.dist]` and `[profile.dist]` in `Cargo.toml` and `.github/workflows/release.yml` (generated via `dist init`) are committed. Tag-driven bottles publish to `Linkuistics/homebrew-taps`. Pipeline is non-functional until the operator creates that GitHub repository, generates a PAT with repo scope, and adds `HOMEBREW_TAP_TOKEN` as a secret on `Linkuistics/Ravel-Lite`. First exercise: push a prerelease tag (e.g., `v1.0.2-test1`).
