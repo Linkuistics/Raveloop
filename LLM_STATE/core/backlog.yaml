@@ -1,383 +1,4 @@
 tasks:
-- id: add-repo-and-website-urls-to-help-output
-  title: Add repo and website URLs to --help output
-  category: feature
-  status: done
-  dependencies: []
-  description: |
-    Add the open-source repository URL and the project website URL to
-    `ravel-lite --help` so users can discover the source and the docs
-    without having to remember either.
-
-    ## Why
-
-    Ravel-Lite is open source but doesn't surface its own repo URL anywhere
-    in the running binary's help. The website
-    (`https://www.linkuistics.com/projects/ravel-lite/`) is the canonical
-    docs landing page; the repo
-    (`https://github.com/Linkuistics/Ravel-Lite`) is the source. Both
-    should be one `--help` away.
-
-    ## Scope
-
-    - Top-level `--help` shows both URLs in an `after_help` block (or the
-      equivalent clap derive attribute).
-    - Subcommand `--help` outputs do not need to repeat them.
-    - URLs are constants in source; not driven from `Cargo.toml`'s
-      `repository` field. Help text is a separate, deliberate string.
-
-    ## Decisions already made
-
-    - Hard-coded constants are fine — these URLs do not change between
-      releases.
-    - Both URLs appear together; no flag or env var to suppress.
-
-    ## Verification
-
-    - `ravel-lite --help` output contains both
-      `https://github.com/Linkuistics/Ravel-Lite` and
-      `https://www.linkuistics.com/projects/ravel-lite/`.
-    - A snapshot test of the top-level help output asserts the two lines
-      are present.
-
-    ## Independence
-
-    This task ships independently of the lua-config redesign and could
-    land in `v1.0.3`.
-  results: |
-    Added `AFTER_HELP` const containing the source-repo and docs-site URLs and wired it
-    into the top-level `#[command(...)]` block in `src/main.rs` via clap's `after_help`
-    attribute. URLs are hard-coded literals (per the task's "decisions already made"
-    section) rather than driven from `Cargo.toml`'s `repository` field.
-
-    ## What worked
-
-    - The clap `after_help` attribute appends to the bottom of the top-level `--help`
-      output only — subcommand `--help` outputs are untouched, matching the scope
-      ("Subcommand --help outputs do not need to repeat them").
-    - Hard-coding the URLs as literal strings inside a single `const &str` keeps the
-      formatting (alignment, spacing) auditable in source rather than scattered.
-    - Test (`top_level_help_shows_repo_and_website_urls` in `tests/cli.rs`) shells
-      out to the built binary via `env!("CARGO_BIN_EXE_ravel-lite")` — same harness
-      as the existing `state set-phase` and `run` validation tests. No new test
-      infrastructure needed.
-
-    ## False starts
-
-    Initially introduced `REPO_URL`/`WEBSITE_URL` constants alongside `AFTER_HELP` and
-    attempted to compose them with `concat!`. Two issues: (a) `concat!` only accepts
-    literals, so the named constants would have been duplicates of the literals
-    inside the macro; (b) clippy under `[lints.rust] warnings = "deny"` would have
-    flagged them as unused. Collapsed to a single `AFTER_HELP` literal.
-
-    ## Verification
-
-    - New test `top_level_help_shows_repo_and_website_urls` passes.
-    - Full `cargo test` green.
-    - `cargo clippy --lib --all-targets` clean.
-    - Manual `cargo run -- --help` shows both URLs at the bottom of the help block.
-
-    ## What this suggests next
-
-    The two remaining feature items (`switch-prompt-and-agent-reads-to-embedded-defaults-...`
-    and `replace-yaml-config-with-lua-mlua-...`) are both substantial refactors that
-    need brainstorming — they touch the materialisation model and the config
-    substrate respectively. They should each be one full work cycle (or split into
-    sub-tasks during their work cycle), not bundled into the tail of this one.
-- id: add-scripts-release-doctor-sh-prereq-verification-before-release-pipeline
-  title: 'Add scripts/release-doctor.sh: prereq verification before release pipeline'
-  category: infra
-  status: not_started
-  dependencies: []
-  description: |
-    Add a `scripts/release-doctor.sh` script (or integrate an upfront check into `release-build.sh`) that verifies all four prerequisites for running the release pipeline and emits a punch-list of anything missing.
-
-    ## Why
-
-    The first end-to-end release run (v1.0.2) found that three rustup targets (`x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`) and two binaries (`zig`, `cargo-zigbuild`) were absent from the dev machine. The README lists them under "one-time setup" but nothing automated enforces their presence before `release-build.sh` is invoked. A doctor script surfaces missing prereqs immediately rather than failing partway through the build.
-
-    ## Scope
-
-    Prerequisites to verify:
-
-    - `zig` is installed and on PATH (`which zig` or `zig version`)
-    - `cargo-zigbuild` is installed (`cargo zigbuild --help` exits 0)
-    - rustup targets present: `aarch64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` (via `rustup target list --installed`)
-    - `gh auth status` exits 0 (GitHub CLI authenticated)
-
-    Output format:
-
-    - Print each check with a pass/fail marker
-    - If any fail, print a remediation command for each missing item and exit non-zero
-    - If all pass, print "All prerequisites met" and exit 0
-
-    Integration option:
-
-    - Standalone `scripts/release-doctor.sh` is the primary deliverable
-    - Optionally invoke it as the first step of `release-build.sh` so the check is automatic; gate on exit code
-
-    ## Decisions
-
-    - Check-only; the script never installs anything itself
-    - Standalone invocability required (user should be able to run it before committing to a release attempt)
-    - Minimal dependencies; pure bash, no external tools beyond those already on the release path
-
-    ## Verification
-
-    - Running `scripts/release-doctor.sh` on a clean machine with all prereqs missing prints four failure lines and exits 1
-    - Running it on the dev machine (all prereqs present since v1.0.2) prints four pass lines and exits 0
-    - `release-build.sh` (if wired) fails fast with the doctor output rather than progressing to a build failure
-- id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
-  title: 'Write tutorial walk-through: install through further-cycles with worked example'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
-- id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
-  title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
-  category: docs
-  status: not_started
-  dependencies:
-  - write-user-guide-covering-install-update-init-config-projects-plans-and-running
-  description: |
-    Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
-- id: reference-phase-cycle-page-per-phase-contracts-dream-trigger-triage-dispatch-git-commit-audit-trail
-  title: 'Reference: phase cycle page (per-phase contracts, dream trigger, triage dispatch, git-commit-* audit trail)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the phase cycle reference page: every phase in the work → analyse-work → git-commit-work → reflect → git-commit-reflect → [dream?] → dream → git-commit-dream → triage → git-commit-triage cycle, with each phase's input/output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
-
-    ## Scope
-
-    - File: `docs/reference/phase-cycle.adoc`
-    - Per phase, document: what files it reads, what files it writes, what decisions it makes, when it transitions, and how it's invoked (interactive vs headless).
-    - **Dream trigger**: word-count threshold (baseline + headroom), where the baseline is captured (`save-work-baseline` etc.), what happens on trigger.
-    - **Triage dispatch**: how cross-plan propagation works (peer-project relationships from `related-components.yaml`, subagent dispatch via `subagent-dispatch.yaml`).
-    - **Git-commit-* phases**: per-phase audit trail commits, what each commit captures, the `commits.yaml` mechanism that drives them.
-    - AsciiDoc art diagram of the cycle (the README's diagram is a starting point but should be expanded with file-level read/write annotations).
-
-    ## Style
-
-    Friendly prose, minimal lists, no emoji. Each phase entry follows the same shape so readers can scan.
-
-    ## Out of scope
-
-    File schemas — those live on the file-format pages. Cross-link rather than duplicate.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Each phase claim cross-checked against `src/orchestrator/`, `src/state/phase.rs`, and the on-disk per-phase prompt files under `defaults/agents/.../*.md`.
-    - Dream-trigger threshold value cross-checked against the actual constant in source.
-- id: reference-state-file-formats-backlog-yaml-memory-yaml-session-log-yaml-latest-session-phase-md-commits-yaml
-  title: 'Reference: state-file formats (backlog.yaml, memory.yaml, session-log.yaml, latest-session, phase.md, commits.yaml)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the state-file formats reference page: schema, examples, and read/write call sites for the durable plan-state files.
-
-    ## Scope
-
-    - File: `docs/reference/state-files.adoc`
-    - Per file: full schema (every field with type, semantics, allowed values), a worked example, the phase that writes it, the phases that read it, and the gotchas a hand-editor needs to know.
-
-    ### Files covered
-
-    - **`backlog.yaml`** — tasks list, status enum, dependencies (must be ids; cycles and self-reference rejected by `set-dependencies`), results block, handoff block, category, description, blocked_reason.
-    - **`memory.yaml`** — entries list, the four entry types (user, feedback, project, reference), description vs body, distillation rules.
-    - **`session-log.yaml`** — per-cycle entries, what analyse-work writes here, append-only semantics.
-    - **`latest-session.*`** — the per-cycle summary. **Verify whether the actual file is `.md` or `.yaml`** — the existing format.rs highlight rule says `.md` but memory notes mention `.yaml`. Document whichever is current and flag any inconsistency.
-    - **`phase.md`** — the single-line current-phase indicator. Validation rules. Why it's a separate file rather than embedded in another.
-    - **`commits.yaml`** — the commit spec written by analyse-work, consumed by git-commit-* phases. Per-commit structure (paths, message file).
-
-    ## Style
-
-    Friendly prose between schema blocks. Each file gets a short prose introduction, the schema as a code block (`[source,yaml]` with field-level comments), then prose on gotchas and editing rules.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Every schema cross-checked against `src/state/<file>/schema.rs` (or wherever the serde struct lives).
-    - At least one example per file is realistic — lifted from a real plan, anonymised if needed.
-    - The `.md` vs `.yaml` question for `latest-session.*` is resolved by reading the actual write path in `src/state/`.
-- id: reference-cross-plan-file-formats-subagent-dispatch-yaml-related-components-yaml-evidence-grades
-  title: 'Reference: cross-plan file formats (subagent-dispatch.yaml, related-components.yaml, evidence grades)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the cross-plan file formats reference page: `subagent-dispatch.yaml` (triage hand-off mechanism) and `related-components.yaml` (peer-project edges), with schema, examples, evidence-grade semantics, and the lifecycle of each file.
-
-    ## Scope
-
-    - File: `docs/reference/cross-plan-files.adoc`
-
-    ### Files covered
-
-    - **`subagent-dispatch.yaml`**: schema, when triage writes it, how downstream consumers read it, how dispatched subagents behave, the contract between dispatcher and dispatched.
-    - **`related-components.yaml`**: `schema_version: 2`, edges with `kind` / `lifecycle` / `participants` / `evidence_grade` / `evidence_fields` / `rationale`. How the `state related-components` verbs interact with the file. The discover/add-edge workflow.
-
-    ### Cross-cutting
-
-    - **Evidence grade semantics** (strong / medium / weak): what each grade implies, how the discover phase chooses, how downstream consumers should treat each grade differently.
-    - **Edge kinds** (orchestrates, depends-on, etc.): the controlled vocabulary, when each kind applies.
-    - **Lifecycle scopes** (dev-workflow, build, runtime, etc.): the controlled vocabulary.
-
-    ### Cross-links
-
-    - Cross-link to triage in the phase-cycle page.
-    - Cross-link to `state related-components` in the CLI state page.
-
-    ## Style
-
-    Friendly prose, schema blocks (`[source,yaml]`), minimal lists, no emoji.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Schemas cross-checked against `src/state/related_components/` (and the triage dispatch code for the dispatch file).
-    - Examples lifted from a real `related-components.yaml` — this very project's file (with edges to APIAnyware-MacOS, TestAnyware, Ravel, Atlas) is good source material.
-- id: reference-configuration-and-prompt-file-formats-config-yaml-local-yaml-overlays-embedded-defaults-token-substitution-per-phase-prompts
-  title: 'Reference: configuration and prompt-file formats (config.yaml, .local.yaml overlays, embedded defaults, token substitution, per-phase prompts)'
-  category: docs
-  status: blocked
-  blocked_reason: superseded by lua-config redesign; replaced by rewrite-config-and-prompts-reference-page-for-lua-api
-  dependencies: []
-  description: |
-    Write the configuration and prompt-file reference page: how `config.yaml` and `*.local.yaml` overlays compose (deep-merge semantics), where embedded defaults sit, how token substitution works in prompts, and how to customise per-phase prompts.
-
-    ## Scope
-
-    - File: `docs/reference/config-and-prompts.adoc`
-
-    ### Configuration
-
-    - Project-level `config.yaml`: every field with type, semantics, defaults.
-    - `*.local.yaml` overlay rules: the `load_with_optional_overlay<T>()` deep-merge in `src/config.rs`. Scalar collisions go to overlay; map collisions recurse. A `models.work: ""` overlay blanks only that key without losing siblings.
-    - Environment variables: `RAVEL_LITE_CONFIG`, the `--config` flag, `--dangerous`. Precedence (flag wins over env var wins over default).
-
-    ### Embedded defaults
-
-    - Where they live in the binary (`defaults/` at build time), how `init` materialises them onto disk.
-    - The `every_file_under_defaults_is_registered_in_embedded_files` drift-detection test that guards `init.rs` — adding any file under `defaults/` without registering it fails the test.
-
-    ### Token substitution in prompts
-
-    - The `substitute_tokens` canonical path: every prompt-loading route must funnel through this function (no ad-hoc `str::replace`).
-    - The hard-error guard regex for unresolved tokens.
-    - The `shipped_pi_prompts_have_no_dangling_tokens` test guarantee that asserts no on-disk pi prompt file contains an unresolved token.
-
-    ### Per-phase prompts
-
-    - Where prompts live: `defaults/agents/claude/`, `defaults/agents/pi/`.
-    - Subagent definitions: `defaults/agents/pi/subagents/` (brainstorming, tdd, writing-plans).
-    - The contract between prompt and binary: which tokens the binary substitutes, which it doesn't.
-
-    ## Style
-
-    Friendly prose, schema/example blocks, minimal lists, no emoji.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Schema and behaviour cross-checked against `src/config.rs`, `src/init.rs`, the prompt substitution code, and the on-disk `defaults/` tree.
-    - Examples of `.local.yaml` overlays demonstrate the deep-merge behaviour explicitly.
-- id: reference-cli-lifecycle-commands-run-create-init-version-global-flags
-  title: 'Reference: CLI lifecycle commands (run, create, init, version, global flags)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the CLI reference page for lifecycle commands: `ravel-lite run`, `create`, `init` (+ `--force`), `version` (+ `--version`), and the global flags that apply to every command (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`).
-
-    ## Scope
-
-    - File: `docs/reference/cli-lifecycle.adoc`
-    - Per command: invocation, flags (with defaults), what it does, what it writes, side effects, exit codes, gotchas.
-
-    ### Commands
-
-    - **`run`**: the main loop entry point. How phase resumption works (reads `phase.md` to decide where to start). What it reads to decide what to do. How it spawns agent subprocesses. Failure modes.
-    - **`create`**: plan creation. Bootstrapping flow (initial backlog, memory placeholder, phase set to work). Required arguments. How it interacts with `state projects`.
-    - **`init`**: project initialisation. What gets materialised onto disk. `--force` semantics — overwrites without prompting (vs the default which refuses if files exist).
-    - **`version`** (+ `--version`): identity output (crate version + `git describe --tags --always --dirty` + UTC build timestamp). Why a running binary always identifies the commit it was built from.
-
-    ### Global flags
-
-    - `--config <path>`: explicit config file location.
-    - `RAVEL_LITE_CONFIG`: env-var equivalent of `--config`.
-    - `--dangerous`: what behaviours it unlocks, why it's gated.
-    - Precedence rules (flag > env var > default).
-
-    ## Style
-
-    Friendly prose, minimal lists, no emoji. Each command gets at least one worked example.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Every flag and option cross-checked against the actual `clap` derive structure in `src/cli.rs`.
-    - Exit codes cross-checked against the actual implementation.
-- id: reference-cli-state-commands-projects-backlog-memory-session-log-set-phase-related-components
-  title: 'Reference: CLI state commands (projects, backlog, memory, session-log, set-phase, related-components)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the CLI reference page for `ravel-lite state` and all its subcommands: projects, backlog, memory, session-log, set-phase, related-components.
-
-    ## Scope
-
-    - File: `docs/reference/cli-state.adoc`
-
-    ### Subcommand groups
-
-    - **`state projects`**: add, list, rename, remove. The projects registry. How rename cascades through related state (memory note: rename has three cascade points in `run_rename`; consider Trait-based registry before adding a fourth).
-    - **`state backlog`**: every CRUD verb — list, show, add, init, set-status, set-results, set-description, set-handoff, clear-handoff, set-title, set-dependencies, reorder, delete, lint-dependencies, repair-stale-statuses. Filter syntax for `list`. Format options (yaml / markdown / json) and what each format includes (markdown drops ids by design — see render.rs module doc).
-    - **`state memory`**: CRUD verbs and the four entry types (user, feedback, project, reference).
-    - **`state session-log`**: CRUD verbs.
-    - **`state set-phase`**: phase enum, validation rules, when manual phase setting is appropriate (vs letting the orchestrator transition naturally).
-    - **`state related-components`**: list, add-edge, discover. The advanced cross-plan dispatch flow (one-paragraph mention here, deep dive in the cross-plan-files reference page; cross-link).
-
-    ## Style
-
-    Friendly prose. Command tables only when the surface is dense enough to warrant one (the backlog verbs almost certainly do; memory probably doesn't). No emoji.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Every verb cross-checked against the actual `clap` derive structure (`src/cli.rs` and any subcommand modules).
-    - Worked examples for the most common verbs (list, set-status, set-results, set-dependencies).
-
-    ## Note on size
-
-    This is the largest CLI page in the mini-site. If it grows beyond ~3000 words during writing, propose a follow-up split task (e.g. `cli-state-backlog.adoc` as its own page) rather than letting the page balloon.
-- id: reference-cli-survey-commands-survey-survey-format
-  title: 'Reference: CLI survey commands (survey, survey-format)'
-  category: docs
-  status: not_started
-  dependencies: []
-  description: |
-    Write the CLI reference page for the survey verbs: `ravel-lite survey` and `ravel-lite survey-format`.
-
-    ## Scope
-
-    - File: `docs/reference/cli-survey.adoc`
-    - **`survey`**: what it does, what it produces, when a user would invoke it directly (vs as a phase consequence).
-    - **`survey-format`**: format conversion utilities, supported formats, gotchas.
-
-    ## Style
-
-    Friendly prose, no emoji. This is a short page — survey verbs are advanced/utility surface, not core lifecycle. A short page is fine; not every reference page needs to be long.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Verbs and flags cross-checked against the `clap` derive structure.
 - id: switch-prompt-and-agent-reads-to-embedded-defaults-slim-init-to-plan-state-skeleton-only
   title: Switch prompt and agent reads to embedded defaults; slim init to plan-state skeleton only
   category: feature
@@ -568,6 +189,255 @@ tasks:
 
     None at the code level — this task can land in parallel with the
     embedded-defaults flip. The migration task depends on this.
+- id: add-scripts-release-doctor-sh-prereq-verification-before-release-pipeline
+  title: 'Add scripts/release-doctor.sh: prereq verification before release pipeline'
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Add a `scripts/release-doctor.sh` script (or integrate an upfront check into `release-build.sh`) that verifies all four prerequisites for running the release pipeline and emits a punch-list of anything missing.
+
+    ## Why
+
+    The first end-to-end release run (v1.0.2) found that three rustup targets (`x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`) and two binaries (`zig`, `cargo-zigbuild`) were absent from the dev machine. The README lists them under "one-time setup" but nothing automated enforces their presence before `release-build.sh` is invoked. A doctor script surfaces missing prereqs immediately rather than failing partway through the build.
+
+    ## Scope
+
+    Prerequisites to verify:
+
+    - `zig` is installed and on PATH (`which zig` or `zig version`)
+    - `cargo-zigbuild` is installed (`cargo zigbuild --help` exits 0)
+    - rustup targets present: `aarch64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` (via `rustup target list --installed`)
+    - `gh auth status` exits 0 (GitHub CLI authenticated)
+
+    Output format:
+
+    - Print each check with a pass/fail marker
+    - If any fail, print a remediation command for each missing item and exit non-zero
+    - If all pass, print "All prerequisites met" and exit 0
+
+    Integration option:
+
+    - Standalone `scripts/release-doctor.sh` is the primary deliverable
+    - Optionally invoke it as the first step of `release-build.sh` so the check is automatic; gate on exit code
+
+    ## Decisions
+
+    - Check-only; the script never installs anything itself
+    - Standalone invocability required (user should be able to run it before committing to a release attempt)
+    - Minimal dependencies; pure bash, no external tools beyond those already on the release path
+
+    ## Verification
+
+    - Running `scripts/release-doctor.sh` on a clean machine with all prereqs missing prints four failure lines and exits 1
+    - Running it on the dev machine (all prereqs present since v1.0.2) prints four pass lines and exits 0
+    - `release-build.sh` (if wired) fails fast with the doctor output rather than progressing to a build failure
+- id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
+  title: 'Write tutorial walk-through: install through further-cycles with worked example'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
+- id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
+  title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
+  category: docs
+  status: not_started
+  dependencies:
+  - write-user-guide-covering-install-update-init-config-projects-plans-and-running
+  description: |
+    Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
+- id: reference-phase-cycle-page-per-phase-contracts-dream-trigger-triage-dispatch-git-commit-audit-trail
+  title: 'Reference: phase cycle page (per-phase contracts, dream trigger, triage dispatch, git-commit-* audit trail)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the phase cycle reference page: every phase in the work → analyse-work → git-commit-work → reflect → git-commit-reflect → [dream?] → dream → git-commit-dream → triage → git-commit-triage cycle, with each phase's input/output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
+
+    ## Scope
+
+    - File: `docs/reference/phase-cycle.adoc`
+    - Per phase, document: what files it reads, what files it writes, what decisions it makes, when it transitions, and how it's invoked (interactive vs headless).
+    - **Dream trigger**: word-count threshold (baseline + headroom), where the baseline is captured (`save-work-baseline` etc.), what happens on trigger.
+    - **Triage dispatch**: how cross-plan propagation works (peer-project relationships from `related-components.yaml`, subagent dispatch via `subagent-dispatch.yaml`).
+    - **Git-commit-* phases**: per-phase audit trail commits, what each commit captures, the `commits.yaml` mechanism that drives them.
+    - AsciiDoc art diagram of the cycle (the README's diagram is a starting point but should be expanded with file-level read/write annotations).
+
+    ## Style
+
+    Friendly prose, minimal lists, no emoji. Each phase entry follows the same shape so readers can scan.
+
+    ## Out of scope
+
+    File schemas — those live on the file-format pages. Cross-link rather than duplicate.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Each phase claim cross-checked against `src/orchestrator/`, `src/state/phase.rs`, and the on-disk per-phase prompt files under `defaults/agents/.../*.md`.
+    - Dream-trigger threshold value cross-checked against the actual constant in source.
+- id: reference-state-file-formats-backlog-yaml-memory-yaml-session-log-yaml-latest-session-phase-md-commits-yaml
+  title: 'Reference: state-file formats (backlog.yaml, memory.yaml, session-log.yaml, latest-session, phase.md, commits.yaml)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the state-file formats reference page: schema, examples, and read/write call sites for the durable plan-state files.
+
+    ## Scope
+
+    - File: `docs/reference/state-files.adoc`
+    - Per file: full schema (every field with type, semantics, allowed values), a worked example, the phase that writes it, the phases that read it, and the gotchas a hand-editor needs to know.
+
+    ### Files covered
+
+    - **`backlog.yaml`** — tasks list, status enum, dependencies (must be ids; cycles and self-reference rejected by `set-dependencies`), results block, handoff block, category, description, blocked_reason.
+    - **`memory.yaml`** — entries list, the four entry types (user, feedback, project, reference), description vs body, distillation rules.
+    - **`session-log.yaml`** — per-cycle entries, what analyse-work writes here, append-only semantics.
+    - **`latest-session.*`** — the per-cycle summary. **Verify whether the actual file is `.md` or `.yaml`** — the existing format.rs highlight rule says `.md` but memory notes mention `.yaml`. Document whichever is current and flag any inconsistency.
+    - **`phase.md`** — the single-line current-phase indicator. Validation rules. Why it's a separate file rather than embedded in another.
+    - **`commits.yaml`** — the commit spec written by analyse-work, consumed by git-commit-* phases. Per-commit structure (paths, message file).
+
+    ## Style
+
+    Friendly prose between schema blocks. Each file gets a short prose introduction, the schema as a code block (`[source,yaml]` with field-level comments), then prose on gotchas and editing rules.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Every schema cross-checked against `src/state/<file>/schema.rs` (or wherever the serde struct lives).
+    - At least one example per file is realistic — lifted from a real plan, anonymised if needed.
+    - The `.md` vs `.yaml` question for `latest-session.*` is resolved by reading the actual write path in `src/state/`.
+- id: reference-cross-plan-file-formats-subagent-dispatch-yaml-related-components-yaml-evidence-grades
+  title: 'Reference: cross-plan file formats (subagent-dispatch.yaml, related-components.yaml, evidence grades)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the cross-plan file formats reference page: `subagent-dispatch.yaml` (triage hand-off mechanism) and `related-components.yaml` (peer-project edges), with schema, examples, evidence-grade semantics, and the lifecycle of each file.
+
+    ## Scope
+
+    - File: `docs/reference/cross-plan-files.adoc`
+
+    ### Files covered
+
+    - **`subagent-dispatch.yaml`**: schema, when triage writes it, how downstream consumers read it, how dispatched subagents behave, the contract between dispatcher and dispatched.
+    - **`related-components.yaml`**: `schema_version: 2`, edges with `kind` / `lifecycle` / `participants` / `evidence_grade` / `evidence_fields` / `rationale`. How the `state related-components` verbs interact with the file. The discover/add-edge workflow.
+
+    ### Cross-cutting
+
+    - **Evidence grade semantics** (strong / medium / weak): what each grade implies, how the discover phase chooses, how downstream consumers should treat each grade differently.
+    - **Edge kinds** (orchestrates, depends-on, etc.): the controlled vocabulary, when each kind applies.
+    - **Lifecycle scopes** (dev-workflow, build, runtime, etc.): the controlled vocabulary.
+
+    ### Cross-links
+
+    - Cross-link to triage in the phase-cycle page.
+    - Cross-link to `state related-components` in the CLI state page.
+
+    ## Style
+
+    Friendly prose, schema blocks (`[source,yaml]`), minimal lists, no emoji.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Schemas cross-checked against `src/state/related_components/` (and the triage dispatch code for the dispatch file).
+    - Examples lifted from a real `related-components.yaml` — this very project's file (with edges to APIAnyware-MacOS, TestAnyware, Ravel, Atlas) is good source material.
+- id: reference-cli-lifecycle-commands-run-create-init-version-global-flags
+  title: 'Reference: CLI lifecycle commands (run, create, init, version, global flags)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the CLI reference page for lifecycle commands: `ravel-lite run`, `create`, `init` (+ `--force`), `version` (+ `--version`), and the global flags that apply to every command (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`).
+
+    ## Scope
+
+    - File: `docs/reference/cli-lifecycle.adoc`
+    - Per command: invocation, flags (with defaults), what it does, what it writes, side effects, exit codes, gotchas.
+
+    ### Commands
+
+    - **`run`**: the main loop entry point. How phase resumption works (reads `phase.md` to decide where to start). What it reads to decide what to do. How it spawns agent subprocesses. Failure modes.
+    - **`create`**: plan creation. Bootstrapping flow (initial backlog, memory placeholder, phase set to work). Required arguments. How it interacts with `state projects`.
+    - **`init`**: project initialisation. What gets materialised onto disk. `--force` semantics — overwrites without prompting (vs the default which refuses if files exist).
+    - **`version`** (+ `--version`): identity output (crate version + `git describe --tags --always --dirty` + UTC build timestamp). Why a running binary always identifies the commit it was built from.
+
+    ### Global flags
+
+    - `--config <path>`: explicit config file location.
+    - `RAVEL_LITE_CONFIG`: env-var equivalent of `--config`.
+    - `--dangerous`: what behaviours it unlocks, why it's gated.
+    - Precedence rules (flag > env var > default).
+
+    ## Style
+
+    Friendly prose, minimal lists, no emoji. Each command gets at least one worked example.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Every flag and option cross-checked against the actual `clap` derive structure in `src/cli.rs`.
+    - Exit codes cross-checked against the actual implementation.
+- id: reference-cli-state-commands-projects-backlog-memory-session-log-set-phase-related-components
+  title: 'Reference: CLI state commands (projects, backlog, memory, session-log, set-phase, related-components)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the CLI reference page for `ravel-lite state` and all its subcommands: projects, backlog, memory, session-log, set-phase, related-components.
+
+    ## Scope
+
+    - File: `docs/reference/cli-state.adoc`
+
+    ### Subcommand groups
+
+    - **`state projects`**: add, list, rename, remove. The projects registry. How rename cascades through related state (memory note: rename has three cascade points in `run_rename`; consider Trait-based registry before adding a fourth).
+    - **`state backlog`**: every CRUD verb — list, show, add, init, set-status, set-results, set-description, set-handoff, clear-handoff, set-title, set-dependencies, reorder, delete, lint-dependencies, repair-stale-statuses. Filter syntax for `list`. Format options (yaml / markdown / json) and what each format includes (markdown drops ids by design — see render.rs module doc).
+    - **`state memory`**: CRUD verbs and the four entry types (user, feedback, project, reference).
+    - **`state session-log`**: CRUD verbs.
+    - **`state set-phase`**: phase enum, validation rules, when manual phase setting is appropriate (vs letting the orchestrator transition naturally).
+    - **`state related-components`**: list, add-edge, discover. The advanced cross-plan dispatch flow (one-paragraph mention here, deep dive in the cross-plan-files reference page; cross-link).
+
+    ## Style
+
+    Friendly prose. Command tables only when the surface is dense enough to warrant one (the backlog verbs almost certainly do; memory probably doesn't). No emoji.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Every verb cross-checked against the actual `clap` derive structure (`src/cli.rs` and any subcommand modules).
+    - Worked examples for the most common verbs (list, set-status, set-results, set-dependencies).
+
+    ## Note on size
+
+    This is the largest CLI page in the mini-site. If it grows beyond ~3000 words during writing, propose a follow-up split task (e.g. `cli-state-backlog.adoc` as its own page) rather than letting the page balloon.
+- id: reference-cli-survey-commands-survey-survey-format
+  title: 'Reference: CLI survey commands (survey, survey-format)'
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Write the CLI reference page for the survey verbs: `ravel-lite survey` and `ravel-lite survey-format`.
+
+    ## Scope
+
+    - File: `docs/reference/cli-survey.adoc`
+    - **`survey`**: what it does, what it produces, when a user would invoke it directly (vs as a phase consequence).
+    - **`survey-format`**: format conversion utilities, supported formats, gotchas.
+
+    ## Style
+
+    Friendly prose, no emoji. This is a short page — survey verbs are advanced/utility surface, not core lifecycle. A short page is fine; not every reference page needs to be long.
+
+    ## Verification
+
+    - Page builds and renders.
+    - Verbs and flags cross-checked against the `clap` derive structure.
 - id: v1-to-v2-migration-with-auto-cleanup-of-materialised-defaults
   title: v1 to v2 migration with auto-cleanup of materialised defaults
   category: feature
