@@ -580,6 +580,10 @@ entries:
   body: |
     Prompt files under `defaults/` use literal filenames (e.g., `backlog.yaml`, `memory.yaml`) rather than referencing constants from `src/state/filenames.rs`. Converting them would require token substitution or build-time replacement; complexity without proportional benefit. Only `src/` code uses the filename constants — prompts are deliberately out-of-scope.
 - id: cargo-dist-wired-homebrew-pipeline-needs-operator-provisioning
-  title: cargo-dist wired; Homebrew pipeline needs operator provisioning
+  title: Release pipeline uses manual scripts, not cargo-dist
   body: |
-    `[workspace.metadata.dist]` and `[profile.dist]` in `Cargo.toml` and `.github/workflows/release.yml` (generated via `dist init`) are committed. Tag-driven bottles publish to `Linkuistics/homebrew-taps`. Pipeline is non-functional until the operator creates that GitHub repository, generates a PAT with repo scope, and adds `HOMEBREW_TAP_TOKEN` as a secret on `Linkuistics/Ravel-Lite`. First exercise: push a prerelease tag (e.g., `v1.0.2-test1`).
+    Cargo-dist CI is removed (`[workspace.metadata.dist]`, `[profile.dist]`, `.github/workflows/release.yml` deleted). Releases use: `cargo release patch --execute && git push --follow-tags && ./scripts/release-build.sh && ./scripts/release-publish.sh`. `release-build.sh` builds 4 tarballs (native `cargo build` for Darwin; `cargo zigbuild` at glibc 2.17 floor for Linux). `release-publish.sh` runs `gh release create` and commits a formula update to the sibling `homebrew-taps` clone. Formula rendered from `scripts/templates/ravel-lite.rb.tmpl` via `sed`. First release not yet cut; cutting it is the next operator action and unblocks capture-script smoke testing.
+- id: capture-scripts-template-documentation-with-real-system-runs
+  title: Capture scripts template documentation with real system runs
+  body: |
+    `scripts/capture/ravel-lite-tutorial.sh` drives a TestAnyware macOS VM: installs via Homebrew, runs the tutorial scenario interactively, takes screenshots, pulls the resulting `LLM_STATE` tree. Structured into eight named sections with `[STEP-NAME]` log markers for LLM driver correlation. This is the template for all future documentation-with-real-results capture scripts. Known approximation: `testanyware vm list --format json` flag is inferred from README, not validated against a live install; `VNC_ENDPOINT`/`AGENT_ENDPOINT` env overrides are in place for first-run tuning.
