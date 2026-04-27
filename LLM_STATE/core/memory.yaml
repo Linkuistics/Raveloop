@@ -623,3 +623,11 @@ entries:
   title: 'MasterPty Send-not-Sync: take reader/writer before moving master'
   body: |
     `portable-pty`'s `MasterPty` is `Send` but not `Sync`. Pattern: call `take_writer()` and `take_reader()` on the master before moving it into the resize thread (which calls `resize_pty`). The main thread retains the reader/writer; the resize thread owns the master exclusively. Attempting to share across threads without this ownership split is a compile error.
+- id: render-docs-sh-produces-html-fragments-via-asciidoctor-embedded
+  title: render-docs.sh produces HTML fragments via asciidoctor --embedded
+  body: |
+    No custom template needed; `asciidoctor --embedded` strips the document shell and emits a clean fragment. Script loops `docs/reference/*.adoc` and `docs/tutorial/*.adoc`; outputs land in `website/docs/` and `website/tutorials/` for the eleventy pipeline to consume.
+- id: asciidoctor-table-cells-bare-pipe-is-a-column-delimiter
+  title: 'Asciidoctor table cells: bare pipe is a column delimiter'
+  body: |
+    `before|after` inside a table cell is parsed as two cells, not one. Escape as `before\|after` or restructure. Applies to all `.adoc` files under `docs/`.
