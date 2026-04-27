@@ -30,161 +30,48 @@ tasks:
     - Workflow runs green on a test push to a branch.
     - A deliberate clippy violation introduced on a branch causes the workflow to fail.
     - Merge to main only after the workflow passes.
-- id: provision-homebrew-tap-infrastructure-and-cut-first-test-release
-  title: Provision Homebrew tap infrastructure and cut first test release
+- id: cut-first-manual-release-end-to-end
+  title: Cut first manual release end-to-end
   category: infra
-  status: done
+  status: not_started
   dependencies: []
   description: |
-    Provision the three operator prerequisites that make the cargo-dist Homebrew pipeline functional, then run the first end-to-end test release to confirm bottles publish correctly.
+    Cut the first manual release end-to-end using the scripts landed in the homebrew pivot:
+    `cargo release patch --execute && git push --follow-tags && ./scripts/release-build.sh && ./scripts/release-publish.sh`.
 
     ## Why
 
-    `[workspace.metadata.dist]` and `.github/workflows/release.yml` are committed and ready. The pipeline is non-functional until: (1) the tap repository exists, (2) a PAT with write access is created, and (3) the secret is registered. None of these steps require code changes — they are operator actions on GitHub.
-
-    ## Steps
-
-    1. **Create the tap repository**: create `Linkuistics/homebrew-taps` as a public GitHub repo. The release workflow's `publish-homebrew-formula` job expects it to exist.
-
-    2. **Generate a PAT**: in GitHub account settings → Developer settings → Personal access tokens, create a fine-grained (or classic) token with `repo` scope covering `Linkuistics/homebrew-taps`. Classic token with full `repo` scope is simplest.
-
-    3. **Add the secret**: in `Linkuistics/Ravel-Lite` → Settings → Secrets and variables → Actions, add a repository secret named `HOMEBREW_TAP_TOKEN` with the PAT value.
-
-    4. **Cut a prerelease test tag**: run `cargo release patch --execute` on a test branch, or push a manual tag like `v1.0.2-test1`. Because `dist.toml` excludes pre-releases from tap publication (`publish-prereleases = false`), the publish-homebrew-formula job will be skipped — this exercises the full build-and-bottle pipeline without writing a real formula update.
-
-    5. **Verify end-to-end**: confirm per-target tarballs are produced (aarch64/x86_64 × macOS/Linux), checksums match, and a formula artifact is generated even if not published.
-
-    6. **Cut the first real release**: once the prerelease test passes, cut a proper semver tag (e.g. `v1.0.2`) to exercise the full pipeline including formula publication.
-
-    ## Verification
-
-    - GitHub Actions workflow run on the prerelease tag produces four tarballs and a `ravel-lite.rb` artifact with no auth error.
-    - On a clean macOS machine (or fresh Homebrew prefix): `brew install linkuistics/taps/ravel-lite` completes in seconds without invoking cargo.
-    - `ravel-lite --version` on the installed binary matches the git tag.
-  results: |
-    Pivoted from the originally-planned cargo-dist + GitHub Actions approach to a fully-manual, locally-driven release workflow. Rationale (per brainstorming session): operator wants visible, controllable releases without delegating to CI; cargo-dist's value (cross-compile, formula generation, GitHub Release upload) is replaceable by a small shell script.
-
-    ## Changes
-
-    **Removed**
-    - `.github/workflows/release.yml` (the cargo-dist generated CI)
-    - `[workspace.metadata.dist]` block from `Cargo.toml`
-    - `[profile.dist]` block from `Cargo.toml` (cargo-zigbuild uses `[profile.release]`)
-
-    **Added**
-    - `scripts/release-build.sh` — produces 4 tarballs (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`) + sha256s + rendered formula in `target/dist/`. Uses native `cargo build` for darwin targets and `cargo zigbuild --target $T.2.17` for Linux targets (glibc 2.17 floor for wide compatibility, no docker/QEMU dependency).
-    - `scripts/release-publish.sh` — `gh release create` + copies formula into `$RAVEL_TAP_DIR` (default `~/Development/homebrew-taps`), commits, pushes.
-    - `scripts/templates/ravel-lite.rb.tmpl` — hand-rolled Homebrew formula with `@VERSION@` / `@SHA_*@` placeholders, `on_macos`/`on_linux` × `on_arm`/`on_intel` blocks pointing at GitHub Release tarballs.
-
-    **Modified**
-    - `README.md` — `Releasing` and `Release pipeline (dist) prerequisites` sections rewritten for the manual flow. New tooling prereqs documented: `brew install zig`, `cargo install cargo-zigbuild`, `rustup target add ...`, `gh auth login`, sibling tap clone.
-
-    ## Verification
-
-    - `cargo build` clean after Cargo.toml edits.
-    - `cargo test` — 30 tests pass, no regressions.
-    - `bash -n` clean on both release scripts.
-    - shellcheck not installed locally; full lint deferred to CI when added (per future task `add-minimal-github-actions-ci-workflow-build-test-clippy`).
-
-    ## Not done in this session
-
-    - **First test release not actually cut.** That requires `cargo release patch --execute && git push --follow-tags && ./scripts/release-build.sh && ./scripts/release-publish.sh`. Deferred as an explicit operator action — first run will surface any TestAnyware-CLI vs README mismatches in the choreography.
-    - The `Linkuistics/homebrew-taps` repo already exists per user (no creation step needed).
-
-    ## Suggests next
-
-    - Cut the first manual release end-to-end and capture any friction (zigbuild flag tuning, formula syntax edge cases).
-    - Once the formula is live, the TestAnyware capture script can be exercised end-to-end (currently blocked on this).
-- id: set-up-asciidoc-to-html-build-pipeline-for-ravel-lite-docs
-  title: Set up AsciiDoc-to-HTML build pipeline for Ravel-Lite docs
-  category: infra
-  status: done
-  dependencies: []
-  description: |
-    Set up an AsciiDoc-to-HTML build pipeline so that `docs/tutorial/*.adoc` and `docs/reference/*.adoc` can be converted to HTML and published to `www.linkuistics.com/projects/ravel-lite/`.
-
-    ## Why
-
-    The tutorial (T2) and reference pages (T3) are authored in AsciiDoc. Without a build step, they cannot be published. This task is a prerequisite for the tutorial content task and the docs publish task.
+    The release pipeline scripts (`scripts/release-build.sh`, `scripts/release-publish.sh`, `scripts/templates/ravel-lite.rb.tmpl`) are committed and `bash -n` clean, but the end-to-end flow has never been executed. The `Linkuistics/homebrew-taps` repo already exists. The first run is needed to:
+    - Surface any choreography friction (zigbuild flags, formula substitution edge cases, `gh release create` auth, tap push)
+    - Publish the Homebrew formula so `brew install linkuistics/taps/ravel-lite` works
+    - Unblock smoke-testing of `scripts/capture/ravel-lite-tutorial.sh` (which calls `brew install` inside a TestAnyware VM)
 
     ## Scope
 
-    - Script or Makefile target that runs `asciidoctor` over source files under `docs/`
-    - Output HTML lands in the sibling `www.linkuistics.com/projects/ravel-lite/` directory
-    - Integrates with or establishes the `SYNC.yml` publication pattern for Ravel-Lite doc pages
-    - Should be repeatable and idempotent
+    1. Run `cargo release patch --execute` on a clean `main` (bumps version in `Cargo.toml`, commits, tags).
+    2. `git push --follow-tags` to push commit + tag.
+    3. `./scripts/release-build.sh` — produces four tarballs and a rendered `ravel-lite.rb` formula in `target/dist/`.
+    4. `./scripts/release-publish.sh` — creates the GitHub Release and commits the formula to the sibling `homebrew-taps` clone.
+    5. On a clean Homebrew prefix: `brew install linkuistics/taps/ravel-lite && ravel-lite --version` matches the tag.
+
+    ## Known risks on first run
+
+    - `testanyware vm list --format json` inside the capture script is unvalidated — not relevant here, but unblocking this release is a prerequisite for that smoke test.
+    - `release-publish.sh` expects a sibling `~/Development/homebrew-taps` clone; override via `RAVEL_TAP_DIR` if needed.
 
     ## Verification
 
-    - Running the build script produces one HTML file per AsciiDoc source
-    - Pages render correctly in a browser and match site brand
-    - The sibling www repo's `SYNC.yml` lists the output pages so they sync correctly
-  results: |
-    Closed as already-done. The pipeline landed in an earlier session and was missed by triage:
-
-    - `scripts/build-docs.sh` (5.2 KB, executable) — the main build entry point
-    - `docs/build-config.sh` — per-project knobs (project slug, OUTPUT_DIR, back-link)
-    - `docs/manifest.txt` — explicit chapter ordering for prev/next nav
-    - `docs/templates/page-shell.html` — Linkuistics site-chrome wrapper
-
-    The README's `Documentation` section already documents the workflow (`./scripts/build-docs.sh`, asciidoctor prerequisite, sibling `www.linkuistics.com` checkout as default OUTPUT_DIR). Verified by `ls -la scripts/ docs/`.
-
-    No further work. Triage should not have left this pending; suggest a future audit pass that cross-checks `not_started` items against on-disk evidence.
+    - GitHub Release page shows four tarballs + checksum file.
+    - `brew install linkuistics/taps/ravel-lite` completes on a clean machine.
+    - `ravel-lite --version` output matches the pushed tag.
 - id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
   title: 'Write tutorial walk-through: install through further-cycles with worked example'
   category: docs
   status: not_started
   dependencies:
-  - set-up-asciidoc-to-html-build-pipeline-for-ravel-lite-docs
+  - cut-first-manual-release-end-to-end
   description: |
     Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
-- id: integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands
-  title: Integrate TestAnyware VM for capturing interactive ravel-lite commands
-  category: infra
-  status: done
-  dependencies: []
-  description: |
-    Dogfood TestAnyware as the driver for running ravel-lite's interactive commands (create, run) inside a VM so tutorial sections can include real transcripts and — optionally — screenshots without requiring the user to manually drive their own terminal. Scope: (a) start a TestAnyware macOS VM with ravel-lite installed via the brew formula (T4); (b) drive 'ravel-lite create' and 'ravel-lite run' via TestAnyware's VNC + agent (input injection, screen capture, agent exec); (c) capture state files on the VM, extract them to the host, and include them as evidence in the tutorial chapters; (d) optional: capture PNG screenshots of the TUI for the tutorial. Supports T2; depends on T1 (pipeline) and T4 (brew formula) for a clean 'brew install' inside the VM. Scope carefully — this can become a rabbit hole; if VM-driven capture proves too costly, fall back to user-driven capture as originally planned.
-  results: |
-    Landed `scripts/capture/ravel-lite-tutorial.sh` — a single concrete bash script that drives the ravel-lite tutorial scenario inside a TestAnyware macOS VM. Per user framing, this is intended as the de-facto template that an LLM will adapt on-demand for other documentation pages, rather than a one-off harness.
-
-    ## Scope chosen
-
-    Option (b) from brainstorming — concrete capture script — over (a) runbook-only or (c) skip. User explicitly identified this as a test case for a broader documentation-with-real-results pattern that will be reused beyond ravel-lite's own tutorial.
-
-    ## Changes
-
-    **Added**
-    - `scripts/capture/ravel-lite-tutorial.sh` — ~110 lines, organised into eight named sections (PREFLIGHT / VM_LIFECYCLE / INSTALL / SCENARIO_INPUT / SCENARIO_RUN / CAPTURE_SCREENS / CAPTURE_STATE / TEARDOWN), each emitting `[STEP-NAME] message` log lines so an LLM driver can correlate captures and outputs to script phases.
-
-    **Modified**
-    - `.gitignore` — added `docs/captures/` so raw run output is not version-controlled. Tutorial authors selectively `git add` the screenshots and state samples that ship in chapters.
-
-    ## Choreography choices
-
-    - `testanyware exec` for non-interactive shell commands (faster, no Terminal needed).
-    - `testanyware input type` + `testanyware input key return` for driving the interactive Ratatui TUI (`ravel-lite create`, `ravel-lite run`).
-    - `testanyware find-text "<anchor>" --timeout N` for waits — strongly preferred over `sleep` since TUI redraw timing is variable.
-    - `trap cleanup EXIT` ensures no orphaned VMs even on script error.
-
-    ## Verification
-
-    - `bash -n` clean.
-    - Shellcheck not installed locally; full lint deferred.
-    - **End-to-end execution deferred** — script's `INSTALL` section calls `brew install linkuistics/taps/ravel-lite`, which requires the formula from the homebrew task above to be live in the tap. Operator must run that release flow before this script can be smoke-tested. This is a sequencing artifact, not a script defect — and was anticipated in the design.
-
-    ## Known approximations
-
-    Some TestAnyware CLI surface was inferred from its README rather than verified against a live install:
-    - `testanyware vm list --format json` — `--format json` is invented; needs validation on first run. Workaround already in place: VNC_ENDPOINT and AGENT_ENDPOINT env vars override the discovered values.
-    - VM user defaults to `tester` — override via `VM_USER` env var if golden image differs.
-
-    These will surface and get tuned on first end-to-end run after the homebrew formula is published.
-
-    ## Suggests next
-
-    - Once homebrew is published, run the script end-to-end and tune the discovery + interactive timing as needed.
-    - After 2-3 sibling capture scripts exist (for other projects/scenarios), revisit whether a YAML-driven generic runner is worth designing — at that point the right schema will be obvious from real shapes.
 - id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
   title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
   category: docs
