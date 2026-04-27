@@ -600,9 +600,9 @@ entries:
   body: |
     `--debug` is a `run` flag; `create::run_create` and `discover::stage1` are intentionally uninstrumented because they are unreachable from `ravel-lite run`. Four instrumented spawn sites: `src/agent/claude_code.rs` (interactive + headless), `src/agent/pi.rs` (interactive + headless), `src/agent/common.rs` (`pump_stdout_to_ui`, `spawn_stderr_drain`, exit in `run_streaming_child`), and `src/survey/invoke.rs` (`spawn_claude_and_read`).
 - id: interactive-tui-paths-log-stdio-inherited-not-transcript
-  title: 'Interactive TUI paths log stdio: inherited, not transcript'
+  title: Pi interactive logs "inherited"; claude_code uses PTY under --debug
   body: |
-    For interactive (TUI) spawn paths, stdio is inherited and not capturable; `--debug` records "stdio: inherited (no transcript available)" to avoid silent lossiness. Headless paths capture full output to the debug file. Applies to both `claude_code` and `pi` interactive modes.
+    `pi` interactive spawn paths: stdio is inherited and not capturable; `--debug` records "stdio: inherited (no transcript available)" to avoid silent lossiness. `claude_code` interactive paths: `--debug` routes through `spawn_claude_via_pty` in `src/agent/claude_code.rs`, enabling PTY byte-stream capture via `log_pty_chunk`/`render_pty_bytes` in `debug_log.rs`. The "inherited" log message is pi-only. Headless paths capture full output in both cases.
 - id: select-config-dir-strips-trailing-slashes-via-components-collect
   title: select_config_dir strips trailing slashes via components().collect
   body: |
@@ -615,3 +615,11 @@ entries:
   title: v1→v2 config migration wired into config_lua::resolve
   body: |
     `src/migrate_v1_to_v2.rs` migrates legacy materialised YAML config (global `config.yaml`, `config.local.yaml`, per-agent `config.yaml`/`tokens.yaml`) to a `config.lua` with version marker. Detects legacy layout by intersecting embedded-default paths with disk. Crash-safe: file writes precede deletes; a mid-run crash leaves legacy files on disk for the next call to complete. Wired in `config_lua::resolve` as the first-touch call before any config layer is read. See: `Config model is layered Lua; config_lua.rs owns it`.
+- id: pty-capture-rs-is-the-pty-orchestrator-for-claude-code-debug-capture
+  title: pty_capture.rs is the PTY orchestrator for claude_code debug capture
+  body: |
+    `src/agent/pty_capture.rs` exposes `run_pty_session` (production entry, called via `spawn_blocking`), `drive_pty_io` (three-thread orchestrator: stdout pump, stdin pump, SIGWINCH forwarder), `pump_stdin_with_shutdown` (`libc::poll`-based with `AtomicBool` shutdown to avoid `spawn_blocking` cancellation), `tee_to` (byte-copy with tap closure), and `current_terminal_size` (TIOCGWINSZ, 24×80 fallback). Dependencies: `portable-pty = "0.9"`, `libc = "0.2"`. See: `Pi interactive logs "inherited"; claude_code uses PTY under --debug`.
+- id: masterpty-send-not-sync-take-reader-writer-before-moving-master
+  title: 'MasterPty Send-not-Sync: take reader/writer before moving master'
+  body: |
+    `portable-pty`'s `MasterPty` is `Send` but not `Sync`. Pattern: call `take_writer()` and `take_reader()` on the master before moving it into the resize thread (which calls `resize_pty`). The main thread retains the reader/writer; the resize thread owns the master exclusively. Attempting to share across threads without this ownership split is a compile error.
