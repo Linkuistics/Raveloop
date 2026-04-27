@@ -1,6 +1,166 @@
+<div id="preamble">
+<div class="sectionbody">
 <div class="paragraph">
-<p>This page is a placeholder. When complete it will document <code>ravel-lite run</code>, <code>create</code>, <code>init</code> (and <code>--force</code>), <code>version</code> (and <code>--version</code>), and the global flags (<code>--config</code>, <code>RAVEL_LITE_CONFIG</code>, <code>--dangerous</code>) that apply across every command. Each entry covers invocation, flags, what the command does, what it writes, side effects, exit codes, and gotchas.</p>
+<p>The lifecycle commands are the verbs you reach for to set up a config directory, scaffold a plan, drive the phase loop, and identify a running binary. They are the always-needed surface — every other command sits underneath <code>ravel-lite state</code> (covered on the <a href="cli-state.html">State commands</a> page) or behind the advanced <code>survey</code> workflow (<a href="cli-survey.html">Survey commands</a>).</p>
 </div>
 <div class="paragraph">
-<p>The corresponding backlog task is <code>reference-cli-lifecycle-commands-run-create-init-version-global-flags</code>.</p>
+<p>This page documents the four lifecycle verbs, plus the global flags that apply to several of them. Each verb section covers invocation, flags with defaults, side effects, and the gotchas a first-time user runs into.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="global-flags">Global flags</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A small set of flags appears on every command that needs to locate the config directory or alter agent behaviour. They are documented once here and cross-referenced from the per-command sections.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>--config &lt;path&gt;</code></dt>
+<dd>
+<p>Explicit config directory. Overrides the env var and the platform default. Useful for running an isolated config (one-off experiments, CI, multi-account setups).</p>
+</dd>
+<dt class="hdlist1"><code>RAVEL_LITE_CONFIG</code></dt>
+<dd>
+<p>Environment-variable equivalent of <code>--config</code>. Used when the flag is omitted. Setting it makes a shell session use a non-default config dir without typing the flag for every invocation.</p>
+</dd>
+<dt class="hdlist1"><code>--dangerous</code></dt>
+<dd>
+<p>Claude Code only. Adds <code>--dangerously-skip-permissions</code> to every spawned agent process for the run, suppressing the per-tool permission prompts. Equivalent to setting <code>dangerous: true</code> for every phase in <code>agents/claude-code/config.yaml</code>. Pi ignores the flag with a warning. Use it when you trust the cycle to do what its prompts say and want unattended runs.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The precedence chain for the config directory is <code>--config</code> → <code>$RAVEL_LITE_CONFIG</code> → <code>dirs::config_dir()/ravel-lite</code>. The third is the platform default — <code>~/Library/Application Support/ravel-lite</code> on macOS, <code>~/.config/ravel-lite</code> on Linux. If none of the three resolves, every command that needs a config dir errors with a hint that points at <code>ravel-lite init</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_init"><code>init</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Materialises a config directory on disk. Writes the embedded defaults — agent config files, phase prompts, the universal coding-style and memory-style files under <code>fixed-memory/</code> — into the target directory.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite init &lt;dir&gt; [--force]</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>&lt;dir&gt;</code></dt>
+<dd>
+<p>Target directory. Created if it does not exist. Refused if it exists and is non-empty unless <code>--force</code> is set.</p>
+</dd>
+<dt class="hdlist1"><code>--force</code></dt>
+<dd>
+<p>Overwrite existing files in <code>&lt;dir&gt;</code>. The default refuses to clobber, so a stale <code>init</code> against a populated directory is a no-op without this flag. With <code>--force</code>, every embedded default is rewritten — useful for refreshing prompts after upgrading the binary.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p><code>init</code> is the only lifecycle command that does not need the config directory to already exist; it is how the config directory comes into being. After it runs, set <code>RAVEL_LITE_CONFIG=&lt;dir&gt;</code> (or pass <code>--config &lt;dir&gt;</code> to subsequent commands) so the rest of the CLI knows where to look.</p>
+</div>
+<div class="paragraph">
+<p>The materialised tree is the read source for every subsequent run. Editing files under it is supported — the orchestrator reads them on each invocation, so a customised prompt or a new model setting takes effect on the next phase. See the <a href="config-and-prompts.html">Configuration and prompts</a> reference for the layout in full.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_create"><code>create</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Bootstraps a new plan directory through an interactive Claude Code session. Reads the create-plan prompt template from the config directory, appends the target plan path, and hands stdio off to claude so the conversation runs in the user&#8217;s terminal.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite create [--config &lt;path&gt;] &lt;plan_dir&gt;</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>&lt;plan_dir&gt;</code></dt>
+<dd>
+<p>Path to the new plan directory. Must not exist; its parent must exist. Conventionally <code>&lt;project&gt;/LLM_STATE/&lt;plan-name&gt;/</code>.</p>
+</dd>
+<dt class="hdlist1"><code>--config &lt;path&gt;</code></dt>
+<dd>
+<p>See <a href="#global-flags">Global flags</a>.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p><code>create</code> reuses the work-phase model from <code>agents/claude-code/config.yaml</code>, so the agent it spawns matches the one that will run subsequent work phases. It scopes claude to the parent directory via <code>--add-dir</code>, which keeps the bootstrap conversation focused on the project subtree.</p>
+</div>
+<div class="paragraph">
+<p>The output of a successful <code>create</code> is a populated plan directory containing <code>backlog.yaml</code>, <code>memory.yaml</code> (seeded with any starter entries the user dictated), <code>phase.md</code> set to <code>work</code>, and the baseline files the phase loop needs. After it returns, run <code>ravel-lite run &lt;plan_dir&gt;</code> to start cycling.</p>
+</div>
+<div class="paragraph">
+<p><code>create</code> is interactive — it inherits stdio rather than running through the TUI — because plan creation is a conversation, not a transformation of structured state. Pi is not currently supported as the create-plan agent.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_run"><code>run</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The phase loop entry point. Drives one or more plans through the full work → analyse-work → reflect → (dream?) → triage cycle, looping until the user stops or the backlog empties. The <a href="phase-cycle.html">Phase cycle</a> reference documents what each phase does.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite run [--config &lt;path&gt;] [--dangerous] [--debug]
+               [--survey-state &lt;path&gt;] &lt;plan_dir&gt;...</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>&lt;plan_dir&gt;&#8230;&#8203;</code></dt>
+<dd>
+<p>One or more plan directories. With a single directory, the loop runs continuously and prompts "Proceed to next work phase?" between cycles. With two or more, multi-plan mode kicks in: every cycle starts with a survey across all plans, the user picks one from a numbered prompt, and one phase cycle runs against the selection.</p>
+</dd>
+<dt class="hdlist1"><code>--config &lt;path&gt;</code>, <code>--dangerous</code></dt>
+<dd>
+<p>See <a href="#global-flags">Global flags</a>.</p>
+</dd>
+<dt class="hdlist1"><code>--debug</code></dt>
+<dd>
+<p>Enable byte-level capture of every agent invocation. Tees the spawn argv, prompt, raw stdout/stderr, and exit status to <code>/tmp/ravel-embedding-debug.log</code> and passes <code>--debug-file /tmp/ravel-claude-debug.log</code> to every claude invocation. Both files are truncated at the start of the run. Use when diagnosing TUI hangs or unexpected agent output; otherwise leave it off.</p>
+</dd>
+<dt class="hdlist1"><code>--survey-state &lt;path&gt;</code></dt>
+<dd>
+<p>Path to the survey state file used by multi-plan mode. The same file is read as <code>--prior</code> at the start of each survey and rewritten with the new survey at the end. Required for two or more plan dirs; rejected for exactly one.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The loop reads <code>&lt;plan_dir&gt;/phase.md</code> to decide which phase to run next, so resumption after a crash is automatic — whichever phase was current is the one that runs again. Single-plan mode is the original behaviour: continuous cycling through one plan, with a yes/no prompt between cycles. Multi-plan mode is for users who want to keep several plans in motion: it prioritises plans via the LLM survey and lets the user pick one cycle at a time.</p>
+</div>
+<div class="paragraph">
+<p><code>run</code> validates that every plan directory contains a <code>phase.md</code> before starting, and registers each plan&#8217;s project subtree in the catalog (with an interactive collision prompt if a project name maps to a different path than catalogued). The TUI then takes over stdio for the duration of the run.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_version"><code>version</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Prints the installed ravel-lite version and exits.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite version</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The same output is produced by the <code>--version</code> flag — the subcommand form is provided for symmetry with the rest of the CLI surface. Output shape:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite 0.1.0 (v0.1.0-2-g15c2c8c-dirty, built 2026-04-21T06:42:18Z)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The three components are the crate version, <code>git describe --tags --always --dirty</code> from the build, and the UTC build timestamp. A running binary therefore always identifies the commit it was built from, which makes "what version is this user running?" a one-line question regardless of how the binary was distributed.</p>
+</div>
+</div>
 </div>

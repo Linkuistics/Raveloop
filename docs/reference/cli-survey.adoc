@@ -1,5 +1,37 @@
-= CLI: survey commands
+= Survey commands
 
-This page is a placeholder. When complete it will document `ravel-lite survey` and `ravel-lite survey-format` — the advanced utilities used during cross-plan discovery. Survey verbs are advanced surface area, not core lifecycle, so the page is expected to be short.
+The survey verbs produce an LLM-driven prioritisation across one or more plans. They sit outside the regular phase loop: a survey reads each plan's phase, backlog, and memory in a single fresh-context Claude session, and emits a per-plan summary with a recommended invocation order. Multi-plan `ravel-lite run` calls `survey` automatically between cycles to drive its selection prompt; the user-facing verb is also there for direct invocation when you want a status overview without committing to a cycle.
 
-The corresponding backlog task is `reference-cli-survey-commands-survey-survey-format`.
+Two verbs ship: `survey` does the LLM call and emits canonical YAML; `survey-format` renders a saved YAML survey as human-readable markdown. Read-only and side-effect-free apart from the Claude API call (`survey`) and stdout printing (both).
+
+== `survey`
+
+----
+ravel-lite survey [--config <path>] [--model <name>]
+                  [--timeout-secs <n>] [--prior <path>] [--force]
+                  <plan_dir>...
+----
+
+`<plan_dir>...`:: Plan directories to survey. At least one required. Each must contain a `phase.md`. The verb replaces the former plan-root walk; callers now name plans individually.
+
+`--config <path>`:: See the link:cli-lifecycle.html#global-flags[lifecycle-page global flags].
+
+`--model <name>`:: Override the model used for the survey call. The precedence chain is `--model` flag → `models.survey` in `agents/claude-code/config.yaml` → the `DEFAULT_SURVEY_MODEL` constant baked into the binary. Use this when the configured survey model is unavailable or you want to cross-check against a different one.
+
+`--timeout-secs <n>`:: Override the survey subprocess timeout. Default 300 seconds. The survey fails with a diagnostic error and a partial-stdout dump if claude does not produce a result within the window. Bump it if surveys against many plans are timing out; lower it for faster failure during debugging.
+
+`--prior <path>`:: Path to a prior survey YAML to use as the baseline for an incremental run. Plans whose `input_hash` matches the prior are carried forward verbatim; only changed and added plans are sent to the LLM. Rejected schemas and unrecognised versions produce a loud error pointing at `--force` for remediation. This is how multi-plan mode reuses the previous cycle's survey state efficiently.
+
+`--force`:: Re-analyse every plan regardless of whether its hash matches the prior. Has no effect without `--prior`. Intended for debugging and schema-bump remediation, when you want to invalidate the incremental cache wholesale.
+
+The output is canonical YAML on stdout. Save it to a file (or pass `--survey-state` on `ravel-lite run` to manage the file automatically) for incremental reuse on the next survey. Render it for humans with `survey-format`.
+
+== `survey-format`
+
+----
+ravel-lite survey-format <file>
+----
+
+`<file>`:: Path to a YAML survey file as produced by `ravel-lite survey`.
+
+Renders the survey as human-readable markdown on stdout. Read-only — no network call, no LLM, no file mutation. Use it to inspect a saved survey state file, debug an incremental cache, or eyeball the priority ordering before a manual selection.

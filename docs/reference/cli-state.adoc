@@ -1,5 +1,249 @@
-= CLI: state commands
+= State commands
 
-This page is a placeholder. When complete it will document `ravel-lite state` and every subcommand: `state projects`, `state backlog` (the dense CRUD surface), `state memory`, `state session-log`, `state set-phase`, and `state related-components`. Each entry covers invocation, flags, what the command does, side effects, and gotchas.
+`ravel-lite state` is the surface every phase prompt uses to mutate plan state. It exists so a prompt can express "flip task X to done" or "add memory entry Y" as one shell call rather than the Read+Write tool-call pair (and the matching permission prompts) that direct file editing would require. A single allowlist entry — `Bash(ravel-lite state *)` — is enough to permit every state mutation a phase needs.
 
-The corresponding backlog task is `reference-cli-state-commands-projects-backlog-memory-session-log-set-phase-related-components`.
+The verbs are grouped under six subcommand namespaces: `projects` (the per-user component catalog), `backlog`, `memory`, `session-log`, `set-phase`, and `related-components`. This page documents each group in turn. Two further namespaces — `migrate` and `discover-proposals` — are advanced or transient, covered at the end.
+
+Output formats appear consistently across the read verbs: `--format yaml` is the default and the canonical machine-readable form, `--format json` is available where the output is structured, and `--format markdown` is offered on backlog `list` (the human-readable view). The link:state-files.html[State files] and link:cross-plan-files.html[Cross-plan files] references document the underlying file schemas.
+
+== `state projects`
+
+The per-user projects catalog at `<config-dir>/projects.yaml` maps component names to absolute paths. Component names are the shared currency of the cross-plan graph (`<config-dir>/related-components.yaml`); this catalog is the per-user resolver from name to path. It is auto-populated when `ravel-lite run` encounters a new project, and the verbs below let you inspect or edit it directly.
+
+`projects list`::
++
+----
+ravel-lite state projects list [--config <path>]
+----
+Emits the catalog as YAML on stdout. An empty catalog is valid output.
+
+`projects add`::
++
+----
+ravel-lite state projects add [--config <path>]
+                              [--name <name>] --path <path>
+----
+Adds an entry mapping `--name` to `--path`. Relative paths resolve against the current working directory. If `--name` is omitted, the basename of the resolved path is used. Refuses duplicate names and duplicate paths so two entries cannot disagree about the same project.
+
+`projects remove`::
++
+----
+ravel-lite state projects remove [--config <path>] <name>
+----
+Removes the entry for `<name>`. Errors if no such entry exists.
+
+`projects rename`::
++
+----
+ravel-lite state projects rename [--config <path>] <old> <new>
+----
+Renames an entry. The rename cascades into `<config-dir>/related-components.yaml` (every edge participant matching `<old>` is rewritten to `<new>`) and into the discover surface cache at `<config-dir>/discover-cache/<name>.yaml`. Cascade points are intentionally enumerated rather than discovered, so adding a fourth file that references project names will need explicit cascade handling at the call site.
+
+`--config <path>`:: See the link:cli-lifecycle.html#global-flags[lifecycle-page global flags]. Available on every `projects` verb above.
+
+== `state backlog`
+
+The densest surface in the CLI — every CRUD verb on `backlog.yaml` lives here. Read the link:state-files.html[State files] reference for the file's schema; this section documents the verbs that read or mutate it.
+
+[cols="1,3", options="header"]
+|===
+| Verb | Purpose
+
+| `list`
+| Emit tasks matching a filter. Default format is YAML.
+
+| `show <id>`
+| Emit one task by id.
+
+| `add`
+| Append a new task with title, category, optional description, and optional dependencies.
+
+| `init`
+| One-shot bulk initialisation from a `body-file`. Refuses a non-empty backlog — used by `create-plan` only.
+
+| `set-status <id> <status>`
+| Update status. `--reason` required when setting `blocked`.
+
+| `set-results <id>`
+| Set the Results block from `--body-file` or `--body` (with `-` for stdin).
+
+| `set-description <id>`
+| Rewrite the brief authored at `add` time. Use when external references (file paths, doc anchors) have moved.
+
+| `set-handoff <id>`
+| Set the hand-off block, the optional context triage may promote into a new task or archive into memory.
+
+| `clear-handoff <id>`
+| Drop the hand-off block. Triage uses this after promote-or-archive.
+
+| `set-title <id> <new>`
+| Rename a task; id is preserved.
+
+| `set-dependencies <id> --deps a,b,c`
+| Replace the dependency list. Validates ids, rejects self-reference and cycles. `--deps ""` clears.
+
+| `reorder <id> <position> <target>`
+| Move a task in the linear backlog order. `<position>` is `before` or `after`.
+
+| `delete <id>`
+| Remove a task. Refuses if it is a dependency of another, unless `--force`.
+
+| `lint-dependencies`
+| Read-only report of drift between prose task-id mentions and structured `dependencies:`.
+
+| `repair-stale-statuses`
+| Flip `in_progress` tasks that have a Results block to `done`; flip `blocked` tasks whose deps are all done back to `not_started`. Exit code 1 if any repair would apply (scripting signal).
+|===
+
+A few of the verbs warrant additional notes.
+
+`list` filters compose with AND. Available filters: `--status <name>` (one of `not_started`, `in_progress`, `done`, `blocked`); `--category <name>`; `--ready` (shorthand for `status=not_started AND every dep is done`); `--has-handoff`; `--missing-results` (done tasks without a Results block). Output formats are `yaml` (default), `json`, and `markdown`. The markdown layout is sectioned by category by default; `--group-by status` switches to per-status sections.
+
+`list --format markdown` is the canonical human-readable view used by the work-phase prompt at the start of each cycle. It deliberately does not include task ids — they bloated the table width. Phases that need ids derive them from titles via the deterministic `allocate_id` mapping or fall back to `--format yaml`.
+
+`set-results` and `set-description` and `set-handoff` all accept either `--body-file <path>` or `--body <text>`. Pass `--body -` to read the body from stdin; pass any other string as the inline body. The two flags are mutually exclusive.
+
+`repair-stale-statuses` is the recovery verb that analyse-work runs after every cycle. It catches the case where a phase wrote a Results block but forgot to flip the status, and the case where a `blocked` task's blockers all completed. Exit code 1 means at least one repair applied — useful for scripts that want to detect drift before launching another cycle.
+
+== `state memory`
+
+CRUD for `memory.yaml`. Dream uses these verbs per-entry rather than bulk-swapping the file, so a partial dream can be examined in git history.
+
+`memory list`:: Emit every entry as YAML (or `--format json`).
+
+`memory show <id>`:: Emit one entry.
+
+`memory add --title <t> [--body-file|--body <body>]`:: Append a new entry.
+
+`memory init --body-file <path>`:: One-shot bulk init for create-plan. Refuses a non-empty memory.
+
+`memory set-body <id> [--body-file|--body <body>]`:: Rewrite an entry's body.
+
+`memory set-title <id> <new>`:: Rename an entry.
+
+`memory delete <id>`:: Remove an entry.
+
+The four memory entry types — `user`, `feedback`, `project`, `reference` — are conventions enforced by the `memory-style.md` guidance file (under `<config-dir>/fixed-memory/`), not by the schema. The CLI treats every entry uniformly. The link:state-files.html[State files] reference covers the type semantics and when each one applies.
+
+== `state session-log`
+
+Read and write `session-log.yaml` (the append-only history) and `latest-session.yaml` (the single most recent record).
+
+`session-log list`:: Emit records as YAML. `--limit <n>` keeps the newest `n`.
+
+`session-log show <id>`:: Show one record by id.
+
+`session-log append --id <id> --timestamp <ts> [--phase <p>] [--body-file|--body]`:: Append to `session-log.yaml`. Idempotent on id — a record already present is a no-op.
+
+`session-log set-latest --id <id> --timestamp <ts> [--phase <p>] [--body-file|--body]`:: Overwrite `latest-session.yaml` with a new single record. Used by analyse-work to hand the session to git-commit-work.
+
+`session-log show-latest`:: Emit `latest-session.yaml`'s record.
+
+The split between the two files is load-bearing: `latest-session.yaml` is single-record and overwritten every cycle (so it can be read by the next phase without scanning the whole history); `session-log.yaml` is append-only and grows over the lifetime of the plan. The git-commit-work handler appends the latest record to the log between phases — that mirroring is mechanical Rust, not an LLM action, so a phase prompt cannot forget it.
+
+== `state set-phase`
+
+Rewrite `<plan-dir>/phase.md` to the named phase. Validates the phase string against the enum and requires `phase.md` to already exist (so a typo cannot accidentally create a new plan dir).
+
+----
+ravel-lite state set-phase <plan_dir> <phase>
+----
+
+Accepted phase names: `work`, `analyse-work`, `reflect`, `dream`, `triage`, `git-commit-work`, `git-commit-reflect`, `git-commit-dream`, `git-commit-triage`. A typo comes back with the full list in the error message.
+
+Every reasoning phase ends with this verb to advance the cycle. Manual invocation is also supported — when recovering from a crash or replaying a phase, set `phase.md` directly to the phase you want to run next, then `ravel-lite run` will pick up there. The verb also seeds `<plan-dir>/dream-word-count` if missing, doubling as a defense-in-depth migration point for plans that pre-date the rename from `dream-baseline`.
+
+== `state related-components`
+
+The cross-plan graph at `<config-dir>/related-components.yaml`. Edges follow the component-ontology v2 schema; participants reference components by name (resolved per-user via the projects catalog). The link:cross-plan-files.html[Cross-plan files] reference covers the file format, edge kinds, and evidence-grade vocabulary in detail.
+
+`related-components list`::
++
+----
+ravel-lite state related-components list [--config <path>]
+                                         [--plan <plan_dir>]
+                                         [--kind <kind>]
+                                         [--lifecycle <scope>]
+----
+Emit edges as YAML. Filters AND-combine: `--plan` restricts to edges involving the component that owns `<plan>` (derived as `<plan>/../..`); `--kind` and `--lifecycle` restrict by the v2 kebab-case vocabularies.
+
+`related-components add-edge`::
++
+----
+ravel-lite state related-components add-edge [--config <path>]
+                                             <kind> <lifecycle> <a> <b>
+                                             --evidence-grade <grade>
+                                             [--evidence-field <f>]...
+                                             --rationale <text>
+----
+Add an edge with the full ontology v2 field set. `kind` and `lifecycle` are positional; everything else is a flag. Symmetric kinds are participant-order-insensitive; directed kinds use the canonical order from `docs/component-ontology.md` §6. Refuses unknown component names. `--evidence-grade strong` and `medium` require at least one `--evidence-field`; `weak` may omit. `--rationale` is a non-empty paragraph-length human justification.
+
+`related-components remove-edge`::
++
+----
+ravel-lite state related-components remove-edge [--config <path>]
+                                                <kind> <lifecycle> <a> <b>
+----
+Remove the unique edge matching `(kind, lifecycle, canonicalised participants)`. Errors if no match.
+
+`related-components discover`::
++
+----
+ravel-lite state related-components discover [--config <path>]
+                                             [--project <name>]
+                                             [--concurrency <n>]
+                                             [--apply]
+----
+Run the two-stage LLM discovery pipeline over all catalogued components (or just `--project <name>`). Writes proposals to `<config-dir>/discover-proposals.yaml` for user review. `--apply` skips the review gate and runs `discover-apply` immediately. Default Stage 1 concurrency is 4.
+
+`related-components discover-apply`::
++
+----
+ravel-lite state related-components discover-apply [--config <path>]
+----
+Merge a previously-produced `discover-proposals.yaml` into `related-components.yaml`. Idempotent; reports and rejects directional conflicts without aborting the whole apply.
+
+== `state migrate`
+
+Single-plan conversion of legacy `.md` plan-state files into typed `.yaml` siblings. Covers `backlog.md`, `memory.md`, `session-log.md`, and `latest-session.md` (each written when present).
+
+----
+ravel-lite state migrate <plan_dir>
+                         [--dry-run] [--keep-originals|--delete-originals]
+                         [--force]
+----
+
+Defaults: keep the `.md` originals; refuse to overwrite a differing `backlog.yaml`. `--dry-run` reports without writing. `--delete-originals` removes the `.md` files only after both write and validation succeed. `--force` overwrites a divergent existing `backlog.yaml` (use after manually reconciling).
+
+This verb is for the one-time legacy upgrade path; new plans created via `ravel-lite create` start in the typed-YAML format and never need it.
+
+== `state discover-proposals`
+
+Append-only verb used by Stage 2 of the discovery pipeline. Each proposal goes through `add-proposal` rather than the LLM writing the whole file at once; clap rejects a hallucinated `--kind`/`--lifecycle`/`--evidence-grade` so the LLM retries that single call instead of nuking everything.
+
+----
+ravel-lite state discover-proposals add-proposal
+    [--config <path>]
+    --kind <kind> --lifecycle <scope>
+    --participant <name> --participant <name>
+    --evidence-grade <grade>
+    [--evidence-field <f>]...
+    --rationale <text>
+----
+
+Most users do not invoke this verb directly — it is wired into the `discover` flow. It surfaces here for completeness and because the validation contract (clap rejects unknown vocabulary terms; `Edge::validate()` rejects self-loops; the catalog check rejects unknown participants) is the same one users see if they invoke it during debugging.
+
+== `state phase-summary`
+
+Deterministic labelled-line summary of what changed in `backlog.yaml` (triage) or `memory.yaml` (reflect/dream) between a baseline commit and the current working-tree state.
+
+----
+ravel-lite state phase-summary render <plan_dir>
+    --phase <triage|reflect|dream>
+    [--baseline <sha>]
+    [--format text|yaml]
+----
+
+Used at the end of each mutating phase to produce the structural diff that goes into the session log. Replaces the LLM's manual re-transcription of its own tool calls — the narrative preamble stays in the LLM but the structural diff is computed in Rust.
+
+`--baseline ""` (or omitted) means "first cycle, no prior state" — only additions are reported. The default text format is one labelled line per mutation (e.g. `[ADDED] task-id: title`); `--format yaml` is the structured form for machine consumers.

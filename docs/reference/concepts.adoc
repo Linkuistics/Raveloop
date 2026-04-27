@@ -25,7 +25,7 @@ LLM_STATE/<plan>/
 └── commits.yaml         # the analyse-work commit spec, transient between phases
 ----
 
-A project can host multiple plans. Each is its own directory under `LLM_STATE/` and runs its own cycle independently. Distinct plans may share backlog conventions but never share state — `<plan_a>/backlog.yaml` and `<plan_b>/backlog.yaml` are two different files with two different lifecycles. The link:reference-state-files.html[State files] reference documents the schema and lifecycle of every file above.
+A project can host multiple plans. Each is its own directory under `LLM_STATE/` and runs its own cycle independently. Distinct plans may share backlog conventions but never share state — `<plan_a>/backlog.yaml` and `<plan_b>/backlog.yaml` are two different files with two different lifecycles. The link:state-files.html[State files] reference documents the schema and lifecycle of every file above.
 
 == Agent backends
 
@@ -36,7 +36,7 @@ Ravel-Lite spawns a coding agent as a subprocess for every reasoning phase. Two 
 
 Selection happens once, when Ravel-Lite is invoked. The orchestrator constructs the matching agent implementation, hands it the per-phase prompt, and streams its JSON output. Switching agents mid-cycle isn't supported — pick one, run a cycle, switch in the next cycle if you want.
 
-Each backend has its own configuration directory under `agents/<name>/`, sibling to the project's `config.yaml`. Pi additionally carries a `subagents/` directory with definitions for the brainstorming, TDD, and writing-plans skills the orchestrator dispatches against during specific phases. The link:reference-config-and-prompts.html[Configuration and prompts] reference covers the per-backend layout in full.
+Each backend has its own configuration directory under `agents/<name>/`, sibling to the project's `config.yaml`. Pi additionally carries a `subagents/` directory with definitions for the brainstorming, TDD, and writing-plans skills the orchestrator dispatches against during specific phases. The link:config-and-prompts.html[Configuration and prompts] reference covers the per-backend layout in full.
 
 == The principles
 
@@ -54,20 +54,20 @@ These principles play out in practice in two visible ways. First, there is no op
 
 The terms collected here recur throughout the rest of the reference. Each entry defines the term briefly and points at the page that specifies it in detail.
 
-Phase:: A discrete agent invocation against a specific prompt file. There are five reasoning phases (work, analyse-work, reflect, dream, triage) plus the four `git-commit-*` phases that audit-log them. The link:reference-phase-cycle.html[Phase cycle] reference documents each one's input and output contract.
+Phase:: A discrete agent invocation against a specific prompt file. There are five reasoning phases (work, analyse-work, reflect, dream, triage) plus the four `git-commit-*` phases that audit-log them. The link:phase-cycle.html[Phase cycle] reference documents each one's input and output contract.
 
 Cycle:: One full pass through the phase sequence — work to triage and back. The cycle restarts at `work` unless the user stops, the backlog is empty, or a phase asks to halt.
 
-Dispatch:: The triage phase spawning a subagent — either against a sibling plan (to propagate cross-plan learnings) or against a brainstorming, TDD, or writing-plans skill (to delegate focused thinking). Triage writes `subagent-dispatch.yaml`; the orchestrator spawns the described subagents. See the link:reference-cross-plan-files.html[Cross-plan files] reference.
+Dispatch:: The triage phase spawning a subagent — either against a sibling plan (to propagate cross-plan learnings) or against a brainstorming, TDD, or writing-plans skill (to delegate focused thinking). Triage writes `subagent-dispatch.yaml`; the orchestrator spawns the described subagents. See the link:cross-plan-files.html[Cross-plan files] reference.
 
 Baseline:: A git SHA captured before a reasoning phase, used as the diff anchor for the analyse-work phase that follows. Baselines are recorded as `run-plan: save-<phase>-baseline` commits, visible in `git log`.
 
-Plan-state files:: The on-disk files inside a plan directory — `backlog.yaml`, `memory.yaml`, `session-log.yaml`, `latest-session.*`, `phase.md`, `commits.yaml`. Editable by hand. Documented in the link:reference-state-files.html[State files] reference.
+Plan-state files:: The on-disk files inside a plan directory — `backlog.yaml`, `memory.yaml`, `session-log.yaml`, `latest-session.*`, `phase.md`, `commits.yaml`. Editable by hand. Documented in the link:state-files.html[State files] reference.
 
-Durable memory:: The contents of `memory.yaml`. Distilled learnings carried across cycles. Reflect appends; dream rewrites losslessly when memory grows past a configured `headroom` threshold; triage occasionally archives a completed task's hand-off into it. The dream-trigger mechanics live on the link:reference-phase-cycle.html[Phase cycle] page.
+Durable memory:: The contents of `memory.yaml`. Distilled learnings carried across cycles. Reflect appends; dream rewrites losslessly when memory grows past a configured `headroom` threshold; triage occasionally archives a completed task's hand-off into it. The dream-trigger mechanics live on the link:phase-cycle.html[Phase cycle] page.
 
 Hand-off:: A task's hand-off block — extra context attached to a task that triage may promote into a new task, archive into memory, or dispatch to a sibling plan. Cleared after triage acts on it.
 
-Related component:: A peer project linked via `related-components.yaml`, with an edge kind (`orchestrates`, `depends-on`, etc.), a lifecycle scope (`dev-workflow`, `build`, `runtime`), and an evidence grade. The discover phase proposes edges; the user accepts via `state related-components add-edge`. See the link:reference-cross-plan-files.html[Cross-plan files] reference.
+Related component:: A peer project linked via `related-components.yaml`, with an edge kind (`orchestrates`, `depends-on`, etc.), a lifecycle scope (`dev-workflow`, `build`, `runtime`), and an evidence grade. The discover phase proposes edges; the user accepts via `state related-components add-edge`. See the link:cross-plan-files.html[Cross-plan files] reference.
 
 Evidence grade:: One of `strong`, `medium`, or `weak`. Strong means concrete cross-references in both projects' surface metadata; weak means inferred from indirect signals. Triage uses the grade to decide which related components are confident enough to dispatch to.

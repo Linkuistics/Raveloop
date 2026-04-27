@@ -1,6 +1,6 @@
 = Reference
 
-The reference is the spec. It documents what every command does, what every state file contains, and how the phase cycle composes from those pieces. The companion link:tutorial-00-overview.html[tutorial] is the narrative for someone running Ravel-Lite for the first time; this reference is what you reach for once you already know what you want to do.
+The reference is the spec. It documents what every command does, what every state file contains, and how the phase cycle composes from those pieces. The companion link:../tutorials/00-overview.html[tutorial] is the narrative for someone running Ravel-Lite for the first time; this reference is what you reach for once you already know what you want to do.
 
 Three pillars organise the surface area: the workflow Ravel-Lite drives, the file formats it reads and writes, and the CLI it exposes.
 
@@ -8,25 +8,25 @@ Three pillars organise the surface area: the workflow Ravel-Lite drives, the fil
 
 How Ravel-Lite progresses through a development cycle, and the contract each phase honours.
 
-* link:reference-concepts.html[Concepts] — projects, plans, agent backends, the "no magic" principle, and a glossary of terms used throughout the rest of the reference.
-* link:reference-phase-cycle.html[Phase cycle] — every phase's input and output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
+* link:concepts.html[Concepts] — projects, plans, agent backends, the "no magic" principle, and a glossary of terms used throughout the rest of the reference.
+* link:phase-cycle.html[Phase cycle] — every phase's input and output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
 
 == File formats
 
 Every piece of state Ravel-Lite manages is a readable file on disk. These pages document each format in full: schema, examples, and the phases that read or write each file.
 
-* link:reference-state-files.html[State files] — `backlog.yaml`, `memory.yaml`, `session-log.yaml`, `latest-session.*`, `phase.md`, and `commits.yaml`.
-* link:reference-cross-plan-files.html[Cross-plan files] — `subagent-dispatch.yaml` and `related-components.yaml`, plus the evidence-grade vocabulary used by the discover and triage flows.
-* link:reference-config-and-prompts.html[Configuration and prompts] — `config.yaml` plus `*.local.yaml` overlay rules, embedded defaults, the token-substitution path used by every prompt-loading route, and per-phase prompt customisation.
+* link:state-files.html[State files] — `backlog.yaml`, `memory.yaml`, `session-log.yaml`, `latest-session.*`, `phase.md`, and `commits.yaml`.
+* link:cross-plan-files.html[Cross-plan files] — `subagent-dispatch.yaml` and `related-components.yaml`, plus the evidence-grade vocabulary used by the discover and triage flows.
+* link:config-and-prompts.html[Configuration and prompts] — `config.yaml` plus `*.local.yaml` overlay rules, embedded defaults, the token-substitution path used by every prompt-loading route, and per-phase prompt customisation.
 
 == CLI
 
 Every user-facing verb the `ravel-lite` binary exposes.
 
-* link:reference-cli-lifecycle.html[Lifecycle commands] — `run`, `create`, `init` (and `--force`), `version`, plus the global flags (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`) that apply across every command.
-* link:reference-cli-state.html[State commands] — `state projects`, `state backlog`, `state memory`, `state session-log`, `state set-phase`, and `state related-components`. The dense surface — most CRUD verbs live here.
-* link:reference-cli-survey.html[Survey commands] — `survey` and `survey-format`, the advanced utilities used during cross-plan discovery.
+* link:cli-lifecycle.html[Lifecycle commands] — `run`, `create`, `init` (and `--force`), `version`, plus the global flags (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`) that apply across every command.
+* link:cli-state.html[State commands] — `state projects`, `state backlog`, `state memory`, `state session-log`, `state set-phase`, and `state related-components`. The dense surface — most CRUD verbs live here.
+* link:cli-survey.html[Survey commands] — `survey` and `survey-format`, the advanced utilities used during cross-plan discovery.
 
 == A note on style
 
-Reference pages favour friendly prose over bullet lists, and avoid emoji. Each command or format entry covers invocation or schema, flags or fields, what it does, side effects, and gotchas. Where a worked example is the clearest explanation, the link:tutorial-00-overview.html[tutorial] is where it lives — reference pages cite the tutorial rather than re-narrating.
+Reference pages favour friendly prose over bullet lists, and avoid emoji. Each command or format entry covers invocation or schema, flags or fields, what it does, side effects, and gotchas. Where a worked example is the clearest explanation, the link:../tutorials/00-overview.html[tutorial] is where it lives — reference pages cite the tutorial rather than re-narrating.

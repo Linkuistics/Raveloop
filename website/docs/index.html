@@ -1,7 +1,7 @@
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>The reference is the spec. It documents what every command does, what every state file contains, and how the phase cycle composes from those pieces. The companion <a href="tutorial-00-overview.html">tutorial</a> is the narrative for someone running Ravel-Lite for the first time; this reference is what you reach for once you already know what you want to do.</p>
+<p>The reference is the spec. It documents what every command does, what every state file contains, and how the phase cycle composes from those pieces. The companion <a href="../tutorials/00-overview.html">tutorial</a> is the narrative for someone running Ravel-Lite for the first time; this reference is what you reach for once you already know what you want to do.</p>
 </div>
 <div class="paragraph">
 <p>Three pillars organise the surface area: the workflow Ravel-Lite drives, the file formats it reads and writes, and the CLI it exposes.</p>
@@ -17,10 +17,10 @@
 <div class="ulist">
 <ul>
 <li>
-<p><a href="reference-concepts.html">Concepts</a> — projects, plans, agent backends, the "no magic" principle, and a glossary of terms used throughout the rest of the reference.</p>
+<p><a href="concepts.html">Concepts</a> — projects, plans, agent backends, the "no magic" principle, and a glossary of terms used throughout the rest of the reference.</p>
 </li>
 <li>
-<p><a href="reference-phase-cycle.html">Phase cycle</a> — every phase&#8217;s input and output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.</p>
+<p><a href="phase-cycle.html">Phase cycle</a> — every phase&#8217;s input and output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.</p>
 </li>
 </ul>
 </div>
@@ -35,13 +35,13 @@
 <div class="ulist">
 <ul>
 <li>
-<p><a href="reference-state-files.html">State files</a> — <code>backlog.yaml</code>, <code>memory.yaml</code>, <code>session-log.yaml</code>, <code>latest-session.*</code>, <code>phase.md</code>, and <code>commits.yaml</code>.</p>
+<p><a href="state-files.html">State files</a> — <code>backlog.yaml</code>, <code>memory.yaml</code>, <code>session-log.yaml</code>, <code>latest-session.*</code>, <code>phase.md</code>, and <code>commits.yaml</code>.</p>
 </li>
 <li>
-<p><a href="reference-cross-plan-files.html">Cross-plan files</a> — <code>subagent-dispatch.yaml</code> and <code>related-components.yaml</code>, plus the evidence-grade vocabulary used by the discover and triage flows.</p>
+<p><a href="cross-plan-files.html">Cross-plan files</a> — <code>subagent-dispatch.yaml</code> and <code>related-components.yaml</code>, plus the evidence-grade vocabulary used by the discover and triage flows.</p>
 </li>
 <li>
-<p><a href="reference-config-and-prompts.html">Configuration and prompts</a> — <code>config.yaml</code> plus <code>*.local.yaml</code> overlay rules, embedded defaults, the token-substitution path used by every prompt-loading route, and per-phase prompt customisation.</p>
+<p><a href="config-and-prompts.html">Configuration and prompts</a> — <code>config.yaml</code> plus <code>*.local.yaml</code> overlay rules, embedded defaults, the token-substitution path used by every prompt-loading route, and per-phase prompt customisation.</p>
 </li>
 </ul>
 </div>
@@ -56,13 +56,13 @@
 <div class="ulist">
 <ul>
 <li>
-<p><a href="reference-cli-lifecycle.html">Lifecycle commands</a> — <code>run</code>, <code>create</code>, <code>init</code> (and <code>--force</code>), <code>version</code>, plus the global flags (<code>--config</code>, <code>RAVEL_LITE_CONFIG</code>, <code>--dangerous</code>) that apply across every command.</p>
+<p><a href="cli-lifecycle.html">Lifecycle commands</a> — <code>run</code>, <code>create</code>, <code>init</code> (and <code>--force</code>), <code>version</code>, plus the global flags (<code>--config</code>, <code>RAVEL_LITE_CONFIG</code>, <code>--dangerous</code>) that apply across every command.</p>
 </li>
 <li>
-<p><a href="reference-cli-state.html">State commands</a> — <code>state projects</code>, <code>state backlog</code>, <code>state memory</code>, <code>state session-log</code>, <code>state set-phase</code>, and <code>state related-components</code>. The dense surface — most CRUD verbs live here.</p>
+<p><a href="cli-state.html">State commands</a> — <code>state projects</code>, <code>state backlog</code>, <code>state memory</code>, <code>state session-log</code>, <code>state set-phase</code>, and <code>state related-components</code>. The dense surface — most CRUD verbs live here.</p>
 </li>
 <li>
-<p><a href="reference-cli-survey.html">Survey commands</a> — <code>survey</code> and <code>survey-format</code>, the advanced utilities used during cross-plan discovery.</p>
+<p><a href="cli-survey.html">Survey commands</a> — <code>survey</code> and <code>survey-format</code>, the advanced utilities used during cross-plan discovery.</p>
 </li>
 </ul>
 </div>
@@ -72,7 +72,7 @@
 <h2 id="_a_note_on_style">A note on style</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Reference pages favour friendly prose over bullet lists, and avoid emoji. Each command or format entry covers invocation or schema, flags or fields, what it does, side effects, and gotchas. Where a worked example is the clearest explanation, the <a href="tutorial-00-overview.html">tutorial</a> is where it lives — reference pages cite the tutorial rather than re-narrating.</p>
+<p>Reference pages favour friendly prose over bullet lists, and avoid emoji. Each command or format entry covers invocation or schema, flags or fields, what it does, side effects, and gotchas. Where a worked example is the clearest explanation, the <a href="../tutorials/00-overview.html">tutorial</a> is where it lives — reference pages cite the tutorial rather than re-narrating.</p>
 </div>
 </div>
 </div>

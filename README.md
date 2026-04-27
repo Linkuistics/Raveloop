@@ -68,29 +68,31 @@ point.
 
 ## Documentation
 
-User-facing docs are authored as AsciiDoc chapters under `docs/` and
-built into HTML pages wrapped in the Linkuistics site chrome. Chapter
-order lives in `docs/manifest.txt` (one source path per line); the HTML
-shell is `docs/templates/page-shell.html`; per-project values (project
-slug, back-link, output directory) live in `docs/build-config.sh`.
+User-facing docs are authored as AsciiDoc chapters under `docs/reference/`
+and `docs/tutorial/`. The published copy lives on
+[www.linkuistics.com](https://www.linkuistics.com/projects/ravel-lite/);
+that pipeline reads `website/docs/` and `website/tutorials/` directly via
+`git archive`, wraps each fragment in the site shell, and rewrites
+sibling-relative `<page>.html` links into the deployed directory URLs
+(`/projects/ravel-lite/docs/<page>/`). Chapter order, navigation chrome,
+and per-project metadata are owned by the website pipeline (see
+`website/meta.yml`).
 
 Prerequisites: `asciidoctor` on `PATH` (`brew install asciidoctor` on
-macOS). Build:
+macOS). Render the embedded HTML fragments:
 
 ```bash
-./scripts/build-docs.sh
+./scripts/render-docs.sh
 ```
 
-The script flattens `tutorial/foo.adoc` and `reference/bar.adoc` into
-a single `projects/ravel-lite/tutorial-foo.html` /
-`projects/ravel-lite/reference-bar.html` layer under the configured
-`OUTPUT_DIR` — by default the sibling `www.linkuistics.com` checkout —
-and injects a prev/next chapter navigation at the bottom of each page
-based on manifest order.
+This renders every `docs/reference/*.adoc` into `website/docs/<name>.html`
+and every `docs/tutorial/*.adoc` into `website/tutorials/<name>.html`.
+The output is what the website pipeline consumes; commit the rendered
+fragments alongside their `.adoc` sources.
 
-The template and build script are intentionally project-agnostic: to
-adopt the same pattern in another project, copy `scripts/build-docs.sh`
-and `docs/templates/` verbatim and edit only `docs/build-config.sh`.
+Cross-page links inside a `.adoc` source use sibling-relative form with
+the `.html` extension: `link:state-files.html[State files]`. The website
+pipeline strips the extension and emits a directory URL.
 
 ## Releasing
 

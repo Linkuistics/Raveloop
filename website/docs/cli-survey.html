@@ -1,6 +1,74 @@
+<div id="preamble">
+<div class="sectionbody">
 <div class="paragraph">
-<p>This page is a placeholder. When complete it will document <code>ravel-lite survey</code> and <code>ravel-lite survey-format</code> — the advanced utilities used during cross-plan discovery. Survey verbs are advanced surface area, not core lifecycle, so the page is expected to be short.</p>
+<p>The survey verbs produce an LLM-driven prioritisation across one or more plans. They sit outside the regular phase loop: a survey reads each plan&#8217;s phase, backlog, and memory in a single fresh-context Claude session, and emits a per-plan summary with a recommended invocation order. Multi-plan <code>ravel-lite run</code> calls <code>survey</code> automatically between cycles to drive its selection prompt; the user-facing verb is also there for direct invocation when you want a status overview without committing to a cycle.</p>
 </div>
 <div class="paragraph">
-<p>The corresponding backlog task is <code>reference-cli-survey-commands-survey-survey-format</code>.</p>
+<p>Two verbs ship: <code>survey</code> does the LLM call and emits canonical YAML; <code>survey-format</code> renders a saved YAML survey as human-readable markdown. Read-only and side-effect-free apart from the Claude API call (<code>survey</code>) and stdout printing (both).</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_survey"><code>survey</code></h2>
+<div class="sectionbody">
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite survey [--config &lt;path&gt;] [--model &lt;name&gt;]
+                  [--timeout-secs &lt;n&gt;] [--prior &lt;path&gt;] [--force]
+                  &lt;plan_dir&gt;...</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>&lt;plan_dir&gt;&#8230;&#8203;</code></dt>
+<dd>
+<p>Plan directories to survey. At least one required. Each must contain a <code>phase.md</code>. The verb replaces the former plan-root walk; callers now name plans individually.</p>
+</dd>
+<dt class="hdlist1"><code>--config &lt;path&gt;</code></dt>
+<dd>
+<p>See the <a href="cli-lifecycle.html#global-flags">lifecycle-page global flags</a>.</p>
+</dd>
+<dt class="hdlist1"><code>--model &lt;name&gt;</code></dt>
+<dd>
+<p>Override the model used for the survey call. The precedence chain is <code>--model</code> flag → <code>models.survey</code> in <code>agents/claude-code/config.yaml</code> → the <code>DEFAULT_SURVEY_MODEL</code> constant baked into the binary. Use this when the configured survey model is unavailable or you want to cross-check against a different one.</p>
+</dd>
+<dt class="hdlist1"><code>--timeout-secs &lt;n&gt;</code></dt>
+<dd>
+<p>Override the survey subprocess timeout. Default 300 seconds. The survey fails with a diagnostic error and a partial-stdout dump if claude does not produce a result within the window. Bump it if surveys against many plans are timing out; lower it for faster failure during debugging.</p>
+</dd>
+<dt class="hdlist1"><code>--prior &lt;path&gt;</code></dt>
+<dd>
+<p>Path to a prior survey YAML to use as the baseline for an incremental run. Plans whose <code>input_hash</code> matches the prior are carried forward verbatim; only changed and added plans are sent to the LLM. Rejected schemas and unrecognised versions produce a loud error pointing at <code>--force</code> for remediation. This is how multi-plan mode reuses the previous cycle&#8217;s survey state efficiently.</p>
+</dd>
+<dt class="hdlist1"><code>--force</code></dt>
+<dd>
+<p>Re-analyse every plan regardless of whether its hash matches the prior. Has no effect without <code>--prior</code>. Intended for debugging and schema-bump remediation, when you want to invalidate the incremental cache wholesale.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The output is canonical YAML on stdout. Save it to a file (or pass <code>--survey-state</code> on <code>ravel-lite run</code> to manage the file automatically) for incremental reuse on the next survey. Render it for humans with <code>survey-format</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_survey_format"><code>survey-format</code></h2>
+<div class="sectionbody">
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite survey-format &lt;file&gt;</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>&lt;file&gt;</code></dt>
+<dd>
+<p>Path to a YAML survey file as produced by <code>ravel-lite survey</code>.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Renders the survey as human-readable markdown on stdout. Read-only — no network call, no LLM, no file mutation. Use it to inspect a saved survey state file, debug an incremental cache, or eyeball the priority ordering before a manual selection.</p>
+</div>
+</div>
 </div>

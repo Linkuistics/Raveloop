@@ -1,5 +1,89 @@
-= CLI: lifecycle commands
+= Lifecycle commands
 
-This page is a placeholder. When complete it will document `ravel-lite run`, `create`, `init` (and `--force`), `version` (and `--version`), and the global flags (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`) that apply across every command. Each entry covers invocation, flags, what the command does, what it writes, side effects, exit codes, and gotchas.
+The lifecycle commands are the verbs you reach for to set up a config directory, scaffold a plan, drive the phase loop, and identify a running binary. They are the always-needed surface — every other command sits underneath `ravel-lite state` (covered on the link:cli-state.html[State commands] page) or behind the advanced `survey` workflow (link:cli-survey.html[Survey commands]).
 
-The corresponding backlog task is `reference-cli-lifecycle-commands-run-create-init-version-global-flags`.
+This page documents the four lifecycle verbs, plus the global flags that apply to several of them. Each verb section covers invocation, flags with defaults, side effects, and the gotchas a first-time user runs into.
+
+[[global-flags]]
+== Global flags
+
+A small set of flags appears on every command that needs to locate the config directory or alter agent behaviour. They are documented once here and cross-referenced from the per-command sections.
+
+`--config <path>`:: Explicit config directory. Overrides the env var and the platform default. Useful for running an isolated config (one-off experiments, CI, multi-account setups).
+
+`RAVEL_LITE_CONFIG`:: Environment-variable equivalent of `--config`. Used when the flag is omitted. Setting it makes a shell session use a non-default config dir without typing the flag for every invocation.
+
+`--dangerous`:: Claude Code only. Adds `--dangerously-skip-permissions` to every spawned agent process for the run, suppressing the per-tool permission prompts. Equivalent to setting `dangerous: true` for every phase in `agents/claude-code/config.yaml`. Pi ignores the flag with a warning. Use it when you trust the cycle to do what its prompts say and want unattended runs.
+
+The precedence chain for the config directory is `--config` → `$RAVEL_LITE_CONFIG` → `dirs::config_dir()/ravel-lite`. The third is the platform default — `~/Library/Application Support/ravel-lite` on macOS, `~/.config/ravel-lite` on Linux. If none of the three resolves, every command that needs a config dir errors with a hint that points at `ravel-lite init`.
+
+== `init`
+
+Materialises a config directory on disk. Writes the embedded defaults — agent config files, phase prompts, the universal coding-style and memory-style files under `fixed-memory/` — into the target directory.
+
+----
+ravel-lite init <dir> [--force]
+----
+
+`<dir>`:: Target directory. Created if it does not exist. Refused if it exists and is non-empty unless `--force` is set.
+
+`--force`:: Overwrite existing files in `<dir>`. The default refuses to clobber, so a stale `init` against a populated directory is a no-op without this flag. With `--force`, every embedded default is rewritten — useful for refreshing prompts after upgrading the binary.
+
+`init` is the only lifecycle command that does not need the config directory to already exist; it is how the config directory comes into being. After it runs, set `RAVEL_LITE_CONFIG=<dir>` (or pass `--config <dir>` to subsequent commands) so the rest of the CLI knows where to look.
+
+The materialised tree is the read source for every subsequent run. Editing files under it is supported — the orchestrator reads them on each invocation, so a customised prompt or a new model setting takes effect on the next phase. See the link:config-and-prompts.html[Configuration and prompts] reference for the layout in full.
+
+== `create`
+
+Bootstraps a new plan directory through an interactive Claude Code session. Reads the create-plan prompt template from the config directory, appends the target plan path, and hands stdio off to claude so the conversation runs in the user's terminal.
+
+----
+ravel-lite create [--config <path>] <plan_dir>
+----
+
+`<plan_dir>`:: Path to the new plan directory. Must not exist; its parent must exist. Conventionally `<project>/LLM_STATE/<plan-name>/`.
+
+`--config <path>`:: See <<global-flags>>.
+
+`create` reuses the work-phase model from `agents/claude-code/config.yaml`, so the agent it spawns matches the one that will run subsequent work phases. It scopes claude to the parent directory via `--add-dir`, which keeps the bootstrap conversation focused on the project subtree.
+
+The output of a successful `create` is a populated plan directory containing `backlog.yaml`, `memory.yaml` (seeded with any starter entries the user dictated), `phase.md` set to `work`, and the baseline files the phase loop needs. After it returns, run `ravel-lite run <plan_dir>` to start cycling.
+
+`create` is interactive — it inherits stdio rather than running through the TUI — because plan creation is a conversation, not a transformation of structured state. Pi is not currently supported as the create-plan agent.
+
+== `run`
+
+The phase loop entry point. Drives one or more plans through the full work → analyse-work → reflect → (dream?) → triage cycle, looping until the user stops or the backlog empties. The link:phase-cycle.html[Phase cycle] reference documents what each phase does.
+
+----
+ravel-lite run [--config <path>] [--dangerous] [--debug]
+               [--survey-state <path>] <plan_dir>...
+----
+
+`<plan_dir>...`:: One or more plan directories. With a single directory, the loop runs continuously and prompts "Proceed to next work phase?" between cycles. With two or more, multi-plan mode kicks in: every cycle starts with a survey across all plans, the user picks one from a numbered prompt, and one phase cycle runs against the selection.
+
+`--config <path>`, `--dangerous`:: See <<global-flags>>.
+
+`--debug`:: Enable byte-level capture of every agent invocation. Tees the spawn argv, prompt, raw stdout/stderr, and exit status to `/tmp/ravel-embedding-debug.log` and passes `--debug-file /tmp/ravel-claude-debug.log` to every claude invocation. Both files are truncated at the start of the run. Use when diagnosing TUI hangs or unexpected agent output; otherwise leave it off.
+
+`--survey-state <path>`:: Path to the survey state file used by multi-plan mode. The same file is read as `--prior` at the start of each survey and rewritten with the new survey at the end. Required for two or more plan dirs; rejected for exactly one.
+
+The loop reads `<plan_dir>/phase.md` to decide which phase to run next, so resumption after a crash is automatic — whichever phase was current is the one that runs again. Single-plan mode is the original behaviour: continuous cycling through one plan, with a yes/no prompt between cycles. Multi-plan mode is for users who want to keep several plans in motion: it prioritises plans via the LLM survey and lets the user pick one cycle at a time.
+
+`run` validates that every plan directory contains a `phase.md` before starting, and registers each plan's project subtree in the catalog (with an interactive collision prompt if a project name maps to a different path than catalogued). The TUI then takes over stdio for the duration of the run.
+
+== `version`
+
+Prints the installed ravel-lite version and exits.
+
+----
+ravel-lite version
+----
+
+The same output is produced by the `--version` flag — the subcommand form is provided for symmetry with the rest of the CLI surface. Output shape:
+
+----
+ravel-lite 0.1.0 (v0.1.0-2-g15c2c8c-dirty, built 2026-04-21T06:42:18Z)
+----
+
+The three components are the crate version, `git describe --tags --always --dirty` from the build, and the UTC build timestamp. A running binary therefore always identifies the commit it was built from, which makes "what version is this user running?" a one-line question regardless of how the binary was distributed.

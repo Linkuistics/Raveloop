@@ -1,6 +1,411 @@
+<div id="preamble">
+<div class="sectionbody">
 <div class="paragraph">
-<p>This page is a placeholder. When complete it will document <code>ravel-lite state</code> and every subcommand: <code>state projects</code>, <code>state backlog</code> (the dense CRUD surface), <code>state memory</code>, <code>state session-log</code>, <code>state set-phase</code>, and <code>state related-components</code>. Each entry covers invocation, flags, what the command does, side effects, and gotchas.</p>
+<p><code>ravel-lite state</code> is the surface every phase prompt uses to mutate plan state. It exists so a prompt can express "flip task X to done" or "add memory entry Y" as one shell call rather than the Read+Write tool-call pair (and the matching permission prompts) that direct file editing would require. A single allowlist entry — <code>Bash(ravel-lite state *)</code> — is enough to permit every state mutation a phase needs.</p>
 </div>
 <div class="paragraph">
-<p>The corresponding backlog task is <code>reference-cli-state-commands-projects-backlog-memory-session-log-set-phase-related-components</code>.</p>
+<p>The verbs are grouped under six subcommand namespaces: <code>projects</code> (the per-user component catalog), <code>backlog</code>, <code>memory</code>, <code>session-log</code>, <code>set-phase</code>, and <code>related-components</code>. This page documents each group in turn. Two further namespaces — <code>migrate</code> and <code>discover-proposals</code> — are advanced or transient, covered at the end.</p>
+</div>
+<div class="paragraph">
+<p>Output formats appear consistently across the read verbs: <code>--format yaml</code> is the default and the canonical machine-readable form, <code>--format json</code> is available where the output is structured, and <code>--format markdown</code> is offered on backlog <code>list</code> (the human-readable view). The <a href="state-files.html">State files</a> and <a href="cross-plan-files.html">Cross-plan files</a> references document the underlying file schemas.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_projects"><code>state projects</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The per-user projects catalog at <code>&lt;config-dir&gt;/projects.yaml</code> maps component names to absolute paths. Component names are the shared currency of the cross-plan graph (<code>&lt;config-dir&gt;/related-components.yaml</code>); this catalog is the per-user resolver from name to path. It is auto-populated when <code>ravel-lite run</code> encounters a new project, and the verbs below let you inspect or edit it directly.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>projects list</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state projects list [--config &lt;path&gt;]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Emits the catalog as YAML on stdout. An empty catalog is valid output.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>projects add</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state projects add [--config &lt;path&gt;]
+                              [--name &lt;name&gt;] --path &lt;path&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Adds an entry mapping <code>--name</code> to <code>--path</code>. Relative paths resolve against the current working directory. If <code>--name</code> is omitted, the basename of the resolved path is used. Refuses duplicate names and duplicate paths so two entries cannot disagree about the same project.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>projects remove</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state projects remove [--config &lt;path&gt;] &lt;name&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Removes the entry for <code>&lt;name&gt;</code>. Errors if no such entry exists.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>projects rename</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state projects rename [--config &lt;path&gt;] &lt;old&gt; &lt;new&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Renames an entry. The rename cascades into <code>&lt;config-dir&gt;/related-components.yaml</code> (every edge participant matching <code>&lt;old&gt;</code> is rewritten to <code>&lt;new&gt;</code>) and into the discover surface cache at <code>&lt;config-dir&gt;/discover-cache/&lt;name&gt;.yaml</code>. Cascade points are intentionally enumerated rather than discovered, so adding a fourth file that references project names will need explicit cascade handling at the call site.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>--config &lt;path&gt;</code></dt>
+<dd>
+<p>See the <a href="cli-lifecycle.html#global-flags">lifecycle-page global flags</a>. Available on every <code>projects</code> verb above.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_backlog"><code>state backlog</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The densest surface in the CLI — every CRUD verb on <code>backlog.yaml</code> lives here. Read the <a href="state-files.html">State files</a> reference for the file&#8217;s schema; this section documents the verbs that read or mutate it.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Verb</th>
+<th class="tableblock halign-left valign-top">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>list</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Emit tasks matching a filter. Default format is YAML.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>show &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Emit one task by id.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>add</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Append a new task with title, category, optional description, and optional dependencies.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>init</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">One-shot bulk initialisation from a <code>body-file</code>. Refuses a non-empty backlog — used by <code>create-plan</code> only.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-status &lt;id&gt; &lt;status&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Update status. <code>--reason</code> required when setting <code>blocked</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-results &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set the Results block from <code>--body-file</code> or <code>--body</code> (with <code>-</code> for stdin).</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-description &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Rewrite the brief authored at <code>add</code> time. Use when external references (file paths, doc anchors) have moved.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-handoff &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Set the hand-off block, the optional context triage may promote into a new task or archive into memory.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>clear-handoff &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Drop the hand-off block. Triage uses this after promote-or-archive.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-title &lt;id&gt; &lt;new&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Rename a task; id is preserved.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>set-dependencies &lt;id&gt; --deps a,b,c</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Replace the dependency list. Validates ids, rejects self-reference and cycles. <code>--deps ""</code> clears.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>reorder &lt;id&gt; &lt;position&gt; &lt;target&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Move a task in the linear backlog order. <code>&lt;position&gt;</code> is <code>before</code> or <code>after</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>delete &lt;id&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Remove a task. Refuses if it is a dependency of another, unless <code>--force</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>lint-dependencies</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Read-only report of drift between prose task-id mentions and structured <code>dependencies:</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>repair-stale-statuses</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Flip <code>in_progress</code> tasks that have a Results block to <code>done</code>; flip <code>blocked</code> tasks whose deps are all done back to <code>not_started</code>. Exit code 1 if any repair would apply (scripting signal).</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>A few of the verbs warrant additional notes.</p>
+</div>
+<div class="paragraph">
+<p><code>list</code> filters compose with AND. Available filters: <code>--status &lt;name&gt;</code> (one of <code>not_started</code>, <code>in_progress</code>, <code>done</code>, <code>blocked</code>); <code>--category &lt;name&gt;</code>; <code>--ready</code> (shorthand for <code>status=not_started AND every dep is done</code>); <code>--has-handoff</code>; <code>--missing-results</code> (done tasks without a Results block). Output formats are <code>yaml</code> (default), <code>json</code>, and <code>markdown</code>. The markdown layout is sectioned by category by default; <code>--group-by status</code> switches to per-status sections.</p>
+</div>
+<div class="paragraph">
+<p><code>list --format markdown</code> is the canonical human-readable view used by the work-phase prompt at the start of each cycle. It deliberately does not include task ids — they bloated the table width. Phases that need ids derive them from titles via the deterministic <code>allocate_id</code> mapping or fall back to <code>--format yaml</code>.</p>
+</div>
+<div class="paragraph">
+<p><code>set-results</code> and <code>set-description</code> and <code>set-handoff</code> all accept either <code>--body-file &lt;path&gt;</code> or <code>--body &lt;text&gt;</code>. Pass <code>--body -</code> to read the body from stdin; pass any other string as the inline body. The two flags are mutually exclusive.</p>
+</div>
+<div class="paragraph">
+<p><code>repair-stale-statuses</code> is the recovery verb that analyse-work runs after every cycle. It catches the case where a phase wrote a Results block but forgot to flip the status, and the case where a <code>blocked</code> task&#8217;s blockers all completed. Exit code 1 means at least one repair applied — useful for scripts that want to detect drift before launching another cycle.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_memory"><code>state memory</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>CRUD for <code>memory.yaml</code>. Dream uses these verbs per-entry rather than bulk-swapping the file, so a partial dream can be examined in git history.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>memory list</code></dt>
+<dd>
+<p>Emit every entry as YAML (or <code>--format json</code>).</p>
+</dd>
+<dt class="hdlist1"><code>memory show &lt;id&gt;</code></dt>
+<dd>
+<p>Emit one entry.</p>
+</dd>
+<dt class="hdlist1"><code>memory add --title &lt;t&gt; [--body-file|--body &lt;body&gt;]</code></dt>
+<dd>
+<p>Append a new entry.</p>
+</dd>
+<dt class="hdlist1"><code>memory init --body-file &lt;path&gt;</code></dt>
+<dd>
+<p>One-shot bulk init for create-plan. Refuses a non-empty memory.</p>
+</dd>
+<dt class="hdlist1"><code>memory set-body &lt;id&gt; [--body-file|--body &lt;body&gt;]</code></dt>
+<dd>
+<p>Rewrite an entry&#8217;s body.</p>
+</dd>
+<dt class="hdlist1"><code>memory set-title &lt;id&gt; &lt;new&gt;</code></dt>
+<dd>
+<p>Rename an entry.</p>
+</dd>
+<dt class="hdlist1"><code>memory delete &lt;id&gt;</code></dt>
+<dd>
+<p>Remove an entry.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The four memory entry types — <code>user</code>, <code>feedback</code>, <code>project</code>, <code>reference</code> — are conventions enforced by the <code>memory-style.md</code> guidance file (under <code>&lt;config-dir&gt;/fixed-memory/</code>), not by the schema. The CLI treats every entry uniformly. The <a href="state-files.html">State files</a> reference covers the type semantics and when each one applies.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_session_log"><code>state session-log</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Read and write <code>session-log.yaml</code> (the append-only history) and <code>latest-session.yaml</code> (the single most recent record).</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>session-log list</code></dt>
+<dd>
+<p>Emit records as YAML. <code>--limit &lt;n&gt;</code> keeps the newest <code>n</code>.</p>
+</dd>
+<dt class="hdlist1"><code>session-log show &lt;id&gt;</code></dt>
+<dd>
+<p>Show one record by id.</p>
+</dd>
+<dt class="hdlist1"><code>session-log append --id &lt;id&gt; --timestamp &lt;ts&gt; [--phase &lt;p&gt;] [--body-file|--body]</code></dt>
+<dd>
+<p>Append to <code>session-log.yaml</code>. Idempotent on id — a record already present is a no-op.</p>
+</dd>
+<dt class="hdlist1"><code>session-log set-latest --id &lt;id&gt; --timestamp &lt;ts&gt; [--phase &lt;p&gt;] [--body-file|--body]</code></dt>
+<dd>
+<p>Overwrite <code>latest-session.yaml</code> with a new single record. Used by analyse-work to hand the session to git-commit-work.</p>
+</dd>
+<dt class="hdlist1"><code>session-log show-latest</code></dt>
+<dd>
+<p>Emit `latest-session.yaml&#8217;s record.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The split between the two files is load-bearing: <code>latest-session.yaml</code> is single-record and overwritten every cycle (so it can be read by the next phase without scanning the whole history); <code>session-log.yaml</code> is append-only and grows over the lifetime of the plan. The git-commit-work handler appends the latest record to the log between phases — that mirroring is mechanical Rust, not an LLM action, so a phase prompt cannot forget it.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_set_phase"><code>state set-phase</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Rewrite <code>&lt;plan-dir&gt;/phase.md</code> to the named phase. Validates the phase string against the enum and requires <code>phase.md</code> to already exist (so a typo cannot accidentally create a new plan dir).</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state set-phase &lt;plan_dir&gt; &lt;phase&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Accepted phase names: <code>work</code>, <code>analyse-work</code>, <code>reflect</code>, <code>dream</code>, <code>triage</code>, <code>git-commit-work</code>, <code>git-commit-reflect</code>, <code>git-commit-dream</code>, <code>git-commit-triage</code>. A typo comes back with the full list in the error message.</p>
+</div>
+<div class="paragraph">
+<p>Every reasoning phase ends with this verb to advance the cycle. Manual invocation is also supported — when recovering from a crash or replaying a phase, set <code>phase.md</code> directly to the phase you want to run next, then <code>ravel-lite run</code> will pick up there. The verb also seeds <code>&lt;plan-dir&gt;/dream-word-count</code> if missing, doubling as a defense-in-depth migration point for plans that pre-date the rename from <code>dream-baseline</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_related_components"><code>state related-components</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The cross-plan graph at <code>&lt;config-dir&gt;/related-components.yaml</code>. Edges follow the component-ontology v2 schema; participants reference components by name (resolved per-user via the projects catalog). The <a href="cross-plan-files.html">Cross-plan files</a> reference covers the file format, edge kinds, and evidence-grade vocabulary in detail.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>related-components list</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state related-components list [--config &lt;path&gt;]
+                                         [--plan &lt;plan_dir&gt;]
+                                         [--kind &lt;kind&gt;]
+                                         [--lifecycle &lt;scope&gt;]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Emit edges as YAML. Filters AND-combine: <code>--plan</code> restricts to edges involving the component that owns <code>&lt;plan&gt;</code> (derived as <code>&lt;plan&gt;/../..</code>); <code>--kind</code> and <code>--lifecycle</code> restrict by the v2 kebab-case vocabularies.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>related-components add-edge</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state related-components add-edge [--config &lt;path&gt;]
+                                             &lt;kind&gt; &lt;lifecycle&gt; &lt;a&gt; &lt;b&gt;
+                                             --evidence-grade &lt;grade&gt;
+                                             [--evidence-field &lt;f&gt;]...
+                                             --rationale &lt;text&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Add an edge with the full ontology v2 field set. <code>kind</code> and <code>lifecycle</code> are positional; everything else is a flag. Symmetric kinds are participant-order-insensitive; directed kinds use the canonical order from <code>docs/component-ontology.md</code> §6. Refuses unknown component names. <code>--evidence-grade strong</code> and <code>medium</code> require at least one <code>--evidence-field</code>; <code>weak</code> may omit. <code>--rationale</code> is a non-empty paragraph-length human justification.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>related-components remove-edge</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state related-components remove-edge [--config &lt;path&gt;]
+                                                &lt;kind&gt; &lt;lifecycle&gt; &lt;a&gt; &lt;b&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Remove the unique edge matching <code>(kind, lifecycle, canonicalised participants)</code>. Errors if no match.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>related-components discover</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state related-components discover [--config &lt;path&gt;]
+                                             [--project &lt;name&gt;]
+                                             [--concurrency &lt;n&gt;]
+                                             [--apply]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Run the two-stage LLM discovery pipeline over all catalogued components (or just <code>--project &lt;name&gt;</code>). Writes proposals to <code>&lt;config-dir&gt;/discover-proposals.yaml</code> for user review. <code>--apply</code> skips the review gate and runs <code>discover-apply</code> immediately. Default Stage 1 concurrency is 4.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>related-components discover-apply</code></dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state related-components discover-apply [--config &lt;path&gt;]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Merge a previously-produced <code>discover-proposals.yaml</code> into <code>related-components.yaml</code>. Idempotent; reports and rejects directional conflicts without aborting the whole apply.</p>
+</div>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_migrate"><code>state migrate</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Single-plan conversion of legacy <code>.md</code> plan-state files into typed <code>.yaml</code> siblings. Covers <code>backlog.md</code>, <code>memory.md</code>, <code>session-log.md</code>, and <code>latest-session.md</code> (each written when present).</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state migrate &lt;plan_dir&gt;
+                         [--dry-run] [--keep-originals|--delete-originals]
+                         [--force]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Defaults: keep the <code>.md</code> originals; refuse to overwrite a differing <code>backlog.yaml</code>. <code>--dry-run</code> reports without writing. <code>--delete-originals</code> removes the <code>.md</code> files only after both write and validation succeed. <code>--force</code> overwrites a divergent existing <code>backlog.yaml</code> (use after manually reconciling).</p>
+</div>
+<div class="paragraph">
+<p>This verb is for the one-time legacy upgrade path; new plans created via <code>ravel-lite create</code> start in the typed-YAML format and never need it.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_discover_proposals"><code>state discover-proposals</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Append-only verb used by Stage 2 of the discovery pipeline. Each proposal goes through <code>add-proposal</code> rather than the LLM writing the whole file at once; clap rejects a hallucinated <code>--kind</code>/<code>--lifecycle</code>/<code>--evidence-grade</code> so the LLM retries that single call instead of nuking everything.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state discover-proposals add-proposal
+    [--config &lt;path&gt;]
+    --kind &lt;kind&gt; --lifecycle &lt;scope&gt;
+    --participant &lt;name&gt; --participant &lt;name&gt;
+    --evidence-grade &lt;grade&gt;
+    [--evidence-field &lt;f&gt;]...
+    --rationale &lt;text&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Most users do not invoke this verb directly — it is wired into the <code>discover</code> flow. It surfaces here for completeness and because the validation contract (clap rejects unknown vocabulary terms; <code>Edge::validate()</code> rejects self-loops; the catalog check rejects unknown participants) is the same one users see if they invoke it during debugging.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_state_phase_summary"><code>state phase-summary</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Deterministic labelled-line summary of what changed in <code>backlog.yaml</code> (triage) or <code>memory.yaml</code> (reflect/dream) between a baseline commit and the current working-tree state.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ravel-lite state phase-summary render &lt;plan_dir&gt;
+    --phase &lt;triage|reflect|dream&gt;
+    [--baseline &lt;sha&gt;]
+    [--format text|yaml]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Used at the end of each mutating phase to produce the structural diff that goes into the session log. Replaces the LLM&#8217;s manual re-transcription of its own tool calls — the narrative preamble stays in the LLM but the structural diff is computed in Rust.</p>
+</div>
+<div class="paragraph">
+<p><code>--baseline ""</code> (or omitted) means "first cycle, no prior state" — only additions are reported. The default text format is one labelled line per mutation (e.g. <code>[ADDED] task-id: title</code>); <code>--format yaml</code> is the structured form for machine consumers.</p>
+</div>
+</div>
 </div>

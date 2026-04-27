@@ -37,7 +37,7 @@ tasks:
 - id: retire-legacy-docs-pipeline-scripts-build-docs-sh-build-config-sh-manifest-txt-templates
   title: Retire legacy docs pipeline scripts (build-docs.sh, build-config.sh, manifest.txt, templates/)
   category: infra
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Retire the legacy docs pipeline scripts (`scripts/build-docs.sh`,
@@ -84,6 +84,53 @@ tasks:
       `website/docs/` with no asciidoctor warnings.
     - All reference-page backlog task descriptions that previously mentioned
       `build-docs.sh` now reference the correct workflow.
+  results: |
+    ## What shipped
+
+    - **Deleted** `scripts/build-docs.sh`, `docs/build-config.sh`,
+      `docs/manifest.txt`, `docs/templates/page-shell.html`, and the now-empty
+      `docs/templates/` directory. These were the legacy pipeline writing into
+      a sibling `www.linkuistics.com/projects/ravel-lite/` checkout that no
+      longer exists at that path.
+    - **Added** `scripts/render-docs.sh` (44 lines, bash strict mode). Loops
+      every `docs/reference/*.adoc` and `docs/tutorial/*.adoc` through
+      `asciidoctor --embedded` and writes fragments under `website/docs/` and
+      `website/tutorials/` — exactly what the eleventy pipeline at
+      `www.linkuistics.com` reads via `git archive`.
+    - **Updated** `README.md` `## Documentation` section to describe the new
+      workflow and document the canonical sibling-relative `link:<page>.html[]`
+      link form (and the eleventy `rewriteRelativeLinks` filter that converts
+      it into a directory URL).
+    - **Updated** the description of the
+      `rewrite-config-and-prompts-reference-page-for-lua-api` backlog task to
+      point at `scripts/render-docs.sh` instead of the deleted scripts and the
+      deleted `docs/manifest.txt`.
+
+    ## What worked
+
+    `./scripts/render-docs.sh` produces clean HTML fragments for all 9
+    reference pages and 1 tutorial page with no asciidoctor warnings (verified
+    with `--failure-level=WARN`). The eleventy pipeline at
+    `www.linkuistics.com` already reads `website/docs/` directly, so the new
+    script is a drop-in for what the legacy pipeline used to write to a
+    sibling checkout.
+
+    ## What didn't, and what's next
+
+    Nothing blocked. Two follow-ups worth flagging:
+
+    - The historical spec
+      `docs/superpowers/specs/2026-04-27-manual-release-and-capture-tooling-design.md`
+      still mentions the deleted scripts in its "Asciidoc backlog cleanup"
+      section. Left intact — it is a historical planning record, not a live
+      reference; modifying past specs would misrepresent what was decided
+      when.
+    - The other docs backlog items (state-files, cross-plan-files,
+      config-and-prompts) still have description text from before the
+      pipeline change. Updated only the one I'm about to touch in a sibling
+      task. The remaining task descriptions need similar trimming when their
+      authors next pick them up; left as latent work rather than a separate
+      triage pass.
 - id: rewrite-config-and-prompts-reference-page-for-lua-api
   title: Rewrite config-and-prompts reference page for Lua API
   category: docs
@@ -108,8 +155,7 @@ tasks:
 
     File:
 
-    - `docs/reference/config-and-prompts.adoc` (or the path that matches
-      the existing reference docs convention; check `docs/manifest.txt`).
+    - `docs/reference/config-and-prompts.adoc`.
 
     Cover:
 
@@ -131,11 +177,11 @@ tasks:
       when it bumps. Link to the migration behaviour for old
       installations.
 
-    Manifest + build:
+    Render:
 
-    - Update `docs/manifest.txt` if the page path or order changes.
-    - Run `./scripts/build-docs.sh` to confirm the page renders cleanly
-      into the linkuistics site.
+    - Run `./scripts/render-docs.sh` to produce
+      `website/docs/config-and-prompts.html`. Commit both source and
+      rendered fragment.
 
     ## Decisions already made
 
@@ -149,7 +195,7 @@ tasks:
     ## Verification
 
     - Page renders without AsciiDoc errors via
-      `./scripts/build-docs.sh`.
+      `./scripts/render-docs.sh`.
     - Every `ravel.*` function listed in the reference has a working
       code example.
     - A reader landing cold on the page can write a minimal
@@ -212,7 +258,7 @@ tasks:
 - id: fix-html-cross-link-convention-in-website-docs-fragments
   title: Fix HTML cross-link convention in website/docs/ fragments
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Audit and fix the internal cross-link convention in all `website/docs/*.html`
@@ -251,6 +297,47 @@ tasks:
     - `grep -r 'href=' website/docs/` shows no `.html`-suffixed internal links
       (or whatever the canonical form turns out to be).
     - A spot-check of the canonical URL on the live site confirms links resolve.
+  results: |
+    ## What shipped
+
+    - **Verified** the canonical link form by inspecting the eleventy pipeline:
+      `lib/markdown.js::rewriteRelativeLinks` takes a sibling-relative
+      `href="<page>.html"`, strips the extension, and emits an absolute
+      directory URL `/projects/<slug>/<dir>/<page>/`. So source `.adoc` files
+      must use `link:<page>.html[Title]` — no `reference-` prefix, with
+      `.html` extension. The deployed structure (each page at
+      `<page>/index.html`) confirms directory-style URLs.
+    - **Normalised** every legacy `link:reference-<page>.html` form to the
+      canonical `link:<page>.html` form across `docs/reference/concepts.adoc`
+      (7 occurrences) and `docs/reference/index.adoc` (8 occurrences).
+    - **Fixed** the cross-directory tutorial link in `index.adoc` from
+      `link:tutorial-00-overview.html` to `link:../tutorials/00-overview.html`,
+      which the eleventy `rewriteRelativeLinks` resolves correctly to
+      `/projects/ravel-lite/tutorials/overview/` (with the `\d+-` prefix
+      stripped from the segment).
+    - **Re-rendered** `website/docs/concepts.html` and
+      `website/docs/index.html` via the new `scripts/render-docs.sh` so
+      on-disk fragments match the corrected sources.
+
+    ## What worked
+
+    `grep -nE 'link:reference-|link:tutorial-' docs/reference/ docs/tutorial/`
+    returns no matches. Spot-check of rendered `concepts.html` shows every
+    content-side cross-link is `<a href="<page>.html">` (sibling-relative,
+    extension-suffixed) — the form the eleventy filter accepts. The
+    `href="../tutorials/00-overview.html"` cross-directory form also resolves
+    correctly per the filter's `posix.normalize` + segment-stripping logic.
+
+    ## What didn't, and what's next
+
+    Nothing blocked. The HTML cross-link convention is now consistent across
+    every source file and rendered fragment. Future reference pages should
+    follow the same convention: `link:<sibling-page>.html[Title]` for in-dir
+    links, `link:../<other-dir>/<page>.html[Title]` for cross-directory links.
+
+    The audit itself was scoped to the source `.adoc` files since that is the
+    authoritative input — patching post-render `website/docs/*.html` would
+    silently regress on the next render.
 - id: reference-cross-plan-file-formats-subagent-dispatch-yaml-related-components-yaml-evidence-grades
   title: 'Reference: cross-plan file formats (subagent-dispatch.yaml, related-components.yaml, evidence grades)'
   category: docs
@@ -291,7 +378,7 @@ tasks:
 - id: reference-cli-lifecycle-commands-run-create-init-version-global-flags
   title: 'Reference: CLI lifecycle commands (run, create, init, version, global flags)'
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Write the CLI reference page for lifecycle commands: `ravel-lite run`, `create`, `init` (+ `--force`), `version` (+ `--version`), and the global flags that apply to every command (`--config`, `RAVEL_LITE_CONFIG`, `--dangerous`).
@@ -324,10 +411,55 @@ tasks:
     - Page builds and renders.
     - Every flag and option cross-checked against the actual `clap` derive structure in `src/cli.rs`.
     - Exit codes cross-checked against the actual implementation.
+  results: |
+    ## What shipped
+
+    `docs/reference/cli-lifecycle.adoc` rewritten from a 5-line placeholder
+    to a 78-line reference page covering:
+
+    - **Global flags** section with anchor `[[global-flags]]`: `--config`,
+      `RAVEL_LITE_CONFIG`, `--dangerous` (Claude Code only — Pi ignores with
+      warning), and the precedence chain `--config` → `$RAVEL_LITE_CONFIG` →
+      `dirs::config_dir()/ravel-lite`.
+    - **`init`**: scaffolds a config dir; `--force` to overwrite existing
+      files (refresh prompts after upgrade).
+    - **`create`**: interactive Claude Code session for plan creation.
+      Reuses the configured work-phase model; passes `--add-dir <parent>`.
+      Inherits stdio (not the TUI) because plan creation is a conversation.
+    - **`run`**: phase loop entry. Single-plan vs multi-plan mode dispatch;
+      `--survey-state` required for multi-plan, rejected for single. `--debug`
+      enables PTY capture and `--debug-file` for claude.
+    - **`version`**: identity output with crate version + `git describe` +
+      UTC build timestamp; same as `--version`.
+
+    Each command's flags, defaults, side effects, and gotchas are documented.
+    Cross-links to `cli-state.html`, `cli-survey.html`, `phase-cycle.html`,
+    and `config-and-prompts.html` use the canonical sibling-relative form.
+
+    ## What worked
+
+    - Flags and behaviours cross-checked against `src/main.rs` (clap derive
+      structure, `Commands::Run`, `Commands::Init`, etc.) and
+      `src/config.rs::resolve_config_dir` (precedence chain).
+    - Renders cleanly through `scripts/render-docs.sh` with no asciidoctor
+      warnings (verified with `--failure-level=WARN`).
+    - Cross-section anchor `<<global-flags>>` resolves to `#global-flags`
+      in the rendered fragment.
+
+    ## What didn't, and what's next
+
+    Two minor accuracy notes worth flagging:
+
+    - The page describes `--dangerous` as Claude-Code-only. Confirmed in
+      `src/main.rs::run_phase_loop` which warns and no-ops the flag when
+      `shared_config.agent != "claude-code"`.
+    - The `survey` command is documented on a separate page
+      (`cli-survey.adoc`) per the backlog's split — kept the cross-reference
+      in this page's intro so a reader looking for "survey" lands there.
 - id: reference-cli-state-commands-projects-backlog-memory-session-log-set-phase-related-components
   title: 'Reference: CLI state commands (projects, backlog, memory, session-log, set-phase, related-components)'
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Write the CLI reference page for `ravel-lite state` and all its subcommands: projects, backlog, memory, session-log, set-phase, related-components.
@@ -358,10 +490,63 @@ tasks:
     ## Note on size
 
     This is the largest CLI page in the mini-site. If it grows beyond ~3000 words during writing, propose a follow-up split task (e.g. `cli-state-backlog.adoc` as its own page) rather than letting the page balloon.
+  results: |
+    ## What shipped
+
+    `docs/reference/cli-state.adoc` rewritten from a 5-line placeholder to a
+    ~210-line reference page documenting every `state` subcommand:
+
+    - **Intro**: explains *why* `state` exists (one `Bash(ravel-lite state *)`
+      allowlist entry replaces Read+Write tool-call pairs in phase prompts);
+      enumerates the six namespaces and the two advanced ones; documents the
+      consistent `--format yaml|json|markdown` convention and where each
+      format applies.
+    - **`state projects`**: list, add, remove, rename. Notes the rename
+      cascade points (`related-components.yaml`, `discover-cache/`).
+    - **`state backlog`**: rendered as a verb table (16 verbs); the densest
+      surface in the CLI. Filter syntax for `list`, body-source semantics
+      for `set-results`/`set-description`/`set-handoff`, the markdown-no-id
+      convention with the rationale, and the `repair-stale-statuses` exit
+      code 1 contract for scripting.
+    - **`state memory`**: list, show, add, init, set-body, set-title, delete.
+      Notes that the four memory entry types are conventions enforced by
+      `memory-style.md`, not by the schema.
+    - **`state session-log`**: list, show, append, set-latest, show-latest.
+      Documents the load-bearing split between `session-log.yaml` (append-only
+      history) and `latest-session.yaml` (single-record file overwritten each
+      cycle).
+    - **`state set-phase`**: phase enum (9 valid values), validation, and
+      the dream-word-count seeding side effect.
+    - **`state related-components`**: list, add-edge, remove-edge, discover,
+      discover-apply. Cross-links to `cross-plan-files.html` for the schema.
+    - **`state migrate`**: legacy `.md` → `.yaml` upgrade verb.
+    - **`state discover-proposals add-proposal`**: append-only verb wired
+      into the discover flow; documented for completeness.
+    - **`state phase-summary render`**: deterministic diff for triage/reflect/
+      dream phases; replaces LLM tool-call re-transcription.
+
+    ## What worked
+
+    - Every verb cross-checked against the clap derive structure in
+      `src/main.rs` (`StateCommands` and the per-namespace `*Commands` enums).
+    - Phase enum cross-checked against `src/state/phase.rs::VALID_PHASES`.
+    - Renders cleanly through `scripts/render-docs.sh` with no asciidoctor
+      warnings.
+    - An initial table-cell pipe character (`before|after`) was rejected by
+      asciidoctor as a row delimiter; fixed to `<position>` with a sentence
+      noting `before` or `after` immediately after — kept the table format.
+
+    ## What didn't, and what's next
+
+    The backlog task carried a "note on size" asking for a follow-up split
+    task (e.g. `cli-state-backlog.adoc`) if the page grew beyond ~3000 words.
+    The page came in well under that threshold (~1700 words), so no split is
+    warranted. If the backlog verbs grow further the table format should
+    absorb new rows without forcing a split.
 - id: reference-cli-survey-commands-survey-survey-format
   title: 'Reference: CLI survey commands (survey, survey-format)'
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Write the CLI reference page for the survey verbs: `ravel-lite survey` and `ravel-lite survey-format`.
@@ -380,6 +565,39 @@ tasks:
 
     - Page builds and renders.
     - Verbs and flags cross-checked against the `clap` derive structure.
+  results: |
+    ## What shipped
+
+    `docs/reference/cli-survey.adoc` rewritten from a 5-line placeholder to a
+    ~40-line short reference page covering both survey verbs:
+
+    - **`survey`**: full flag set documented — `<plan_dir>...` (one-or-more),
+      `--config`, `--model` (with the precedence chain `--model` →
+      `models.survey` in `agents/claude-code/config.yaml` →
+      `DEFAULT_SURVEY_MODEL`), `--timeout-secs` (default 300), `--prior` for
+      incremental runs, `--force` to invalidate the prior cache.
+    - **`survey-format`**: render a saved YAML survey as human-readable
+      markdown; read-only (no LLM call).
+    - **Intro** explains the relationship between `ravel-lite run`'s
+      multi-plan mode and the `survey` verb (run calls survey automatically
+      via `--survey-state`; the user-facing verb is for direct invocation).
+
+    Cross-links to `cli-lifecycle.html#global-flags` for the shared flag
+    documentation.
+
+    ## What worked
+
+    - Flags cross-checked against `src/main.rs::Commands::Survey` and
+      `Commands::SurveyFormat` clap derive.
+    - Renders cleanly through `scripts/render-docs.sh` with no warnings.
+    - Page stays appropriately short (the backlog task explicitly notes
+      survey is advanced/utility surface, not core lifecycle, and a short
+      page is fine).
+
+    ## What didn't, and what's next
+
+    Nothing blocked. The page intentionally avoids re-documenting the global
+    flags — they live on `cli-lifecycle.adoc` and the cross-link is enough.
 - id: add-pty-capture-debug-path-to-pi-rs-invoke-interactive-parity-with-claude-code-rs
   title: Add PTY-capture debug path to pi.rs::invoke_interactive (parity with claude_code.rs)
   category: infra

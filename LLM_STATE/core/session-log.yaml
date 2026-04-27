@@ -1037,3 +1037,22 @@ sessions:
     - What didn't: Nothing failed; the task was completed in full.
     - What this suggests next: The remaining docs reference pages (config-and-prompts, CLI state commands, CLI survey commands) can be tackled in subsequent cycles.
     - Key learnings: The phase-cycle page was the foundational reference needed before the CLI pages can cross-link to it. The page structure (shape diagram → reasoning phases → audit-trail phases → cross-cutting mechanisms → baselines → recovery) proved clean and navigable.
+- id: session-72
+  timestamp: 2026-04-27T13:20:14Z
+  phase: work
+  body: |
+    ### Session 72 (2026-04-27T13:20:14Z) — Retire legacy docs pipeline and write three CLI reference pages
+
+    - Retired `scripts/build-docs.sh`, `docs/build-config.sh`, `docs/manifest.txt`, and `docs/templates/page-shell.html` — the legacy pipeline writing into a sibling `www.linkuistics.com/` checkout that no longer exists at that path.
+    - Added `scripts/render-docs.sh` (44 lines, bash strict mode) as the replacement: loops every `docs/reference/*.adoc` and `docs/tutorial/*.adoc` through `asciidoctor --embedded` and writes fragments to `website/docs/` and `website/tutorials/`.
+    - Updated `README.md` documentation section to describe the new workflow (render-docs.sh, website/docs/ layout, cross-link convention).
+    - Fixed cross-link convention in `website/docs/` HTML fragments (sibling-relative `.html` links rewritten to match what the eleventy pipeline emits).
+    - Wrote `docs/reference/cli-lifecycle.adoc` — full reference for `run`, `create`, `init`, `version`, and global flags; cross-checked against `src/main.rs` clap derive; renders cleanly via render-docs.sh.
+    - Wrote `docs/reference/cli-state.adoc` — reference for all six `state` namespaces (projects, backlog, memory, session-log, set-phase, related-components) plus migrate and discover-proposals; ~210 lines with a 16-verb backlog table; kept well under the 3000-word split threshold.
+    - Wrote `docs/reference/cli-survey.adoc` — short reference for `survey` and `survey-format` verbs; cross-links to cli-lifecycle for global flags.
+    - All three reference pages rendered via `scripts/render-docs.sh`; corresponding HTML under `website/docs/` updated in the same session.
+    - `docs/reference/concepts.adoc` and `docs/reference/index.adoc` received minor updates to cross-link and index the new pages.
+
+    What worked: the `--embedded` flag in render-docs.sh produces clean standalone HTML fragments with no custom template needed. The asciidoctor table-cell pipe character restriction (a bare `before|after` inside a cell was parsed as a row delimiter) required one formatting fix in cli-state.adoc.
+
+    What's next: remaining reference pages in the backlog (cli-state-backlog split if needed, cross-plan-files, state-files) can follow the same pattern established here.

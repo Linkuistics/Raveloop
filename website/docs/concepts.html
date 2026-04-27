@@ -37,7 +37,7 @@
 </div>
 </div>
 <div class="paragraph">
-<p>A project can host multiple plans. Each is its own directory under <code>LLM_STATE/</code> and runs its own cycle independently. Distinct plans may share backlog conventions but never share state — <code>&lt;plan_a&gt;/backlog.yaml</code> and <code>&lt;plan_b&gt;/backlog.yaml</code> are two different files with two different lifecycles. The <a href="reference-state-files.html">State files</a> reference documents the schema and lifecycle of every file above.</p>
+<p>A project can host multiple plans. Each is its own directory under <code>LLM_STATE/</code> and runs its own cycle independently. Distinct plans may share backlog conventions but never share state — <code>&lt;plan_a&gt;/backlog.yaml</code> and <code>&lt;plan_b&gt;/backlog.yaml</code> are two different files with two different lifecycles. The <a href="state-files.html">State files</a> reference documents the schema and lifecycle of every file above.</p>
 </div>
 </div>
 </div>
@@ -61,7 +61,7 @@
 <p>Selection happens once, when Ravel-Lite is invoked. The orchestrator constructs the matching agent implementation, hands it the per-phase prompt, and streams its JSON output. Switching agents mid-cycle isn&#8217;t supported — pick one, run a cycle, switch in the next cycle if you want.</p>
 </div>
 <div class="paragraph">
-<p>Each backend has its own configuration directory under <code>agents/&lt;name&gt;/</code>, sibling to the project&#8217;s <code>config.yaml</code>. Pi additionally carries a <code>subagents/</code> directory with definitions for the brainstorming, TDD, and writing-plans skills the orchestrator dispatches against during specific phases. The <a href="reference-config-and-prompts.html">Configuration and prompts</a> reference covers the per-backend layout in full.</p>
+<p>Each backend has its own configuration directory under <code>agents/&lt;name&gt;/</code>, sibling to the project&#8217;s <code>config.yaml</code>. Pi additionally carries a <code>subagents/</code> directory with definitions for the brainstorming, TDD, and writing-plans skills the orchestrator dispatches against during specific phases. The <a href="config-and-prompts.html">Configuration and prompts</a> reference covers the per-backend layout in full.</p>
 </div>
 </div>
 </div>
@@ -99,7 +99,7 @@
 <dl>
 <dt class="hdlist1">Phase</dt>
 <dd>
-<p>A discrete agent invocation against a specific prompt file. There are five reasoning phases (work, analyse-work, reflect, dream, triage) plus the four <code>git-commit-*</code> phases that audit-log them. The <a href="reference-phase-cycle.html">Phase cycle</a> reference documents each one&#8217;s input and output contract.</p>
+<p>A discrete agent invocation against a specific prompt file. There are five reasoning phases (work, analyse-work, reflect, dream, triage) plus the four <code>git-commit-*</code> phases that audit-log them. The <a href="phase-cycle.html">Phase cycle</a> reference documents each one&#8217;s input and output contract.</p>
 </dd>
 <dt class="hdlist1">Cycle</dt>
 <dd>
@@ -107,7 +107,7 @@
 </dd>
 <dt class="hdlist1">Dispatch</dt>
 <dd>
-<p>The triage phase spawning a subagent — either against a sibling plan (to propagate cross-plan learnings) or against a brainstorming, TDD, or writing-plans skill (to delegate focused thinking). Triage writes <code>subagent-dispatch.yaml</code>; the orchestrator spawns the described subagents. See the <a href="reference-cross-plan-files.html">Cross-plan files</a> reference.</p>
+<p>The triage phase spawning a subagent — either against a sibling plan (to propagate cross-plan learnings) or against a brainstorming, TDD, or writing-plans skill (to delegate focused thinking). Triage writes <code>subagent-dispatch.yaml</code>; the orchestrator spawns the described subagents. See the <a href="cross-plan-files.html">Cross-plan files</a> reference.</p>
 </dd>
 <dt class="hdlist1">Baseline</dt>
 <dd>
@@ -115,11 +115,11 @@
 </dd>
 <dt class="hdlist1">Plan-state files</dt>
 <dd>
-<p>The on-disk files inside a plan directory — <code>backlog.yaml</code>, <code>memory.yaml</code>, <code>session-log.yaml</code>, <code>latest-session.*</code>, <code>phase.md</code>, <code>commits.yaml</code>. Editable by hand. Documented in the <a href="reference-state-files.html">State files</a> reference.</p>
+<p>The on-disk files inside a plan directory — <code>backlog.yaml</code>, <code>memory.yaml</code>, <code>session-log.yaml</code>, <code>latest-session.*</code>, <code>phase.md</code>, <code>commits.yaml</code>. Editable by hand. Documented in the <a href="state-files.html">State files</a> reference.</p>
 </dd>
 <dt class="hdlist1">Durable memory</dt>
 <dd>
-<p>The contents of <code>memory.yaml</code>. Distilled learnings carried across cycles. Reflect appends; dream rewrites losslessly when memory grows past a configured <code>headroom</code> threshold; triage occasionally archives a completed task&#8217;s hand-off into it. The dream-trigger mechanics live on the <a href="reference-phase-cycle.html">Phase cycle</a> page.</p>
+<p>The contents of <code>memory.yaml</code>. Distilled learnings carried across cycles. Reflect appends; dream rewrites losslessly when memory grows past a configured <code>headroom</code> threshold; triage occasionally archives a completed task&#8217;s hand-off into it. The dream-trigger mechanics live on the <a href="phase-cycle.html">Phase cycle</a> page.</p>
 </dd>
 <dt class="hdlist1">Hand-off</dt>
 <dd>
@@ -127,7 +127,7 @@
 </dd>
 <dt class="hdlist1">Related component</dt>
 <dd>
-<p>A peer project linked via <code>related-components.yaml</code>, with an edge kind (<code>orchestrates</code>, <code>depends-on</code>, etc.), a lifecycle scope (<code>dev-workflow</code>, <code>build</code>, <code>runtime</code>), and an evidence grade. The discover phase proposes edges; the user accepts via <code>state related-components add-edge</code>. See the <a href="reference-cross-plan-files.html">Cross-plan files</a> reference.</p>
+<p>A peer project linked via <code>related-components.yaml</code>, with an edge kind (<code>orchestrates</code>, <code>depends-on</code>, etc.), a lifecycle scope (<code>dev-workflow</code>, <code>build</code>, <code>runtime</code>), and an evidence grade. The discover phase proposes edges; the user accepts via <code>state related-components add-edge</code>. See the <a href="cross-plan-files.html">Cross-plan files</a> reference.</p>
 </dd>
 <dt class="hdlist1">Evidence grade</dt>
 <dd>
