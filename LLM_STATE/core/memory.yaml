@@ -603,3 +603,15 @@ entries:
   title: 'Interactive TUI paths log stdio: inherited, not transcript'
   body: |
     For interactive (TUI) spawn paths, stdio is inherited and not capturable; `--debug` records "stdio: inherited (no transcript available)" to avoid silent lossiness. Headless paths capture full output to the debug file. Applies to both `claude_code` and `pi` interactive modes.
+- id: select-config-dir-strips-trailing-slashes-via-components-collect
+  title: select_config_dir strips trailing slashes via components().collect
+  body: |
+    `src/config.rs::select_config_dir` normalises all candidate paths with `candidate.components().collect::<PathBuf>()` before any downstream use. This is the single normalisation point; trailing slashes on user-supplied config dirs do not propagate. Regression test: `trailing_slash_in_candidate_is_normalised_away`.
+- id: interactive-work-phase-spawn-omits-add-dir-for-plan-dir
+  title: Interactive work-phase spawn omits --add-dir for plan dir
+  body: |
+    `invoke_interactive` in `src/agent/claude_code.rs` does not pass `--add-dir <plan_dir>`. The plan dir is always a descendant of the cwd claude launches in; the flag is redundant and on a fresh machine triggers a trust-grant modal that hangs the work phase. See: `Discover stage spawns need --allowed-tools and --add-dir` for stage spawns, which do require `--add-dir`.
+- id: v1-v2-config-migration-wired-into-config-lua-resolve
+  title: v1→v2 config migration wired into config_lua::resolve
+  body: |
+    `src/migrate_v1_to_v2.rs` migrates legacy materialised YAML config (global `config.yaml`, `config.local.yaml`, per-agent `config.yaml`/`tokens.yaml`) to a `config.lua` with version marker. Detects legacy layout by intersecting embedded-default paths with disk. Crash-safe: file writes precede deletes; a mid-run crash leaves legacy files on disk for the next call to complete. Wired in `config_lua::resolve` as the first-touch call before any config layer is read. See: `Config model is layered Lua; config_lua.rs owns it`.
