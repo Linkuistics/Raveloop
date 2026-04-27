@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "ravel-lite"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
