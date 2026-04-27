@@ -17,6 +17,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command as TokioCommand;
 
 use crate::config::{load_agent_config, load_shared_config};
+use crate::debug_log;
 use crate::types::AgentConfig;
 
 use super::compose::{
@@ -349,14 +350,33 @@ async fn spawn_claude_and_read(
     model: &str,
     timeout_override_secs: Option<u64>,
 ) -> Result<String> {
+    let mut args: Vec<String> = vec![
+        "-p".to_string(),
+        prompt.to_string(),
+        "--model".to_string(),
+        model.to_string(),
+        "--strict-mcp-config".to_string(),
+        "--setting-sources".to_string(),
+        "project,local".to_string(),
+    ];
+    if debug_log::is_enabled() {
+        args.extend([
+            "--debug-file".to_string(),
+            debug_log::CLAUDE_DEBUG_FILE.to_string(),
+        ]);
+        debug_log::log(
+            "claude spawn (survey)",
+            &format!(
+                "model: {}\n{}\nprompt:\n{}",
+                model,
+                debug_log::format_argv("claude", &args),
+                prompt.lines().map(|l| format!("    {l}")).collect::<Vec<_>>().join("\n"),
+            ),
+        );
+    }
+
     let mut child = TokioCommand::new("claude")
-        .arg("-p")
-        .arg(prompt)
-        .arg("--model")
-        .arg(model)
-        .arg("--strict-mcp-config")
-        .arg("--setting-sources")
-        .arg("project,local")
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -397,6 +417,19 @@ async fn spawn_claude_and_read(
     }
 
     let status = child.wait().await?;
+    debug_log::log(
+        "claude exit (survey)",
+        &format!(
+            "status: {:?}\nstdout_bytes: {}",
+            status.code(),
+            output.len()
+        ),
+    );
+    if debug_log::is_enabled() {
+        for line in output.lines() {
+            debug_log::log_stream_line("claude", "stdout", line);
+        }
+    }
     if !status.success() {
         anyhow::bail!("claude CLI exited with status {status}");
     }

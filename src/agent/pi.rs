@@ -16,6 +16,7 @@ use super::common::{
     truncate_snippet,
 };
 use crate::config::load_tokens;
+use crate::debug_log;
 use crate::init::{embedded_entries_with_prefix, require_embedded};
 use crate::format::{
     FormattedOutput, Intent, Span, Style, StyledLine, ToolCall, clean_tool_name,
@@ -218,6 +219,18 @@ impl Agent for PiAgent {
             }
         }
 
+        if debug_log::is_enabled() {
+            debug_log::log(
+                "pi spawn (interactive, work)",
+                &format!(
+                    "cwd: {}\nstdio: inherited (no transcript available)\n{}\nprompt:\n{}",
+                    ctx.project_dir,
+                    debug_log::format_argv("pi", &args),
+                    indent_block(prompt),
+                ),
+            );
+        }
+
         let status = std::process::Command::new("pi")
             .args(&args)
             .current_dir(&ctx.project_dir)
@@ -226,6 +239,11 @@ impl Agent for PiAgent {
             .stderr(Stdio::inherit())
             .status()
             .context("Failed to spawn pi")?;
+
+        debug_log::log(
+            "pi exit (interactive, work)",
+            &format!("status: {:?}", status.code()),
+        );
 
         if !status.success() {
             anyhow::bail!("pi exited with code {:?}", status.code());
@@ -243,6 +261,19 @@ impl Agent for PiAgent {
     ) -> Result<()> {
         let system_prompt = self.load_prompt_file("system-prompt.md", ctx)?;
         let args = self.build_headless_args(prompt, phase, &system_prompt);
+
+        if debug_log::is_enabled() {
+            debug_log::log(
+                &format!("pi spawn (headless, {})", phase.as_str()),
+                &format!(
+                    "cwd: {}\nagent_id: {}\n{}\nprompt:\n{}",
+                    ctx.project_dir,
+                    agent_id,
+                    debug_log::format_argv("pi", &args),
+                    indent_block(prompt),
+                ),
+            );
+        }
 
         let child = Command::new("pi")
             .args(&args)
@@ -395,6 +426,15 @@ impl Agent for PiAgent {
 
         Ok(())
     }
+}
+
+/// Indent every line of `body` by four spaces so it renders as a
+/// nested block under a debug-log entry header.
+fn indent_block(body: &str) -> String {
+    body.lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

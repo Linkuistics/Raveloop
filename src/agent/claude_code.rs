@@ -12,6 +12,7 @@ use super::common::{
     truncate_snippet,
 };
 use crate::config::load_tokens;
+use crate::debug_log;
 use crate::format::{
     FormattedOutput, ToolCall, clean_tool_name, extract_tool_detail, format_result_text,
     format_tool_call,
@@ -56,6 +57,13 @@ impl ClaudeCodeAgent {
 
         if self.is_dangerous(phase.as_str()) {
             args.push("--dangerously-skip-permissions".to_string());
+        }
+
+        if debug_log::is_enabled() {
+            args.extend([
+                "--debug-file".to_string(),
+                debug_log::CLAUDE_DEBUG_FILE.to_string(),
+            ]);
         }
 
         args
@@ -178,7 +186,26 @@ impl Agent for ClaudeCodeAgent {
             args.push("--dangerously-skip-permissions".to_string());
         }
 
+        if debug_log::is_enabled() {
+            args.extend([
+                "--debug-file".to_string(),
+                debug_log::CLAUDE_DEBUG_FILE.to_string(),
+            ]);
+        }
+
         args.push(prompt.to_string());
+
+        if debug_log::is_enabled() {
+            debug_log::log(
+                "claude spawn (interactive, work)",
+                &format!(
+                    "cwd: {}\nstdio: inherited (no transcript available)\n{}\nprompt:\n{}",
+                    ctx.project_dir,
+                    debug_log::format_argv("claude", &args),
+                    indent_block(prompt),
+                ),
+            );
+        }
 
         let status = std::process::Command::new("claude")
             .args(&args)
@@ -188,6 +215,11 @@ impl Agent for ClaudeCodeAgent {
             .stderr(Stdio::inherit())
             .status()
             .context("Failed to spawn claude")?;
+
+        debug_log::log(
+            "claude exit (interactive, work)",
+            &format!("status: {:?}", status.code()),
+        );
 
         if !status.success() {
             anyhow::bail!("claude exited with code {:?}", status.code());
@@ -204,6 +236,19 @@ impl Agent for ClaudeCodeAgent {
         tx: UISender,
     ) -> Result<()> {
         let args = self.build_headless_args(prompt, phase, &ctx.plan_dir);
+
+        if debug_log::is_enabled() {
+            debug_log::log(
+                &format!("claude spawn (headless, {})", phase.as_str()),
+                &format!(
+                    "cwd: {}\nagent_id: {}\n{}\nprompt:\n{}",
+                    ctx.project_dir,
+                    agent_id,
+                    debug_log::format_argv("claude", &args),
+                    indent_block(prompt),
+                ),
+            );
+        }
 
         let child = Command::new("claude")
             .args(&args)
@@ -232,6 +277,15 @@ impl Agent for ClaudeCodeAgent {
         load_tokens(Path::new(&self.config_root), "claude-code")
             .unwrap_or_default()
     }
+}
+
+/// Indent every line of `body` by four spaces so it renders as a
+/// nested block under a debug-log entry header.
+fn indent_block(body: &str) -> String {
+    body.lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]

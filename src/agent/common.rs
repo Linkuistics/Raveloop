@@ -21,6 +21,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout};
 use tokio::task::JoinHandle;
 
+use crate::debug_log;
 use crate::format::{FormattedOutput, Intent, Span, Style, StyledLine};
 use crate::types::{LlmPhase, PlanContext};
 use crate::ui::{UIMessage, UISender};
@@ -93,6 +94,7 @@ pub fn spawn_stderr_drain(
         let mut buf = String::new();
         let mut overflow_warned = false;
         while let Ok(Some(line)) = reader.next_line().await {
+            debug_log::log_stream_line(agent_name, "stderr", &line);
             buf.push_str(&line);
             buf.push('\n');
             if buf.len() > STDERR_BUFFER_CAP {
@@ -131,33 +133,36 @@ pub async fn pump_stdout_to_ui(
 
     loop {
         match lines.next_line().await {
-            Ok(Some(line)) => match parse_line(&line, Some(phase), &mut shown_highlights) {
-                StreamLineOutcome::Output(formatted) => {
-                    if formatted.is_empty() {
-                        continue;
+            Ok(Some(line)) => {
+                debug_log::log_stream_line(agent_name, "stdout", &line);
+                match parse_line(&line, Some(phase), &mut shown_highlights) {
+                    StreamLineOutcome::Output(formatted) => {
+                        if formatted.is_empty() {
+                            continue;
+                        }
+                        if formatted.persist {
+                            let _ = tx.send(UIMessage::Persist {
+                                agent_id: agent_id.to_string(),
+                                lines: formatted.lines,
+                            });
+                        } else if let Some(line) = formatted.lines.into_iter().next() {
+                            let _ = tx.send(UIMessage::Progress {
+                                agent_id: agent_id.to_string(),
+                                line,
+                            });
+                        }
                     }
-                    if formatted.persist {
+                    StreamLineOutcome::Malformed { snippet } => {
                         let _ = tx.send(UIMessage::Persist {
                             agent_id: agent_id.to_string(),
-                            lines: formatted.lines,
-                        });
-                    } else if let Some(line) = formatted.lines.into_iter().next() {
-                        let _ = tx.send(UIMessage::Progress {
-                            agent_id: agent_id.to_string(),
-                            line,
+                            lines: vec![warning_line(format!(
+                                "{agent_name} stream-JSON parse failed — dropping line: {snippet}"
+                            ))],
                         });
                     }
+                    StreamLineOutcome::Ignored => {}
                 }
-                StreamLineOutcome::Malformed { snippet } => {
-                    let _ = tx.send(UIMessage::Persist {
-                        agent_id: agent_id.to_string(),
-                        lines: vec![warning_line(format!(
-                            "{agent_name} stream-JSON parse failed — dropping line: {snippet}"
-                        ))],
-                    });
-                }
-                StreamLineOutcome::Ignored => {}
-            },
+            }
             Ok(None) => return None,
             Err(e) => return Some(e.into()),
         }
@@ -182,6 +187,11 @@ pub async fn run_streaming_child(
     let read_err = pump_stdout_to_ui(stdout, phase, agent_id, agent_name, &tx, parse_line).await;
     let status = child.wait().await?;
     let stderr_tail = stderr_task.await.unwrap_or_default();
+
+    debug_log::log(
+        &format!("{agent_name} exit (headless, {})", phase.as_str()),
+        &format!("agent_id: {agent_id}\nstatus: {:?}", status.code()),
+    );
 
     let _ = tx.send(UIMessage::AgentDone {
         agent_id: agent_id.to_string(),

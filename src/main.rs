@@ -93,6 +93,13 @@ enum Commands {
         /// Skip Claude Code permission prompts for every phase (claude-code only).
         #[arg(long)]
         dangerous: bool,
+        /// Pass `--debug-file /tmp/ravel-claude-debug.log` to every
+        /// claude invocation and tee all ravel ↔ claude interaction
+        /// (spawn argv, prompt, raw stdout/stderr, exit status) to
+        /// `/tmp/ravel-embedding-debug.log`. Both files are truncated
+        /// at the start of the run.
+        #[arg(long)]
+        debug: bool,
         /// Path to the survey state file used by multi-plan mode. The
         /// file is both the incremental-survey `--prior` input and the
         /// canonical YAML output written at the end of every survey.
@@ -742,8 +749,11 @@ async fn main() -> Result<()> {
         Commands::Init { dir, force } => {
             init::run_init(&dir, force)
         }
-        Commands::Run { config, dangerous, survey_state, plan_dirs } => {
+        Commands::Run { config, dangerous, debug, survey_state, plan_dirs } => {
             let config_root = resolve_config_dir(config)?;
+            if debug {
+                ravel_lite::debug_log::enable(ravel_lite::debug_log::EMBEDDING_DEBUG_FILE)?;
+            }
             register_projects_from_plan_dirs(&config_root, &plan_dirs)?;
             match plan_dirs.len() {
                 0 => unreachable!("clap requires at least one plan_dir"),

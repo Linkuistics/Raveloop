@@ -3,6 +3,7 @@ pub mod backlog_transitions;
 pub mod config;
 pub mod config_lua;
 pub mod create;
+pub mod debug_log;
 pub mod discover;
 pub mod dream;
 pub mod format;

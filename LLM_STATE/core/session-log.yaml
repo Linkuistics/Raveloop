@@ -977,3 +977,19 @@ sessions:
     - Both paths verified: dev-machine path exits 0 with all-pass markers; simulated clean-machine path (PATH stripped) exits 1 with failure lines and remediation commands for each missing item
     - The four rustup targets are intentionally duplicated between `release-doctor.sh` and `release-build.sh`'s TARGETS array with a sync comment; no shared sourced file introduced (two duplicates beats the indirection of a third file)
     - A new backlog task was added to diagnose the claude TUI becoming invisible after the work-phase banner on a fresh machine (a user-reported issue with `--add-dir`, the trust modal, and the inline-viewport handoff)
+- id: session-68
+  timestamp: 2026-04-27T09:18:48Z
+  phase: work
+  body: |
+    ### Session 68 (2026-04-27T00:00:00Z) — Add --debug flag to ravel-lite run
+
+    - Implemented `--debug` flag on `ravel-lite run` to instrument all ravel ↔ claude interaction
+    - Added `src/debug_log.rs`: a `OnceLock<DebugLog>` singleton with `enable`, `is_enabled`, `log`, `log_stream_line`, and `format_argv`; constants `CLAUDE_DEBUG_FILE` and `EMBEDDING_DEBUG_FILE` centralise the `/tmp/` paths so spawn sites and the CLI handler share one source of truth
+    - Instrumented four spawn sites: `src/agent/claude_code.rs` (interactive and headless), `src/agent/pi.rs` (interactive and headless), `src/agent/common.rs` (`pump_stdout_to_ui` + `spawn_stderr_drain` + exit in `run_streaming_child`), `src/survey/invoke.rs::spawn_claude_and_read`
+    - For interactive (TUI) paths, stdio is inherited and not capturable; the log entry explicitly records "stdio: inherited (no transcript available)" to avoid silent lossiness
+    - `cargo build` clean; 604 tests pass including 3 new tests in `debug_log`; smoke test confirmed `/tmp/ravel-embedding-debug.log` is created and truncated on `ravel-lite run --debug`
+    - `create::run_create` and `discover::stage1` were explicitly left uninstrumented — they are not reachable from `run`, and `--debug` is a `run` flag only
+    - Singleton approach chosen over threading `Option<Arc<DebugLog>>` through the call graph because debug-on/off is process-wide state; the alternative would have changed five-plus function signatures across unrelated call sites
+
+    - The hang-diagnosis task (`diagnose-claude-tui-invisible-after-work-phase-banner-on-a-fresh-machine`) is now more tractable: a colleague can re-run with `--debug` and share both files for offline root-cause analysis
+    - The `remove-redundant-add-dir-from-invoke-interactive-work-phase-spawn` task can now be validated empirically: run with `--debug`, apply the change, confirm the trust-grant modal disappears on a fresh machine

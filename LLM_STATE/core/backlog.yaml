@@ -561,3 +561,124 @@ tasks:
     the embedded-defaults landing (so the doc accurately describes what's
     on disk vs embedded), and the migration landing (so upgrade
     behaviour can be documented from observed reality).
+- id: add-debug-flag-to-ravel-lite-run-for-claude-debug-file-and-embedding-log
+  title: Add --debug flag to ravel-lite run for claude debug-file and embedding log
+  category: infra
+  status: done
+  dependencies: []
+  description: |
+    Add a `--debug` flag to `ravel-lite run` that does two things:
+
+    1. Pass `--debug-file /tmp/ravel-claude-debug.log` to every claude
+       invocation (claude's own internal trace file).
+    2. Tee all ravel ↔ claude interaction (spawn argv, prompt, raw
+       stdout/stderr lines, exit status) to `/tmp/ravel-embedding-debug.log`
+       so the user can correlate ravel-side decisions with the claude-side
+       trace.
+
+    Both files are truncated at the start of every `run` invocation.
+
+    ## Why
+
+    The infra backlog has a "claude TUI invisible after work-phase banner on
+    a fresh machine" diagnosis task. Without a debug log, that condition is
+    opaque. `--debug` makes the spawn argv, the prompt that crosses the
+    boundary, the raw stream-JSON, and the exit code all reviewable after
+    the fact.
+
+    ## Coverage
+
+    - `agent::claude_code` interactive (TUI) and headless paths
+    - `agent::pi` interactive and headless paths (no `--debug-file`,
+      embedding-log only — pi has no equivalent flag)
+    - `survey::invoke::spawn_claude_and_read` (used by `run` in multi-plan
+      mode and by the `survey` subcommand)
+    - `agent::common::run_streaming_child` (raw stdout + stderr + exit
+      status logging, agent-agnostic)
+
+    Out of scope: `create::run_create` and `discover::stage1` — they are
+    not invoked from `run`.
+  results: |
+    ## What was done
+
+    Added a `--debug` flag to `ravel-lite run`. When set:
+
+    - Every claude invocation receives `--debug-file /tmp/ravel-claude-debug.log`.
+    - Every ravel ↔ claude interaction is teed to `/tmp/ravel-embedding-debug.log`.
+
+    Both files are truncated at the start of the run.
+
+    ### New module: `src/debug_log.rs`
+
+    A `OnceLock<DebugLog>` singleton with `enable(path)`, `is_enabled()`,
+    `log(label, body)`, `log_stream_line(agent, channel, line)`, and a
+    `format_argv` helper. The singleton was chosen over threading
+    `Option<Arc<DebugLog>>` through the call graph because debug logging is
+    process-wide on/off state — the alternative would have changed five-plus
+    function signatures (`run_phase_loop`, `run_multi_plan`, `dispatch_one_cycle`,
+    both agent constructors, `run_streaming_child`).
+
+    Constants `CLAUDE_DEBUG_FILE` and `EMBEDDING_DEBUG_FILE` live with the
+    module so the spawn sites and the CLI handler share one source of truth.
+
+    ### CLI
+
+    `src/main.rs` — added `debug: bool` to the `Run` variant and a one-line
+    `debug_log::enable(...)` in the handler. No changes to multi-plan
+    plumbing because the singleton is process-global.
+
+    ### Spawn sites instrumented
+
+    - `src/agent/claude_code.rs` — both `invoke_interactive` and
+      `invoke_headless` log spawn (cwd, argv, prompt) and exit status.
+      `--debug-file` is appended to argv when enabled.
+    - `src/agent/pi.rs` — symmetric instrumentation; no `--debug-file`
+      (pi has no equivalent flag).
+    - `src/agent/common.rs` — `pump_stdout_to_ui` and `spawn_stderr_drain`
+      log every raw line as `claude:stdout` / `claude:stderr`. Exit status
+      is logged in `run_streaming_child` so headless paths get full
+      before/during/after coverage.
+    - `src/survey/invoke.rs::spawn_claude_and_read` — logs spawn, exit
+      status, and the captured stdout body. Survey is used by both `run`
+      (multi-plan) and the standalone `survey` subcommand; only the former
+      enables `--debug`, so the latter sees no behaviour change.
+
+    For the interactive (TUI) case, ravel inherits stdio so no transcript
+    is observable — the spawn entry explicitly says
+    `stdio: inherited (no transcript available)` and only argv + prompt +
+    exit status are logged. This is documented in the entry rather than
+    silently lossy.
+
+    ## What worked
+
+    - `cargo build` — clean.
+    - `cargo test` — 604 tests pass, including 3 new tests in `debug_log`
+      (timestamp formatting, argv rendering, no-op when disabled).
+    - Smoke test: `ravel-lite run --debug /tmp/nonexistent` truncates and
+      creates `/tmp/ravel-embedding-debug.log` with the opening entry
+      before erroring on the bad plan dir.
+    - `ravel-lite run --help` shows the new `--debug` flag with full
+      description.
+
+    ## What didn't / out of scope
+
+    - `src/create.rs` and `src/discover/stage1.rs` were not instrumented.
+      They're invoked by the `create` and `state related-components discover`
+      subcommands respectively, not from `run` — `--debug` is a `run` flag,
+      so they're correctly out of scope.
+    - Did not factor `format_unix_utc` out to a shared module despite
+      duplication with `discover::stage1`. A 30-line helper extracted into
+      a shared util module costs more in indirection than it saves in
+      lines, and the two callers are in unrelated subsystems.
+
+    ## Suggests
+
+    - The neighbouring infra task
+      `diagnose-claude-tui-invisible-after-work-phase-banner-on-a-fresh-machine`
+      becomes much more tractable now: a colleague hitting the hang can
+      re-run with `--debug` and share both files for offline analysis.
+    - The other neighbouring task
+      `remove-redundant-add-dir-from-invoke-interactive-work-phase-spawn`
+      could now be safely re-validated: with `--debug` on, the user can
+      confirm whether the change actually drops the trust-grant modal on a
+      fresh machine.
