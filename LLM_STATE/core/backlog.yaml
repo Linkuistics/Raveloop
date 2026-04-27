@@ -1,97 +1,4 @@
 tasks:
-- id: expand-state-filenames-constants-to-cover-subagent-dispatch-yaml-commits-yaml-phase-md-related-components-yaml-dream-word-count
-  title: Expand state::filenames constants to cover subagent-dispatch.yaml, commits.yaml, phase.md, related-components.yaml, dream-word-count
-  category: core
-  status: done
-  dependencies: []
-  description: |
-    Expand `src/state/filenames.rs` to cover the remaining literal filename strings: `subagent-dispatch.yaml`, `commits.yaml`, `phase.md`, `related-components.yaml`, and `dream-word-count`. Each of these appears in multiple call sites as an unguarded string literal; the refactoring done for the four state-file constants established both the pattern and the module location.
-
-    ## Why
-
-    The adopt-shared-constants task (completed this cycle) closed the rename-drift bug class for the four primary state files. The results noted that `subagent-dispatch.yaml`, `commits.yaml`, `phase.md`, `related-components.yaml`, and `dream-word-count` still appear as scattered literals — one rename away from the same drift. Completing the expansion closes the class entirely.
-
-    ## Scope
-
-    - Add constants to `src/state/filenames.rs`:
-      - `SUBAGENT_DISPATCH_FILENAME = "subagent-dispatch.yaml"`
-      - `COMMITS_FILENAME = "commits.yaml"`
-      - `PHASE_FILENAME = "phase.md"`
-      - `RELATED_COMPONENTS_FILENAME = "related-components.yaml"`
-      - `DREAM_WORD_COUNT_FILENAME = "dream-word-count"`
-    - Grep for each literal and replace with the constant at every non-legacy call site in `src/`.
-    - The `PHASE_HIGHLIGHTS` subagent-dispatch regex should use `filename_suffix_regex(SUBAGENT_DISPATCH_FILENAME)` (same pattern as the four existing constants).
-
-    ## Verification
-
-    - `cargo test --quiet` passes.
-    - `cargo clippy --all-targets` clean.
-    - `grep -rn '"subagent-dispatch\.yaml"\|"commits\.yaml"\|"phase\.md"\|"related-components\.yaml"\|"dream-word-count"' src/` returns only the constant definitions themselves.
-  results: |
-    ## What was done
-
-    Added five constants to `src/state/filenames.rs`:
-
-    - `SUBAGENT_DISPATCH_FILENAME = "subagent-dispatch.yaml"`
-    - `COMMITS_FILENAME = "commits.yaml"`
-    - `PHASE_FILENAME = "phase.md"`
-    - `RELATED_COMPONENTS_FILENAME = "related-components.yaml"`
-    - `DREAM_WORD_COUNT_FILENAME = "dream-word-count"`
-
-    Replaced every non-legacy literal use across `src/`:
-
-    - `src/dream.rs` — all 14 `"dream-word-count"` sites (production + tests).
-    - `src/subagent.rs` — all 3 `"subagent-dispatch.yaml"` sites.
-    - `src/format.rs` — both `filename_suffix_regex(...)` rule sites
-      (`commits.yaml`, `subagent-dispatch.yaml`) plus the `path_to_check.contains("phase.md")` filter at line 239.
-    - `src/create.rs` — scaffold writes and assertions.
-    - `src/phase_loop.rs` — `read_phase`, `write_phase`, plus tests.
-    - `src/main.rs` — `run_phase_loop` plan-dir validation.
-    - `src/multi_plan.rs` — `build_plan_dir_map` validation and tests.
-    - `src/git.rs` — all 11 `"commits.yaml"` sites in `apply_commits_spec`
-      and the test fixtures.
-    - `src/state/phase.rs` — `run_set_phase` target path, error message,
-      and all test fixtures.
-    - `src/survey/discover.rs` — `load_plan` plus 4 test fixtures.
-
-    ## Bonus consolidation
-
-    `src/related_components.rs` previously declared its own
-    `RELATED_COMPONENTS_FILE` constant with a different naming
-    convention (`_FILE` suffix) than the rest of `state::filenames`
-    (`_FILENAME` suffix). Per the universal coding-style rule "Use
-    uniform naming semantics", the local constant was deleted and all
-    five usages (3 in `related_components.rs`, 1 in `projects.rs`, plus
-    test references via `super::*`) now route through
-    `state::filenames::RELATED_COMPONENTS_FILENAME`. One canonical
-    home for every plan-state filename now.
-
-    ## Boundary preserved
-
-    `src/ontology/yaml_io.rs` is a deliberately host-agnostic library
-    module (per its docstring: "Host-agnostic: callers supply the full
-    path to the file, not a config root"). Importing the host's
-    filename constant there would couple the destined-for-workspace-crate
-    library to the host adapter. Instead, the test fixtures in that file
-    were renamed from `"related-components.yaml"` to `"edges.yaml"` —
-    neutral name, signals the library doesn't care, eliminates the grep
-    hit while preserving the architectural boundary.
-
-    ## Verification
-
-    - `cargo build`: clean.
-    - `cargo test --quiet`: 590 unit tests + every integration suite green.
-    - `cargo clippy --all-targets`: clean (no warnings under `[lints.rust] warnings = "deny"`).
-    - `grep -rn '"subagent-dispatch\.yaml"\|"commits\.yaml"\|"phase\.md"\|"related-components\.yaml"\|"dream-word-count"' src/`
-      returns only the five constant definitions in `src/state/filenames.rs`.
-
-    ## What this suggests next
-
-    The rename-drift bug class for plan-state filenames is now fully closed.
-    The same pattern would apply to other scattered filename literals if any
-    remain — none surfaced during this sweep. If a future rename is
-    contemplated (e.g., to disambiguate `dream-word-count` from a more
-    descriptive name), it is now a single-file change.
 - id: add-minimal-github-actions-ci-workflow-build-test-clippy
   title: 'Add minimal GitHub Actions CI workflow: build, test, clippy'
   category: infra
@@ -123,6 +30,37 @@ tasks:
     - Workflow runs green on a test push to a branch.
     - A deliberate clippy violation introduced on a branch causes the workflow to fail.
     - Merge to main only after the workflow passes.
+- id: provision-homebrew-tap-infrastructure-and-cut-first-test-release
+  title: Provision Homebrew tap infrastructure and cut first test release
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Provision the three operator prerequisites that make the cargo-dist Homebrew pipeline functional, then run the first end-to-end test release to confirm bottles publish correctly.
+
+    ## Why
+
+    `[workspace.metadata.dist]` and `.github/workflows/release.yml` are committed and ready. The pipeline is non-functional until: (1) the tap repository exists, (2) a PAT with write access is created, and (3) the secret is registered. None of these steps require code changes — they are operator actions on GitHub.
+
+    ## Steps
+
+    1. **Create the tap repository**: create `Linkuistics/homebrew-taps` as a public GitHub repo. The release workflow's `publish-homebrew-formula` job expects it to exist.
+
+    2. **Generate a PAT**: in GitHub account settings → Developer settings → Personal access tokens, create a fine-grained (or classic) token with `repo` scope covering `Linkuistics/homebrew-taps`. Classic token with full `repo` scope is simplest.
+
+    3. **Add the secret**: in `Linkuistics/Ravel-Lite` → Settings → Secrets and variables → Actions, add a repository secret named `HOMEBREW_TAP_TOKEN` with the PAT value.
+
+    4. **Cut a prerelease test tag**: run `cargo release patch --execute` on a test branch, or push a manual tag like `v1.0.2-test1`. Because `dist.toml` excludes pre-releases from tap publication (`publish-prereleases = false`), the publish-homebrew-formula job will be skipped — this exercises the full build-and-bottle pipeline without writing a real formula update.
+
+    5. **Verify end-to-end**: confirm per-target tarballs are produced (aarch64/x86_64 × macOS/Linux), checksums match, and a formula artifact is generated even if not published.
+
+    6. **Cut the first real release**: once the prerelease test passes, cut a proper semver tag (e.g. `v1.0.2`) to exercise the full pipeline including formula publication.
+
+    ## Verification
+
+    - GitHub Actions workflow run on the prerelease tag produces four tarballs and a `ravel-lite.rb` artifact with no auth error.
+    - On a clean macOS machine (or fresh Homebrew prefix): `brew install linkuistics/taps/ravel-lite` completes in seconds without invoking cargo.
+    - `ravel-lite --version` on the installed binary matches the git tag.
 - id: set-up-asciidoc-to-html-build-pipeline-for-ravel-lite-docs
   title: Set up AsciiDoc-to-HTML build pipeline for Ravel-Lite docs
   category: infra
@@ -155,150 +93,11 @@ tasks:
   - set-up-asciidoc-to-html-build-pipeline-for-ravel-lite-docs
   description: |
     Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
-- id: add-ravel-lite-rb-homebrew-formula-to-linkuistics-homebrew-taps
-  title: Ship bottled Homebrew install via cargo-dist (no cargo build on user's machine)
-  category: infra
-  status: done
-  dependencies: []
-  description: |
-    Ship `brew install linkuistics/taps/ravel-lite` as a **bottled install** — no Rust toolchain required on the user's machine. Mirrors the approach being adopted in the sibling project at `/Users/antony/Development/mdformat/`, which is solving the same problem at the same time with the same tooling; whichever lands first sets the concrete pattern.
-
-    ## Approach
-
-    Use [cargo-dist](https://opensource.axo.dev/cargo-dist/) to drive a release pipeline that produces pre-built binaries on version tags and publishes a Homebrew formula that installs those binaries directly.
-
-    ### Concrete pieces
-
-    - **`cargo-dist` config** in `Cargo.toml` (or `dist-workspace.toml`) declaring the release targets — at minimum `aarch64-apple-darwin` and `x86_64-apple-darwin`; Linux targets (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`) if the formula should also serve Linux brew users.
-    - **GitHub Actions workflow** (generated by `cargo dist init`) that fires on `v*` tags: builds per-target binaries, creates a GitHub release with the tarballs + checksums, and produces a Homebrew formula artifact.
-    - **Homebrew formula** at `linkuistics/homebrew-taps/Formula/ravel-lite.rb` — a *bottle-style* formula whose `url` points at the GitHub release tarball for the user's platform, declares SHA256s, and has NO `depends_on "rust"`. Installation is a tarball extract into `#{prefix}/bin`, not a cargo build. cargo-dist can generate this formula as part of the release pipeline and the pipeline can open a PR (or direct commit) to the homebrew-taps repo.
-    - **Release cadence**: continue using `cargo-release` to cut versions and push tags; the tag push triggers the cargo-dist workflow which handles everything downstream.
-
-    ## Out of scope / non-goals
-
-    - No from-source fallback in the formula. If a user needs a custom build they can `cargo install --path .` from a clone — the formula is specifically the bottled path.
-    - No cross-compilation gymnastics beyond what cargo-dist provides out of the box. If a target is hard, drop it.
-
-    ## Verification
-
-    1. Tag a test release (e.g. `v0.0.0-test1`) and confirm the workflow produces per-target tarballs and an updated `ravel-lite.rb`.
-    2. On a clean macOS machine (or fresh Homebrew prefix), run `brew install linkuistics/taps/ravel-lite` and confirm it installs without invoking a cargo build — verify install time is on the order of seconds, not minutes.
-    3. `ravel-lite --version` on the installed binary prints the crate version and matches the git tag.
-
-    ## Coordination note
-
-    `/Users/antony/Development/mdformat/` is solving this same problem concurrently. Before starting, check mdformat's state — if cargo-dist is already wired up there, copy its shape. If not, coordinate design choices (target list, formula generation strategy, taps repo workflow) with the mdformat task so both projects converge on one pattern.
-
-    ## Depends on
-
-    Nothing blocking, but the dependent task `integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands` assumes a clean `brew install` inside a VM — landing a bottled install makes VM provisioning near-instant, which matters for that task's viability.
-  results: |
-    ## What was done
-
-    Wired `dist` (formerly `cargo-dist`) for tag-driven, bottle-style
-    Homebrew installation via `Linkuistics/homebrew-taps`.
-
-    ### Cargo.toml
-
-    - Added `repository`, `homepage`, `license` to `[package]` (cargo-dist
-      refuses to publish a Homebrew formula without these — `homepage` was
-      surfaced as a `dist plan` warning until added).
-    - Added `[profile.dist]` (release + `lto = "thin"`, the cargo-dist
-      default).
-    - Added `[workspace.metadata.dist]` declaring the four release targets
-      (`aarch64-apple-darwin`, `x86_64-apple-darwin`,
-      `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`), the
-      `homebrew` installer, the tap repository
-      (`Linkuistics/homebrew-taps`), the formula name (`ravel-lite`), and
-      the `homebrew` publish job. Pre-releases are excluded from the tap.
-      No `shell`/`powershell` installers — task scope is bottled brew only.
-
-    ### .github/workflows/release.yml
-
-    - Generated by `dist init --yes` (343 lines, autogen header preserved
-      for round-trip safety).
-    - Trigger: `push.tags: '**[0-9]+.[0-9]+.[0-9]+*'` — matches any
-      semver-shaped tag (so `cargo release patch --execute` flows directly
-      into a release run).
-    - `publish-homebrew-formula` job (line 281) checks out
-      `Linkuistics/homebrew-taps` using `${{ secrets.HOMEBREW_TAP_TOKEN }}`
-      and updates the formula in place.
-    - Final announcement gates on the homebrew job succeeding (or
-      skipping). PR pushes also fire the workflow as a smoke check (no
-      publish step).
-
-    ### README.md
-
-    - Rewrote the `## Releasing` section to describe the new pipeline
-      (cargo-release for the tag → dist for the build → tap for the
-      formula) and added a `### Release pipeline (dist) prerequisites`
-      subsection covering:
-      - Creating the `Linkuistics/homebrew-taps` repository.
-      - Generating a GitHub PAT with `repo` scope and write access.
-      - Adding the token as the `HOMEBREW_TAP_TOKEN` repository secret on
-        `Linkuistics/Ravel-Lite`.
-      - Local commands: `dist plan` to dry-run, `dist init --yes` to
-        regenerate the workflow after editing the metadata block.
-
-    ### Cargo.toml metadata block — note for future editors
-
-    `dist init --yes` rewrites the `[workspace.metadata.dist]` block in
-    canonical form on every run, dropping any in-block comments. So
-    explanatory prose for that block lives in README's "Release pipeline
-    prerequisites" section, not in Cargo.toml comments — the README is
-    durable across regenerations.
-
-    ## Verification
-
-    In-session:
-
-    - `dist init --yes`: clean.
-    - `dist plan`: clean (after `homepage` added). Output lists all four
-      per-target tarballs, the `ravel-lite.rb` formula, checksums, and a
-      source archive.
-    - `cargo check`: clean (Cargo.toml syntactically/semantically valid).
-    - `cargo build`: clean (verified earlier in the same work phase).
-    - `cargo test --quiet`: 590 unit tests + every integration suite
-      green (verified earlier in the same work phase; metadata-only
-      changes can't affect runtime).
-
-    Deferred (require real tag push, out of work-phase scope):
-
-    - Tagging a test release (e.g. `v0.0.0-test1`) and confirming the
-      workflow produces per-target tarballs + an updated `ravel-lite.rb`.
-    - `brew install Linkuistics/taps/ravel-lite` on a clean macOS machine
-      finishing in seconds (bottle install, no cargo build).
-    - Installed `ravel-lite --version` matching the git tag.
-
-    ## Coordination note
-
-    `/Users/antony/Development/mdformat/` was referenced in the task
-    description as a parallel adopter of the same pattern — but that
-    directory does not exist on this machine, so no coordination was
-    performed. The configuration here mirrors cargo-dist's own
-    self-distribution shape (cargo-dist itself is shipped as a
-    Homebrew bottle), which is the canonical reference.
-
-    ## What this suggests next
-
-    - Operator action: create the `Linkuistics/homebrew-taps` GitHub
-      repository, generate the PAT, add the `HOMEBREW_TAP_TOKEN` secret.
-      Until those land, the workflow will run but the homebrew publish job
-      will fail with an authentication error.
-    - First end-to-end test should be a deliberately-cut prerelease tag
-      (e.g. `v1.0.2-test1`) so the publish-prereleases gate skips the tap
-      update — that exercises the full pipeline without committing a real
-      formula update.
-    - Consider gating the cargo-dist version (`cargo-dist-version =
-      "0.31.0"`) the same way the rest of the toolchain is pinned;
-      cargo-dist evolves its workflow generator across versions, so a
-      single source of truth for the version saves hard-to-debug CI drift.
 - id: integrate-testanyware-vm-for-capturing-interactive-ravel-lite-commands
   title: Integrate TestAnyware VM for capturing interactive ravel-lite commands
   category: infra
   status: not_started
-  dependencies:
-  - add-ravel-lite-rb-homebrew-formula-to-linkuistics-homebrew-taps
+  dependencies: []
   description: |
     Dogfood TestAnyware as the driver for running ravel-lite's interactive commands (create, run) inside a VM so tutorial sections can include real transcripts and — optionally — screenshots without requiring the user to manually drive their own terminal. Scope: (a) start a TestAnyware macOS VM with ravel-lite installed via the brew formula (T4); (b) drive 'ravel-lite create' and 'ravel-lite run' via TestAnyware's VNC + agent (input injection, screen capture, agent exec); (c) capture state files on the VM, extract them to the host, and include them as evidence in the tutorial chapters; (d) optional: capture PNG screenshots of the TUI for the tutorial. Supports T2; depends on T1 (pipeline) and T4 (brew formula) for a clean 'brew install' inside the VM. Scope carefully — this can become a rabbit hole; if VM-driven capture proves too costly, fall back to user-driven capture as originally planned.
 - id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
