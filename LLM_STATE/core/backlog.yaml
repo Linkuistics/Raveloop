@@ -34,6 +34,56 @@ tasks:
     ## What "done" looks like
 
     Colleague confirms the hang is gone. Or, if hang persists: root cause identified and a follow-up fix landed.
+- id: retire-legacy-docs-pipeline-scripts-build-docs-sh-build-config-sh-manifest-txt-templates
+  title: Retire legacy docs pipeline scripts (build-docs.sh, build-config.sh, manifest.txt, templates/)
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Retire the legacy docs pipeline scripts (`scripts/build-docs.sh`,
+    `docs/build-config.sh`, `docs/manifest.txt`, `docs/templates/`) from
+    the Ravel-Lite repo.
+
+    ## Why
+
+    The phase-cycle reference-page work (2026-04-27) confirmed these scripts
+    now write to orphaned paths. The new pipeline for `www.linkuistics.com`
+    reads `<project>/website/` directly via `git archive` and never invokes
+    asciidoctor locally. The legacy scripts still reference
+    `../www.linkuistics.com/projects/ravel-lite/`, which is no longer where
+    generated HTML should land.
+
+    Additionally, every remaining reference-page backlog task still says
+    "run `./scripts/build-docs.sh` to confirm the page renders cleanly" and
+    "Update `docs/manifest.txt`", which misleads future work phases.
+
+    ## Scope
+
+    1. **Delete or replace** the legacy scripts:
+       - `scripts/build-docs.sh` — either delete, or replace with a thin
+         `scripts/render-docs.sh` that runs
+         `asciidoctor --embedded docs/reference/*.adoc` and places output
+         under `website/docs/`. The latter is preferable: it makes the
+         local render workflow repeatable without needing a sibling repo.
+       - `docs/build-config.sh` — delete.
+       - `docs/manifest.txt` — delete (the website pipeline does not read it).
+       - `docs/templates/` — delete (asciidoctor's `--embedded` flag needs
+         no custom templates for the current fragment-only output).
+
+    2. **Update all remaining reference-page task descriptions** to replace
+       references to `./scripts/build-docs.sh` and `docs/manifest.txt` with
+       the correct verification step:
+       `asciidoctor --embedded docs/reference/<page>.adoc -o website/docs/<page>.html`
+       (or `./scripts/render-docs.sh` if that wrapper exists).
+
+    ## Verification
+
+    - `ls scripts/build-docs.sh docs/build-config.sh docs/manifest.txt docs/templates/`
+      returns "no such file" for each.
+    - `./scripts/render-docs.sh` (if written) produces clean HTML under
+      `website/docs/` with no asciidoctor warnings.
+    - All reference-page backlog task descriptions that previously mentioned
+      `build-docs.sh` now reference the correct workflow.
 - id: rewrite-config-and-prompts-reference-page-for-lua-api
   title: Rewrite config-and-prompts reference page for Lua API
   category: docs
@@ -127,60 +177,6 @@ tasks:
   - write-user-guide-covering-install-update-init-config-projects-plans-and-running
   description: |
     Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
-- id: reference-phase-cycle-page-per-phase-contracts-dream-trigger-triage-dispatch-git-commit-audit-trail
-  title: 'Reference: phase cycle page (per-phase contracts, dream trigger, triage dispatch, git-commit-* audit trail)'
-  category: docs
-  status: done
-  dependencies: []
-  description: |
-    Write the phase cycle reference page: every phase in the work → analyse-work → git-commit-work → reflect → git-commit-reflect → [dream?] → dream → git-commit-dream → triage → git-commit-triage cycle, with each phase's input/output contract, the dream-trigger condition, the triage subagent dispatch mechanism, and the per-phase git-commit audit trail.
-
-    ## Scope
-
-    - File: `docs/reference/phase-cycle.adoc`
-    - Per phase, document: what files it reads, what files it writes, what decisions it makes, when it transitions, and how it's invoked (interactive vs headless).
-    - **Dream trigger**: word-count threshold (baseline + headroom), where the baseline is captured (`save-work-baseline` etc.), what happens on trigger.
-    - **Triage dispatch**: how cross-plan propagation works (peer-project relationships from `related-components.yaml`, subagent dispatch via `subagent-dispatch.yaml`).
-    - **Git-commit-* phases**: per-phase audit trail commits, what each commit captures, the `commits.yaml` mechanism that drives them.
-    - AsciiDoc art diagram of the cycle (the README's diagram is a starting point but should be expanded with file-level read/write annotations).
-
-    ## Style
-
-    Friendly prose, minimal lists, no emoji. Each phase entry follows the same shape so readers can scan.
-
-    ## Out of scope
-
-    File schemas — those live on the file-format pages. Cross-link rather than duplicate.
-
-    ## Verification
-
-    - Page builds and renders.
-    - Each phase claim cross-checked against `src/orchestrator/`, `src/state/phase.rs`, and the on-disk per-phase prompt files under `defaults/agents/.../*.md`.
-    - Dream-trigger threshold value cross-checked against the actual constant in source.
-  results: |
-    ## What was done
-
-    Wrote `docs/reference/phase-cycle.adoc` (~165 lines of AsciiDoc) covering every reasoning phase (work, analyse-work, reflect, dream, triage) and every audit-trail phase (git-commit-work, git-commit-reflect, git-commit-dream, git-commit-triage), each with a uniform Reads/Writes/Decisions/Transition shape. Added cross-cutting sections on the dream trigger (default headroom 1500 words, baseline mechanics, three-layer defensive seeding), cross-plan dispatch (subagent-dispatch.yaml shape and lifecycle), the four `<phase>-baseline` files threading the cycle, and recovery semantics. Regenerated `website/docs/phase-cycle.html` via `asciidoctor --embedded` so the published mini-site picks up the new content.
-
-    Source-grounded throughout — wrote the page after reading `src/phase_loop.rs`, `src/dream.rs`, `src/state/phase.rs`, `src/git.rs`, `src/subagent.rs`, and every prompt under `defaults/phases/`. Every claim about file paths, baseline order, and decision points is verifiable against current code.
-
-    ## What worked
-
-    - **Per-phase uniform shape (Reads / Writes / Decisions / Transition)** matches the style the existing `concepts.adoc` set and lets readers scan rather than read sequentially.
-    - **Source-grounded baseline ordering** — git-commit-triage's order-of-ops (commit *then* save baseline) is a load-bearing detail with a comment in the source explaining the rationale; surfacing that explanation in the reference saves a future reader from re-deriving it.
-    - **AsciiDoc render produced clean HTML** with no `<style>` / `<script>` / `<link>` tags (forbidden by spec §5.10) and no asciidoctor warnings.
-
-    ## What didn't work / drift surfaced
-
-    - **Backlog task descriptions reference the legacy build pipeline.** Every reference-page task in the backlog still says "run `./scripts/build-docs.sh` to confirm the page renders cleanly into the linkuistics site" and "Update `docs/manifest.txt`" — both belong to the pre-2026-04-26 mechanism. The new pipeline (per `www.linkuistics.com/docs/superpowers/specs/2026-04-25-per-project-website-pipeline-design.md`) reads `<project>/website/` directly via `git archive` and never invokes asciidoctor. The legacy `scripts/build-docs.sh` and `docs/build-config.sh` still write to `../www.linkuistics.com/projects/ravel-lite/`, which is now legacy/orphan output. The remaining docs tasks should have their descriptions updated, or the discrepancy will trip future work phases.
-    - **Internal-link convention is broken across all rendered HTML fragments.** The existing `website/docs/concepts.html` uses `<a href="reference-state-files.html">`-style flattened-name links from the legacy URL scheme. Under the new URL scheme (`/projects/ravel-lite/docs/<page>/`) those resolve nowhere. My new `phase-cycle.html` uses the slightly less broken `<a href="state-files.html">` (sibling-relative without the `reference-` prefix), but both forms are wrong. The correct relative form is `state-files/` (no `.html`, trailing slash) — assuming pages render at the directory URL the spec promises. **This affects every reference fragment and every cross-link inside them**; a single follow-up pass should normalise them after the URL-resolution behaviour is empirically verified against a published deploy.
-
-    ## What this suggests next
-
-    1. **Pick the next reference page** — `state-files`, `cross-plan-files`, `cli-lifecycle`, `cli-state`, or `cli-survey`. State-files is the natural next pick: it's referenced from both phase-cycle and concepts, and its schema work is grounded in `src/state/backlog/`, `src/state/memory/`, etc.
-    2. **Add a backlog task to fix the link convention** across all rendered fragments — including the existing `concepts.html` and `index.html` — once a deployed page confirms the canonical URL form.
-    3. **Add a backlog task to retire `scripts/build-docs.sh`, `docs/build-config.sh`, `docs/manifest.txt`, and `docs/templates/`** — they belong to the legacy pipeline and now mislead the existing reference-page backlog descriptions. A small follow-up could either delete them or replace them with a `scripts/render-docs.sh` that runs `asciidoctor --embedded` over `docs/reference/*.adoc` → `website/docs/*.html` (the actual workflow this session followed by hand).
-    4. **Update the remaining reference-page backlog descriptions** to point at `website/docs/<page>.html` as the deliverable rather than the linkuistics paths in the old descriptions.
 - id: reference-state-file-formats-backlog-yaml-memory-yaml-session-log-yaml-latest-session-phase-md-commits-yaml
   title: 'Reference: state-file formats (backlog.yaml, memory.yaml, session-log.yaml, latest-session, phase.md, commits.yaml)'
   category: docs
@@ -213,6 +209,48 @@ tasks:
     - Every schema cross-checked against `src/state/<file>/schema.rs` (or wherever the serde struct lives).
     - At least one example per file is realistic — lifted from a real plan, anonymised if needed.
     - The `.md` vs `.yaml` question for `latest-session.*` is resolved by reading the actual write path in `src/state/`.
+- id: fix-html-cross-link-convention-in-website-docs-fragments
+  title: Fix HTML cross-link convention in website/docs/ fragments
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Audit and fix the internal cross-link convention in all `website/docs/*.html`
+    fragments so links resolve correctly under the new URL scheme.
+
+    ## Why
+
+    The phase-cycle reference-page work (2026-04-27) exposed two conflicting
+    link forms in the rendered HTML:
+
+    - `concepts.html` uses `<a href="reference-state-files.html">` — the
+      legacy flattened-name scheme from the pre-2026-04-26 pipeline.
+    - `phase-cycle.html` uses `<a href="state-files.html">` — sibling-relative,
+      no prefix, but still includes `.html`.
+
+    Under the new URL scheme (`/projects/ravel-lite/docs/<page>/`), the correct
+    relative form is likely `state-files/` (trailing slash, no `.html` extension)
+    because pages are served at directory URLs. Until this is verified against a
+    live deploy, the canonical form is unconfirmed.
+
+    ## Scope
+
+    1. **Verify** the canonical URL form by inspecting a live deployed page —
+       either via `curl -I` on a published `phase-cycle/` or `concepts/` URL,
+       or by reading the `www.linkuistics.com` pipeline's routing config.
+    2. **Audit** all `<a href="...">` cross-links inside
+       `website/docs/concepts.html`, `website/docs/phase-cycle.html`,
+       `website/docs/index.html`, and any other HTML fragments in
+       `website/docs/`.
+    3. **Normalise** every internal cross-link to the confirmed canonical form.
+       Update `docs/reference/*.adoc` source files so the normalised links
+       are generated on future re-renders, not just patched post-render.
+
+    ## Verification
+
+    - `grep -r 'href=' website/docs/` shows no `.html`-suffixed internal links
+      (or whatever the canonical form turns out to be).
+    - A spot-check of the canonical URL on the live site confirms links resolve.
 - id: reference-cross-plan-file-formats-subagent-dispatch-yaml-related-components-yaml-evidence-grades
   title: 'Reference: cross-plan file formats (subagent-dispatch.yaml, related-components.yaml, evidence grades)'
   category: docs
