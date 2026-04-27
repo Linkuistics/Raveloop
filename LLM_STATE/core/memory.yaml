@@ -582,7 +582,7 @@ entries:
 - id: cargo-dist-wired-homebrew-pipeline-needs-operator-provisioning
   title: Release pipeline uses manual scripts, not cargo-dist
   body: |
-    Cargo-dist CI is removed (`[workspace.metadata.dist]`, `[profile.dist]`, `.github/workflows/release.yml` deleted). Releases use: `cargo release patch --execute && git push --follow-tags && ./scripts/release-build.sh && ./scripts/release-publish.sh`. `release-build.sh` builds 4 tarballs (native `cargo build` for Darwin; `cargo zigbuild` at glibc 2.17 floor for Linux). `release-publish.sh` runs `gh release create` and commits a formula update to the sibling `homebrew-taps` clone. Formula rendered from `scripts/templates/ravel-lite.rb.tmpl` via `sed`. First release not yet cut; cutting it is the next operator action and unblocks capture-script smoke testing.
+    Cargo-dist CI removed; releases use manual scripts: `cargo release patch --execute && git push --follow-tags && ./scripts/release-build.sh && ./scripts/release-publish.sh`. `release-build.sh` builds 4 tarballs (native `cargo build` for Darwin; `cargo zigbuild` glibc-2.17 for Linux). `release-publish.sh` creates the GitHub Release and updates the sibling `homebrew-taps` formula from `scripts/templates/ravel-lite.rb.tmpl`. Prerequisites: `zig`, `cargo-zigbuild`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` must be installed on the dev box before running `release-build.sh`. Pipeline validated; end-user smoke test (`brew install linkuistics/taps/ravel-lite && ravel-lite --version`) passes.
 - id: capture-scripts-template-documentation-with-real-system-runs
   title: Capture scripts template documentation with real system runs
   body: |
