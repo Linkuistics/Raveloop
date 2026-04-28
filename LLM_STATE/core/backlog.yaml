@@ -74,44 +74,44 @@ tasks:
     - Debug-enabled pi invocation: TUI renders identically AND debug log
       captures the pi byte stream.
 - id: replace-tutorial-illustrative-transcripts-with-testanyware-captured-transcripts
-  title: Replace tutorial illustrative transcripts with TestAnyware-captured transcripts
+  title: Run capture script live and replace chapters 01-02 tutorial transcripts with TestAnyware output
   category: docs
   status: blocked
-  blocked_reason: 'Capture script extended for per-command transcripts and validated against testanyware 0.2.0 CLI surface (the prior ''vm list --format json'' approximation was actually broken, now fixed via deterministic --id and --vm resolution). Remaining: a dedicated phase for the live VM run + per-chapter ---- block replacement in chapters 01-05.'
+  blocked_reason: 'Capture script extended and validated against testanyware 0.2.0 CLI surface; no live VM run yet. Remaining: run the script against a live TestAnyware VM and fold transcripts into chapters 01-02.'
   dependencies: []
   description: |
-    Replace the illustrative terminal transcripts in tutorial chapters
-    `docs/tutorial/01-install-and-config.adoc` through
-    `docs/tutorial/05-further-cycles.adoc` with real captures produced by
-    `scripts/capture/ravel-lite-tutorial.sh` (which drives a TestAnyware
-    macOS VM: installs via Homebrew, runs the tutorial scenario, pulls
-    screenshots and the resulting LLM_STATE tree).
+    Run `scripts/capture/ravel-lite-tutorial.sh` against a live TestAnyware VM to produce
+    verbatim terminal transcripts, then fold those transcripts into tutorial chapters 01 and 02.
 
-    The current chapters use realistic illustrative transcripts that match
-    what the codebase produces and are publishable as-is. This task is the
-    polish pass: replace each illustrative block with a verbatim terminal
-    capture to give readers byte-accurate output.
+    ## What the script does
 
-    ## Prerequisite
+    `scripts/capture/ravel-lite-tutorial.sh` drives a TestAnyware macOS VM: Homebrew-installs
+    ravel-lite, runs each chapter-01 and chapter-02 command via `transcript_at`, and writes
+    combined stdout+stderr to `docs/captures/ravel-lite-tutorial/transcripts/<label>.txt` in
+    paste-ready `[source,console]` AsciiDoc format.
 
-    `scripts/capture/ravel-lite-tutorial.sh` must be proven runnable on a
-    live TestAnyware VM (`VNC_ENDPOINT`/`AGENT_ENDPOINT` validated, eight
-    named `[STEP-NAME]` sections completing without error). See memory entry
-    `capture-scripts-template-documentation-with-real-system-runs` for the
-    current known-approximation status of the script.
+    Eleven named captures cover chapters 01-02: `01-version`, `01-init-fresh`, `01-init-refuse`,
+    `01-init-force`, `01-ls-phases`, `01-projects-list-empty`, `02-git-init`, `02-git-commit`,
+    `02-projects-add`, `02-projects-list-populated`.
 
     ## Scope
 
-    - Run `scripts/capture/ravel-lite-tutorial.sh` on a TestAnyware VM.
-    - Extract per-section terminal output from the session log.
-    - Replace `----` illustrative listing blocks in chapters 01–05 with
-      `[source,console]` blocks containing the real output.
-    - Re-render with `scripts/render-docs.sh` and verify HTML output.
+    - Run the script against a live VM; debug any divergences from `--help`-deduced assumptions.
+    - Verify all 11 captures land in `docs/captures/ravel-lite-tutorial/transcripts/`.
+    - Replace each `----` illustrative listing block in `docs/tutorial/01-install-and-config.adoc`
+      and `docs/tutorial/02-the-project.adoc` with `[source,console]` blocks containing the
+      corresponding transcript file's content.
+    - Re-render with `scripts/render-docs.sh` and spot-check HTML output.
+
+    ## Out of scope
+
+    - Chapter 03 (`ravel-lite create`) is interactive; a separate interactive capture mechanism
+      is required before chapter 03 transcripts can be produced.
+    - Chapters 04-05 are TUI-screenshot-driven; those updates are a separate task.
 
     ## Done when
 
-    All five tutorial chapters use verbatim captured output and the rendered
-    HTML passes a visual spot-check.
+    Chapters 01 and 02 use verbatim captured output and the rendered HTML passes a visual spot-check.
   results: |
     ## Scope executed (option B)
 
@@ -144,3 +144,32 @@ tasks:
     - A dedicated phase to run the script live, debug whatever real-VM behaviour diverges from `--help`-deduced assumptions, and fold the resulting `transcripts/` files into chapters 01–02 as a first cut.
     - Chapter 03 (`ravel-lite create`) needs a capture mechanism that handles interactive prompt-and-response — likely `testanyware input type` on a real terminal with `find-text` waits, plus `script(1)` recording inside the VM if we want full text fidelity. Worth scoping separately from the headless 01-02 work.
     - Memory entry `capture-scripts-template-documentation-with-real-system-runs` is now factually wrong on the "vm list --format json approximation" — reflect should rewrite it to reflect the post-rewrite design (deterministic `--id` + `--vm` resolution, no JSON parsing) so the historical "approximation" framing doesn't mislead future drift checks.
+- id: design-and-implement-interactive-capture-mechanism-for-tutorial-chapter-03-ravel-lite-create
+  title: Design and implement interactive capture mechanism for tutorial chapter 03 (ravel-lite create)
+  category: docs
+  status: not_started
+  dependencies: []
+  description: |
+    Design and implement a capture mechanism for `docs/tutorial/03-creating-a-plan.adoc`
+    (`ravel-lite create`), which drives an interactive prompt-and-response TUI session.
+    Unlike chapters 01-02, `ravel-lite create` is not headless; stdout is inside the VM's
+    GUI Terminal, not on the TestAnyware agent channel.
+
+    ## Why a separate task
+
+    `transcript_at` (non-interactive command capture) cannot capture the create-session
+    exchange. Chapter 03 illustrative transcripts show multi-turn dialogue; byte-accurate
+    capture requires a different mechanism.
+
+    ## Design options to evaluate
+
+    - `testanyware input type` to send keystrokes + `testanyware find-text` waits to detect
+      prompts, combined with `script(1)` recording inside the VM for full byte fidelity.
+    - Screenshot-based approach matching chapters 04-05.
+    - PTY recording piped out via `testanyware exec` if the VM runner supports it.
+
+    ## Done when
+
+    A mechanism is implemented in `scripts/capture/ravel-lite-tutorial.sh`, validated
+    against a live VM, and chapter 03's `----` illustrative blocks are replaced with
+    verbatim captures or screenshots as appropriate.
