@@ -1,91 +1,4 @@
 tasks:
-- id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
-  title: 'Write tutorial walk-through: install through further-cycles with worked example'
-  category: docs
-  status: done
-  dependencies: []
-  description: |
-    Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
-  results: |
-    Wrote five new tutorial chapters under `docs/tutorial/`, threading the
-    reading-list-manager worked example end-to-end:
-
-    - `01-install-and-config.adoc` — Homebrew install + `brew upgrade`,
-      `ravel-lite version` sanity, `init` and re-init with `--force`,
-      `--config` / `RAVEL_LITE_CONFIG` precedence.
-    - `02-the-project.adoc` — what ravel-lite means by "project" (path-derived,
-      monorepo-clean), scaffolds `~/Development/ravel-tutorial-example/`
-      (README + `reading-list.md` + `notes/`), registers it via
-      `state projects add`, and previews the plan-directory shape.
-    - `03-creating-a-plan.adoc` — `ravel-lite create`, the four-question
-      bootstrap conversation (illustrative transcript), inspecting the
-      seeded `backlog.yaml` and `memory.yaml`, common failure modes.
-    - `04-the-first-cycle.adoc` — `ravel-lite run`, the work-phase prompt,
-      the headless phases (analyse-work → git-commit-work → reflect →
-      dream-skipped → triage), inspecting the audit trail with
-      `git log --oneline`.
-    - `05-further-cycles.adoc` — cycle 2 with a hand-off and triage
-      promotion, cycle 3 mechanics, the dream trigger word-count
-      semantics, headroom adjustment via `ravel.set_headroom`, multi-plan
-      mode with `--survey-state`, when to stop.
-
-    Cross-linked from `00-overview.adoc`'s closer to `01-install-and-config`.
-
-    ## Publication
-
-    Rendered with `./scripts/render-docs.sh` — six HTML fragments now in
-    `website/tutorials/` (one per `.adoc`). Updated `website/meta.yml`
-    `nav:` to list all five new chapters under the Tutorials section.
-
-    The publication process the original task description referenced
-    (`projects/ravel-lite.html` hub + `SYNC.yml` synced_at SHA) is gone.
-    The current www.linkuistics.com pipeline reads each project's
-    `website/` directory directly via `git archive` (driven by `bin/publish`
-    walking `projects.yml`), so the tutorial publishes itself the next time
-    the website repo runs `bin/publish` against this commit. No action
-    needed in www.linkuistics.com.
-
-    ## What's next
-
-    The follow-up backlog task
-    `publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml` is
-    **obsolete**: it points at `projects/ravel-lite.html` and `SYNC.yml`,
-    neither of which exists in the new pipeline (per
-    `/Users/antony/Development/www.linkuistics.com/CLAUDE.md` and the
-    post-2026-04-26 cutover described there). Triage should drop it.
-
-    The original task description also mentions "Interactive commands
-    (create, run) driven via a TestAnyware VM to capture real transcripts."
-    That polish remains future work — current chapters use realistic
-    illustrative transcripts that match what the codebase actually
-    produces, which is enough for a first publishable tutorial. The
-    TestAnyware-VM-captured-transcripts pass can land later as a
-    focused replacement of the illustrative blocks once
-    `scripts/capture/` integration matures.
-
-    ## Files touched
-
-    - `docs/tutorial/00-overview.adoc` (closer cross-link updated)
-    - `docs/tutorial/01-install-and-config.adoc` (new)
-    - `docs/tutorial/02-the-project.adoc` (new)
-    - `docs/tutorial/03-creating-a-plan.adoc` (new)
-    - `docs/tutorial/04-the-first-cycle.adoc` (new)
-    - `docs/tutorial/05-further-cycles.adoc` (new)
-    - `website/meta.yml` (nav updated)
-    - `website/tutorials/00-overview.html` (re-rendered)
-    - `website/tutorials/01-install-and-config.html` (new)
-    - `website/tutorials/02-the-project.html` (new)
-    - `website/tutorials/03-creating-a-plan.html` (new)
-    - `website/tutorials/04-the-first-cycle.html` (new)
-    - `website/tutorials/05-further-cycles.html` (new)
-- id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
-  title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
-  category: docs
-  status: not_started
-  dependencies:
-  - write-user-guide-covering-install-update-init-config-projects-plans-and-running
-  description: |
-    Finishing task once tutorial (T2) and reference (T3) content is in place. Add a 'Documentation' section near the bottom of /Users/antony/Development/www.linkuistics.com/projects/ravel-lite.html with links to the new tutorial chapters and the reference page. Update /Users/antony/Development/www.linkuistics.com/SYNC.yml so the Ravel-Lite entry's site_pages list mentions the new projects/ravel-lite/*.html files and the synced_at SHA is bumped. Verify rendered output matches site brand. Depends on T2 and T3.
 - id: diagnose-claude-tui-invisible-after-work-phase-banner-on-a-fresh-machine
   title: 'Verify fix: re-test work-phase TUI hang on fresh machine after removing --add-dir and fixing path normalisation'
   category: infra
@@ -160,3 +73,42 @@ tasks:
     - Non-debug pi invocation: TUI renders identically, no behaviour change.
     - Debug-enabled pi invocation: TUI renders identically AND debug log
       captures the pi byte stream.
+- id: replace-tutorial-illustrative-transcripts-with-testanyware-captured-transcripts
+  title: Replace tutorial illustrative transcripts with TestAnyware-captured transcripts
+  category: docs
+  status: blocked
+  blocked_reason: scripts/capture/ravel-lite-tutorial.sh has known-approximation status (VNC_ENDPOINT/AGENT_ENDPOINT unvalidated on a live VM); unblock once a TestAnyware run completes successfully
+  dependencies: []
+  description: |
+    Replace the illustrative terminal transcripts in tutorial chapters
+    `docs/tutorial/01-install-and-config.adoc` through
+    `docs/tutorial/05-further-cycles.adoc` with real captures produced by
+    `scripts/capture/ravel-lite-tutorial.sh` (which drives a TestAnyware
+    macOS VM: installs via Homebrew, runs the tutorial scenario, pulls
+    screenshots and the resulting LLM_STATE tree).
+
+    The current chapters use realistic illustrative transcripts that match
+    what the codebase produces and are publishable as-is. This task is the
+    polish pass: replace each illustrative block with a verbatim terminal
+    capture to give readers byte-accurate output.
+
+    ## Prerequisite
+
+    `scripts/capture/ravel-lite-tutorial.sh` must be proven runnable on a
+    live TestAnyware VM (`VNC_ENDPOINT`/`AGENT_ENDPOINT` validated, eight
+    named `[STEP-NAME]` sections completing without error). See memory entry
+    `capture-scripts-template-documentation-with-real-system-runs` for the
+    current known-approximation status of the script.
+
+    ## Scope
+
+    - Run `scripts/capture/ravel-lite-tutorial.sh` on a TestAnyware VM.
+    - Extract per-section terminal output from the session log.
+    - Replace `----` illustrative listing blocks in chapters 01–05 with
+      `[source,console]` blocks containing the real output.
+    - Re-render with `scripts/render-docs.sh` and verify HTML output.
+
+    ## Done when
+
+    All five tutorial chapters use verbatim captured output and the rendered
+    HTML passes a visual spot-check.
