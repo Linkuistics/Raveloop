@@ -41,7 +41,8 @@ tasks:
 - id: implement-tui-screenshot-capture-for-tutorial-chapters-04-05-and-fold-into-chapter-prose
   title: Implement TUI screenshot capture for tutorial chapters 04-05 and fold into chapter prose
   category: docs
-  status: not_started
+  status: blocked
+  blocked_reason: Script side complete; chapter prose update requires user-driven live TestAnyware VM run
   dependencies: []
   description: |
     Implement TUI screenshot capture mechanism for tutorial chapters 04 and 05
@@ -92,3 +93,57 @@ tasks:
 
     Chapters 04 and 05 use verbatim captured screenshots and the rendered HTML passes
     a visual spot-check.
+  results: |
+    ## What was done
+
+    Implemented the script side of the chapter 04-05 capture mechanism. The work splits cleanly into two halves; this session delivered the first half (script implementation) and surfaced the dependency for the second half (live VM run + chapter prose update).
+
+    ### Script changes (`scripts/capture/ravel-lite-tutorial.sh`)
+
+    - Added flag parsing for `--from <step>`, `--vm-id <id>`, `--keep-vm`. Validates `--from` against the allowed step set (`chapter01`, `chapter02`, `chapter03`, `chapter04`, `final`) and refuses `--from chapter02|03|04|final` without a `--vm-id` (the prerequisite VM state is missing on a fresh VM).
+    - Added a focused `--help` block describing the iteration pattern: first run with `--keep-vm` to complete chapters 01-03, then `--vm-id <id> --from chapter04` to iterate on chapter 04-05 captures cheaply.
+    - Made VM lifecycle ownership explicit (`OWN_VM` flag): when the user supplied `--vm-id`, the script skips `vm_lifecycle_start` and the cleanup trap leaves the VM alone. When the user passed `--keep-vm`, cleanup also skips teardown and prints the resume command for the next iteration.
+    - Introduced a `maybe_run <step-name> <fn>` gating helper. Step names group by chapter so granular flag values don't proliferate. The first call whose name matches `--from` flips an internal `STARTED` flag; every subsequent call runs.
+    - Reworked `main()` to wrap each chapter-grouped function call in `maybe_run`. Re-enabled `scenario_run` (was commented out as `# scenario_run`).
+    - Replaced the placeholder `scenario_run` body (which had a wrong `find-text "phase: work"` target — that string only appears in YAML, not the TUI) with a complete implementation:
+      - Pre-cycle: snapshot `phase.md` and capture pre-run HEAD SHA so the polling can detect when HEAD has actually advanced (necessary for iterative `--from chapter04` re-runs where the prior cycle's tail is already a `save-work-baseline` commit).
+      - Drive `ravel-lite run`, screenshot the WORK banner via `find-text "WORK" --timeout 60`, screenshot the work-phase prompt after a 25s settle delay.
+      - Type the task choice from `responses/04-task-choice.txt`.
+      - Poll every 10s for up to ~20 minutes; completion = `phase.md == work` AND `HEAD != pre_run_sha` AND most-recent commit matches `save-work-baseline`. Periodic mid-cycle screenshots every 60s.
+      - Screenshot the `Proceed to next work phase?` prompt (verbatim string from `src/phase_loop.rs:463`), type `n` + return, screenshot the post-exit terminal.
+      - Capture six post-cycle deterministic transcripts: pre/post `phase.md`, post-cycle `git log --oneline -10`, `state session-log show-latest`, `state memory list`, `state backlog list`.
+
+    ### Response file
+
+    - Added `scripts/capture/responses/04-task-choice.txt` with the chapter's illustrative selection (`the distributed-systems entries`).
+
+    ### Verification done in this session
+
+    - `bash -n` syntax-checks clean.
+    - `--help` renders the focused usage block correctly.
+    - `--from <bad-step>` rejects with the allowed-steps list.
+    - `--from chapter04` without `--vm-id` rejects with the prereq-state warning.
+    - `--from chapter04 --vm-id fake-vm` traces correctly: `chapter01..chapter03` skipped, `scenario_run` invoked, fails at first `testanyware exec` against the non-existent VM (expected).
+    - The cleanup trap honours `--vm-id` and `--keep-vm` correctly in both traced runs.
+
+    ## What is NOT done (the chapter-prose half)
+
+    The task's "Done when" criterion — `Chapters 04 and 05 use verbatim captured screenshots and the rendered HTML passes a visual spot-check` — cannot complete in this session. It requires:
+
+    1. The user runs `scripts/capture/ravel-lite-tutorial.sh --keep-vm` against a live TestAnyware VM.
+    2. Inspect the produced screenshots in `docs/captures/ravel-lite-tutorial/screens/04-*.png` and transcripts in `transcripts/04-*.txt` / `transcripts/05-*.txt` — confirm the TUI states are legible and the post-cycle deterministic state captures are accurate.
+    3. Tune `responses/04-task-choice.txt` if claude's seeded backlog doesn't match the illustrative `the distributed-systems entries` task name. Iterate cheaply via `--vm-id <id> --from chapter04`.
+    4. Replace illustrative `[source,text]` blocks in `docs/tutorial/04-the-first-cycle.adoc` and `05-further-cycles.adoc` with verbatim transcripts from `04-git-log-post-cycle.txt`, `04-session-log-latest.txt`, `05-memory-after-reflect.txt`, `05-backlog-after-triage.txt`.
+    5. Decide whether to embed selected screenshots inline (chapter 03 doesn't currently embed images, so the convention is "captures inform the prose, not always shown" — but the TUI banners may be worth showing visually).
+    6. Re-render with `scripts/render-docs.sh` and spot-check.
+
+    ## Suggested next steps
+
+    - **Triage option A**: split this task into "implement scenario_run" (done) + new task "Run capture script and fold chapter 04-05 prose". The latter is small, well-shaped, and gates only on the user's VM availability. This is probably cleaner than carrying a half-done task.
+    - **Triage option B**: keep as one task, leave blocked. Resume from a future work session that begins by running the capture script.
+
+    Recommend option A — the script side is a tangible, testable deliverable that should be visible as `done` in the audit trail.
+
+    ## Side note (not in scope, recorded for triage awareness)
+
+    In response to a finding during this session — that the website publish pipeline snapshots tag trees immutably via `git archive`, so docs written *for* a tag but committed *after* it never appear in the `/v<minor>/` snapshot — the user asked me to file an issue in the sibling `www.linkuistics.com` project. I bootstrapped `LLM_STATE/core/` there with the four scaffold files (`phase.md`, `backlog.yaml`, `memory.yaml`, `dream-word-count`) and added one task: `resolve-docs-vs-tag-staging-gap-post-tag-doc-updates-miss-the-versioned-snapshot` (category `publish-flow`). Those files are uncommitted in `www.linkuistics.com/` for the user to commit when ready — they are outside Ravel-Lite's pathspec scope so analyse-work in this repo will not touch them.

@@ -49,6 +49,23 @@
 # only appears in the GUI Terminal once claude has returned control to
 # the shell, so the post-create transcripts are guaranteed to read
 # real on-disk state.
+#
+# Flags
+# -----
+#   --from <step>     Skip every chapter group before <step>. Steps are
+#                     `chapter01` … `chapter04`, plus `final`. `--from
+#                     chapter04` requires the VM to already have
+#                     ravel-lite + claude installed and a created plan
+#                     on disk; pair with `--vm-id <id>` to reuse a VM
+#                     from a prior `--keep-vm` run.
+#   --vm-id <id>      Reuse an existing testanyware VM by id; skips
+#                     `vm_lifecycle_start` and disables the auto-
+#                     teardown trap. Pair with `--from` for cheap
+#                     chapter04-05 iteration.
+#   --keep-vm         Skip the auto-teardown trap so the VM survives
+#                     for a follow-up `--vm-id` run. Only meaningful
+#                     when the script started the VM itself (i.e.
+#                     `--vm-id` was NOT provided).
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -70,19 +87,124 @@ readonly VM_USER="${VM_USER:-admin}"
 readonly EXAMPLE_DIR_ABS="/Users/${VM_USER}/Development/ravel-tutorial-example"
 readonly CONFIG_DIR_TILDE="~/.config/ravel-lite"
 
+# ── Flag parsing ────────────────────────────────────────────────────────────
+#
+# Set before VM_ID resolution because `--vm-id` overrides the auto-
+# generated id and toggles VM lifecycle ownership.
+FROM=""
+VM_ID_OVERRIDE=""
+KEEP_VM=0
+while (( $# > 0 )); do
+  case "$1" in
+    --from)
+      [[ $# -ge 2 ]] || { echo "capture: --from needs an argument" >&2; exit 1; }
+      FROM="$2"; shift 2 ;;
+    --vm-id)
+      [[ $# -ge 2 ]] || { echo "capture: --vm-id needs an argument" >&2; exit 1; }
+      VM_ID_OVERRIDE="$2"; shift 2 ;;
+    --keep-vm)
+      KEEP_VM=1; shift ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: ravel-lite-tutorial.sh [--from <step>] [--vm-id <id>] [--keep-vm]
+
+Captures the ravel-lite tutorial scenario in a TestAnyware macOS VM.
+Outputs land under docs/captures/ravel-lite-tutorial/.
+
+Flags:
+  --from <step>   Skip every chapter group before <step>. Steps:
+                  chapter01, chapter02, chapter03, chapter04, final.
+                  Pair with --vm-id when starting after chapter03 —
+                  the VM needs ravel-lite + claude installed and a
+                  created plan on disk.
+  --vm-id <id>    Reuse an existing VM; skips `vm start` and disables
+                  the auto-teardown trap.
+  --keep-vm       Skip auto-teardown so the VM survives for a
+                  follow-up --vm-id run. Only meaningful when the
+                  script started the VM itself.
+
+Iteration pattern for chapter04-05 captures:
+
+  # First run: complete chapters 01-03, keep the VM alive.
+  ./ravel-lite-tutorial.sh --keep-vm
+
+  # Iterate on chapter04-05 against the same VM:
+  ./ravel-lite-tutorial.sh --vm-id <id-from-prior-run> --from chapter04
+
+USAGE
+      exit 0 ;;
+    *)
+      echo "capture: unknown flag: $1" >&2; exit 1 ;;
+  esac
+done
+
+readonly VALID_STEPS=(chapter01 chapter02 chapter03 chapter04 final)
+if [[ -n "$FROM" ]]; then
+  found=0
+  for step in "${VALID_STEPS[@]}"; do
+    [[ "$step" == "$FROM" ]] && { found=1; break; }
+  done
+  if (( ! found )); then
+    echo "capture: --from value '$FROM' is not a known step; allowed: $(IFS=,; echo "${VALID_STEPS[*]}" | tr , ' ')" >&2
+    exit 1
+  fi
+  if [[ "$FROM" != "chapter01" && -z "$VM_ID_OVERRIDE" ]]; then
+    echo "capture: --from $FROM without --vm-id starts a fresh VM that lacks the prerequisite state" >&2
+    echo "        from earlier chapters; pair with --vm-id <id> from a prior --keep-vm run." >&2
+    exit 1
+  fi
+fi
+
 # Deterministic VM id; passed to `vm start --id` and reused via --vm
 # for every subsequent testanyware call. UTC timestamp keeps successive
 # runs distinguishable in $XDG_STATE_HOME/testanyware/vms/.
-readonly VM_ID="ravel-lite-tutorial-$(date -u +%Y%m%dT%H%M%SZ)"
+if [[ -n "$VM_ID_OVERRIDE" ]]; then
+  readonly VM_ID="$VM_ID_OVERRIDE"
+  readonly OWN_VM=0
+else
+  readonly VM_ID="ravel-lite-tutorial-$(date -u +%Y%m%dT%H%M%SZ)"
+  readonly OWN_VM=1
+fi
 
 log() { echo "[$1] ${*:2}"; }
 die() { echo "capture: $*" >&2; exit 1; }
 
 cleanup() {
+  if (( OWN_VM == 0 )); then
+    log TEARDOWN "VM $VM_ID was supplied via --vm-id; leaving it running"
+    return
+  fi
+  if (( KEEP_VM )); then
+    log TEARDOWN "VM $VM_ID kept alive (--keep-vm); resume with: --vm-id $VM_ID --from <step>"
+    return
+  fi
   log TEARDOWN "stopping VM $VM_ID"
   testanyware vm stop "$VM_ID" || true
 }
 trap cleanup EXIT
+
+# ── Step gating ─────────────────────────────────────────────────────────────
+#
+# `maybe_run <step-name> <fn>` only invokes <fn> if we have reached or
+# passed the requested `--from` step. The first call whose step matches
+# the flag flips STARTED to 1 and every subsequent call runs.
+#
+# Step names group whole chapters: `chapter01`, `chapter02`, `chapter03`,
+# `chapter04`, `final`. Granular per-function gating is over-flexible —
+# the iteration story is "skip earlier chapters", not "skip individual
+# setup steps".
+STARTED=0
+maybe_run() {
+  local step_name="$1"; shift
+  if (( STARTED == 0 )) && [[ -z "$FROM" || "$step_name" == "$FROM" ]]; then
+    STARTED=1
+  fi
+  if (( STARTED )); then
+    "$@"
+  else
+    log SKIP "$step_name: skipped (--from $FROM)"
+  fi
+}
 
 preflight() {
   log PREFLIGHT "checking dependencies"
@@ -412,17 +534,122 @@ capture_chapter03_post_state() {
     "ravel-lite state memory list $plan_dir"
 }
 
-# scenario_run drives the chapter 04-05 TUI flow against the plan
-# created in chapter 03. TUI stdout lives inside the VM's GUI
-# Terminal, so capture is via screenshots (and the downloaded
-# LLM_STATE tree at the end), not transcript_at.
+# scenario_run drives one full ravel-lite cycle (chapters 04-05)
+# against the plan created in chapter 03. The TUI lives in the VM's
+# GUI Terminal — the work-phase prompt, phase banners, and per-phase
+# progress indicators are all screen-only — so most capture is via
+# screenshots. Deterministic post-cycle state (git log, session log,
+# memory list, backlog) is captured as text via transcript_at.
+#
+# Find-text targets:
+#   "WORK", "ANALYSE", "REFLECT", "TRIAGE" — phase banners
+#       (per src/format.rs::phase_info; uppercase, NOT "phase: work"
+#       which only appears in YAML files).
+#   "Proceed to next work phase?" — inter-cycle prompt
+#       (per src/phase_loop.rs:463; verbatim string).
+#
+# Completion signal: phase.md returns to `work` AND a new
+# `save-work-baseline` commit appears in `git log`. Polled via the
+# agent channel rather than a screen marker so a stuck TUI doesn't
+# fool us into thinking the cycle finished.
 scenario_run() {
-  log SCENARIO_RUN "driving 'ravel-lite run' on the created plan"
+  local plan_dir="${EXAMPLE_DIR_ABS}/LLM_STATE/main"
+  local project_dir="${EXAMPLE_DIR_ABS}"
+
+  log SCENARIO_RUN "starting one full ravel-lite cycle (chapters 04-05)"
+
+  # Snapshot the pre-cycle phase.md so the chapter prose can show the
+  # starting state (`work`) the first cycle assumes.
+  transcript_at "04-phase-md-pre" \
+    "cat $plan_dir/phase.md"
+
+  # Capture the pre-run HEAD so the completion poll can detect when HEAD
+  # has actually advanced. Necessary on iterative `--from chapter04` re-
+  # runs: the prior cycle's tail is already a save-work-baseline commit,
+  # so a string-only match would short-circuit before the new cycle
+  # starts.
+  local pre_run_sha
+  pre_run_sha=$(testanyware exec --vm "$VM_ID" \
+    "$VM_SHELL_PRELUDE cd $project_dir && git rev-parse HEAD" 2>/dev/null \
+    | tr -d '[:space:]')
+  log SCENARIO_RUN "pre-run HEAD: ${pre_run_sha:-<unknown>}"
+
+  log SCENARIO_RUN "invoking 'ravel-lite run' in the GUI Terminal"
   testanyware input type --vm "$VM_ID" \
-    "ravel-lite run ~/Development/ravel-tutorial-example/LLM_STATE/main"
+    "ravel-lite run $plan_dir"
   testanyware input key --vm "$VM_ID" return
-  testanyware find-text --vm "$VM_ID" "phase: work" --timeout 30 >/dev/null
-  screenshot_at "04-tui-phase-work"
+
+  # The work-phase banner appears once the phase loop has read phase.md
+  # and dispatched. 60s gives ample headroom on a cold VM where the
+  # ravel-lite binary may still be paging in.
+  testanyware find-text --vm "$VM_ID" "WORK" --timeout 60 >/dev/null
+  screenshot_at "04-work-banner"
+
+  # The work agent (claude) takes a moment to spin up and emit its
+  # initial prompt asking which task to pick. No deterministic find-
+  # text target — claude's wording shifts run-to-run — so a fixed
+  # delay screenshot is the pragmatic capture point.
+  sleep 25
+  screenshot_at "04-work-prompt"
+
+  # Drive the work phase with a single-line task choice. The response
+  # file mirrors the chapter's illustrative selection ("the
+  # distributed-systems entries"); edit responses/04-task-choice.txt
+  # to tune for the seeded backlog claude actually wrote in chapter 03.
+  type_lines "$RESPONSES_DIR/04-task-choice.txt"
+
+  # The cycle now proceeds unattended through analyse-work, git-commit-
+  # work, reflect, git-commit-reflect, (dream skipped on first cycle),
+  # triage, git-commit-triage. Poll for completion every 10s; cap at
+  # ~20 minutes which covers a leisurely cycle on a cold VM.
+  log SCENARIO_RUN "polling for cycle completion (max ~20 minutes)"
+  local i
+  for i in $(seq 1 120); do
+    sleep 10
+    if testanyware exec --vm "$VM_ID" \
+        "$VM_SHELL_PRELUDE cd $project_dir \
+          && [ \"\$(cat $plan_dir/phase.md)\" = work ] \
+          && [ \"\$(git rev-parse HEAD)\" != \"$pre_run_sha\" ] \
+          && git log --oneline | head -1 | grep -q save-work-baseline" \
+        >/dev/null 2>&1; then
+      log SCENARIO_RUN "cycle complete after ~${i}0s"
+      break
+    fi
+    # Periodic mid-cycle screenshots. Six iterations = ~1 minute apart;
+    # enough to land at least one screenshot per phase without flooding
+    # the captures directory. Labelled by elapsed deciseconds so the
+    # filename ordering matches real time.
+    if (( i % 6 == 0 )); then
+      screenshot_at "04-tui-cycle-${i}0s"
+    fi
+    if (( i == 120 )); then
+      log SCENARIO_RUN "timed out waiting for cycle completion; capturing anyway"
+    fi
+  done
+
+  # The TUI is now showing 'Proceed to next work phase?'. Screenshot,
+  # then answer 'n' to exit cleanly so the next chapter prose can
+  # describe the close-the-loop story.
+  testanyware find-text --vm "$VM_ID" "Proceed to next work phase" --timeout 30 >/dev/null || true
+  screenshot_at "04-proceed-prompt"
+  testanyware input type --vm "$VM_ID" "n"
+  testanyware input key --vm "$VM_ID" return
+  sleep 3
+  screenshot_at "04-loop-exited"
+
+  # Deterministic post-cycle state for the chapter prose. Each
+  # transcript drops paste-ready into a [source,console] block.
+  log CAPTURE_TRANSCRIPTS "chapter 04-05: post-cycle deterministic state"
+  transcript_at "04-git-log-post-cycle" \
+    "cd $project_dir && git log --oneline -10"
+  transcript_at "04-session-log-latest" \
+    "ravel-lite state session-log show-latest $plan_dir"
+  transcript_at "05-memory-after-reflect" \
+    "ravel-lite state memory list $plan_dir"
+  transcript_at "05-backlog-after-triage" \
+    "ravel-lite state backlog list $plan_dir --format markdown"
+  transcript_at "05-phase-md-post" \
+    "cat $plan_dir/phase.md"
 }
 
 capture_state() {
@@ -433,20 +660,24 @@ capture_state() {
 
 main() {
   preflight
-  vm_lifecycle_start
-  install_ravel_lite
-  capture_chapter01_transcripts
-  capture_chapter02_transcripts
-  install_claude_code
-  transfer_claude_auth
-  pretrust_project
-  setup_shell_env
-  capture_chapter03_create_session
-  capture_chapter03_post_state
-  # scenario_run is intentionally disabled: chapters 04-05 capture is a
-  # separate backlog task. Re-enable once that task is unblocked.
-  # scenario_run
-  capture_state
+  if (( OWN_VM )); then
+    vm_lifecycle_start
+  else
+    log VM_LIFECYCLE "reusing supplied VM $VM_ID (skipping vm start)"
+  fi
+
+  maybe_run chapter01 install_ravel_lite
+  maybe_run chapter01 capture_chapter01_transcripts
+  maybe_run chapter02 capture_chapter02_transcripts
+  maybe_run chapter03 install_claude_code
+  maybe_run chapter03 transfer_claude_auth
+  maybe_run chapter03 pretrust_project
+  maybe_run chapter03 setup_shell_env
+  maybe_run chapter03 capture_chapter03_create_session
+  maybe_run chapter03 capture_chapter03_post_state
+  maybe_run chapter04 scenario_run
+  maybe_run final     capture_state
+
   log MAIN "capture complete; outputs in $CAPTURE_DIR"
 }
 
