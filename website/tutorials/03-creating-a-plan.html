@@ -1,0 +1,190 @@
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>A plan is the unit ravel-lite drives a cycle against. Plans are <strong>not</strong> hand-written. They are bootstrapped through an interactive Claude Code conversation that asks you what you want to work on, then materialises the plan-state files from your answers. This chapter walks through <code>ravel-lite create</code> against the reading-list-manager from the previous chapter.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_ravel_lite_create"><code>ravel-lite create</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The command takes one argument — the path of the new plan directory — and refuses to create it if the directory already exists. The parent must exist (so it knows where to write):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">ravel-lite create ~/Development/ravel-tutorial-example/LLM_STATE/main</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Two things happen behind the scenes. First, ravel-lite reads the <strong>create-plan</strong> prompt template from <code>&lt;config-dir&gt;/create-plan.md</code>, appends the target plan path to it, and uses the result as the system prompt for a fresh Claude Code session. Second, it spawns Claude Code with stdio inherited so the conversation runs directly in your terminal — no TUI, no JSON streaming, just a normal headful claude session.</p>
+</div>
+<div class="paragraph">
+<p>The <code>create</code> phase reuses the same agent-and-model configuration as the work phase (from <code>&lt;config-dir&gt;/agents/claude-code/config.yaml</code>), so the bootstrap conversation runs against whichever model you have configured for actual work. Pi is not currently supported as the create-plan agent — <code>create</code> is interactive, and the integration was built first against Claude Code.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The first time claude runs against a new directory it asks for trust. If you have not used Claude Code in this project subtree before, expect a prompt like <strong>"Do you want to trust this directory?"</strong> — answer <strong>yes</strong> once and the trust grant is remembered in <code>~/.claude.json</code> for the next run.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_conversation">The conversation</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The create-plan prompt asks four questions in order: what is this plan for, what does the project look like, what is the initial backlog, and is there starter context to seed memory with. Below is an illustrative slice of the conversation against the reading-list-manager.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">&gt; I'd like to understand the goal of this plan. What is this plan for, in
+&gt; one or two sentences?
+
+I want to populate a curated reading list with about thirty entries
+across distributed-systems, type-theory, and writing-craft tags, with
+short notes for each.
+
+&gt; What does the project look like? Anything I should know about its
+&gt; conventions before I shape the backlog?
+
+The project is at ~/Development/ravel-tutorial-example. The README
+defines the entry format and naming conventions. There's no code —
+just reading-list.md and notes/&lt;slug&gt;.md per entry.
+
+&gt; Got it. What should the initial backlog look like? List the tasks you
+&gt; want to start with, in any order.
+
+Three tasks to start:
+1. Add the first ten distributed-systems entries.
+2. Add five type-theory entries focused on dependent-typing introductions.
+3. Cross-link entries that cite each other (e.g. Lamport's clocks paper
+   and Liskov's distributed systems chapter).
+
+&gt; Should I seed memory with anything you'd want every cycle to know? A
+&gt; style preference, a constraint, a domain bit?
+
+Yes — memory should remember:
+- Each entry needs a one-line annotation, not a full summary; longer
+  thoughts go in notes/&lt;slug&gt;.md.
+- Slugs are lower-kebab-case derived from the title; the convention is
+  in the README.
+- Tags should be reused before inventing new ones; check existing tags
+  in reading-list.md before adding.
+
+&gt; Thanks. Writing the plan now.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Claude then writes the plan files using the <code>ravel-lite state</code> CLI rather than direct file edits. That choice matters: it routes every mutation through the schemas in <code>src/state/&lt;name&gt;/schema.rs</code>, which means a malformed entry never lands on disk.</p>
+</div>
+<div class="paragraph">
+<p>After the conversation finishes you will see a populated plan directory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ls ~/Development/ravel-tutorial-example/LLM_STATE/main/
+backlog.yaml  memory.yaml  phase.md  session-log.yaml  work-baseline</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>session-log.yaml</code> is empty — no cycles have run. <code>phase.md</code> reads <code>work</code> so the next phase is the first work prompt. <code>work-baseline</code> holds the project&#8217;s HEAD SHA, captured so the first analyse-work has something to diff against.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_inspecting_what_create_produced">Inspecting what <code>create</code> produced</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Read the backlog the conversation seeded:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state backlog list ~/Development/ravel-tutorial-example/LLM_STATE/main \
+    --format markdown
+
+## reading-list
+
+| title                                                          | status      | deps |
+|----------------------------------------------------------------|-------------|------|
+| Add first ten distributed-systems entries                      | not_started | —    |
+| Add five type-theory entries on dependent typing               | not_started | —    |
+| Cross-link entries that cite each other                        | not_started | —    |</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>And the seeded memory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state memory list ~/Development/ravel-tutorial-example/LLM_STATE/main
+entries:
+  - id: one-line-annotations-only
+    title: Annotations are one line; longer thoughts go in notes/&lt;slug&gt;.md
+    body: |
+      The README defines the entry format. Keep `reading-list.md` skim-friendly:
+      title, author, source, status, tags, one-line annotation. Anything
+      longer is a separate file under `notes/`.
+  - id: slug-convention-from-readme
+    title: Slugs are lower-kebab-case from the title
+    body: |
+      Defined in README.md. Used to name `notes/&lt;slug&gt;.md` and to keep
+      cross-references stable.
+  - id: reuse-tags-before-inventing
+    title: Reuse existing tags before inventing new ones
+    body: |
+      Check `reading-list.md` for existing tags before introducing a new
+      one. Tag drift makes the catalog harder to navigate.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>These are the two files the work phase will read at the start of the first cycle. Memory is durable — these three entries will carry across every future cycle of this plan, sharpened by reflect and (eventually) compacted by dream.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The plan files are plain YAML. You can hand-edit them between phases — typo a task title, reorder the backlog, add a memory entry — and the next phase will read whatever is there. The orchestrator never holds shadow state. The <a href="../docs/state-files.html">State files</a> reference documents the schema and per-file lifecycle.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_when_create_fails">When <code>create</code> fails</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The two failure modes new users hit:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Plan directory already exists.</strong> <code>create</code> refuses to clobber. Move the existing directory aside or pick a different plan name.</p>
+</li>
+<li>
+<p><strong>Trust modal hangs.</strong> If you are running inside a multiplexer (tmux, screen) and the claude trust prompt does not render, ravel-lite&#8217;s UI may not surface it. The known workaround is to <code>claude</code> once at the project&#8217;s parent directory beforehand to grant trust outside of ravel-lite, or to run <code>create</code> in a plain terminal.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Either way, no plan files are written if the conversation does not finish — <code>create</code> is atomic on the orchestrator side. A partial <code>LLM_STATE/main/</code> directory after a failed <code>create</code> is rare, but if it happens, removing it manually and re-running is safe.</p>
+</div>
+<div class="paragraph">
+<p>With the plan in place, the <a href="04-the-first-cycle.html">next chapter</a> runs the first cycle: <code>ravel-lite run</code>, the work phase, the headless phases that follow, and what the audit-trail commits look like in <code>git log</code>.</p>
+</div>
+</div>
+</div>

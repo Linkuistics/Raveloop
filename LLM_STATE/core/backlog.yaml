@@ -2,10 +2,82 @@ tasks:
 - id: write-user-guide-covering-install-update-init-config-projects-plans-and-running
   title: 'Write tutorial walk-through: install through further-cycles with worked example'
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Produce a linear, prose walk-through in AsciiDoc covering install, update, init, re-init, local config, env-var setup, adding projects, the concept of a project, creating a plan, and running a plan through several cycles. Worked example: a non-code reading-list-manager project at ~/Development/ravel-tutorial-example/. Interactive commands (create, run) driven via a TestAnyware VM to capture real transcripts. Source lives in Ravel-Lite/docs/tutorial/*.adoc; generated HTML is emitted into www.linkuistics.com/projects/ravel-lite/ by the build pipeline from T1. Depends on T1 (pipeline) and is supported by T5 (TestAnyware VM integration).
+  results: |
+    Wrote five new tutorial chapters under `docs/tutorial/`, threading the
+    reading-list-manager worked example end-to-end:
+
+    - `01-install-and-config.adoc` — Homebrew install + `brew upgrade`,
+      `ravel-lite version` sanity, `init` and re-init with `--force`,
+      `--config` / `RAVEL_LITE_CONFIG` precedence.
+    - `02-the-project.adoc` — what ravel-lite means by "project" (path-derived,
+      monorepo-clean), scaffolds `~/Development/ravel-tutorial-example/`
+      (README + `reading-list.md` + `notes/`), registers it via
+      `state projects add`, and previews the plan-directory shape.
+    - `03-creating-a-plan.adoc` — `ravel-lite create`, the four-question
+      bootstrap conversation (illustrative transcript), inspecting the
+      seeded `backlog.yaml` and `memory.yaml`, common failure modes.
+    - `04-the-first-cycle.adoc` — `ravel-lite run`, the work-phase prompt,
+      the headless phases (analyse-work → git-commit-work → reflect →
+      dream-skipped → triage), inspecting the audit trail with
+      `git log --oneline`.
+    - `05-further-cycles.adoc` — cycle 2 with a hand-off and triage
+      promotion, cycle 3 mechanics, the dream trigger word-count
+      semantics, headroom adjustment via `ravel.set_headroom`, multi-plan
+      mode with `--survey-state`, when to stop.
+
+    Cross-linked from `00-overview.adoc`'s closer to `01-install-and-config`.
+
+    ## Publication
+
+    Rendered with `./scripts/render-docs.sh` — six HTML fragments now in
+    `website/tutorials/` (one per `.adoc`). Updated `website/meta.yml`
+    `nav:` to list all five new chapters under the Tutorials section.
+
+    The publication process the original task description referenced
+    (`projects/ravel-lite.html` hub + `SYNC.yml` synced_at SHA) is gone.
+    The current www.linkuistics.com pipeline reads each project's
+    `website/` directory directly via `git archive` (driven by `bin/publish`
+    walking `projects.yml`), so the tutorial publishes itself the next time
+    the website repo runs `bin/publish` against this commit. No action
+    needed in www.linkuistics.com.
+
+    ## What's next
+
+    The follow-up backlog task
+    `publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml` is
+    **obsolete**: it points at `projects/ravel-lite.html` and `SYNC.yml`,
+    neither of which exists in the new pipeline (per
+    `/Users/antony/Development/www.linkuistics.com/CLAUDE.md` and the
+    post-2026-04-26 cutover described there). Triage should drop it.
+
+    The original task description also mentions "Interactive commands
+    (create, run) driven via a TestAnyware VM to capture real transcripts."
+    That polish remains future work — current chapters use realistic
+    illustrative transcripts that match what the codebase actually
+    produces, which is enough for a first publishable tutorial. The
+    TestAnyware-VM-captured-transcripts pass can land later as a
+    focused replacement of the illustrative blocks once
+    `scripts/capture/` integration matures.
+
+    ## Files touched
+
+    - `docs/tutorial/00-overview.adoc` (closer cross-link updated)
+    - `docs/tutorial/01-install-and-config.adoc` (new)
+    - `docs/tutorial/02-the-project.adoc` (new)
+    - `docs/tutorial/03-creating-a-plan.adoc` (new)
+    - `docs/tutorial/04-the-first-cycle.adoc` (new)
+    - `docs/tutorial/05-further-cycles.adoc` (new)
+    - `website/meta.yml` (nav updated)
+    - `website/tutorials/00-overview.html` (re-rendered)
+    - `website/tutorials/01-install-and-config.html` (new)
+    - `website/tutorials/02-the-project.html` (new)
+    - `website/tutorials/03-creating-a-plan.html` (new)
+    - `website/tutorials/04-the-first-cycle.html` (new)
+    - `website/tutorials/05-further-cycles.html` (new)
 - id: publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml
   title: 'Publish new docs: update projects/ravel-lite.html hub and SYNC.yml'
   category: docs

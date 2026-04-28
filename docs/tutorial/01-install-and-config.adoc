@@ -1,0 +1,138 @@
+= Install and configure
+
+Ravel-Lite is a single Rust binary plus a config directory. The binary lives on `PATH`; the config directory holds the prompts, agent settings, projects catalog, and cross-plan graph that the orchestrator reads on every invocation. This chapter installs the binary, materialises a default config directory, and points your shell at it.
+
+The walk-through assumes macOS or Linux; the steps are identical on either. Where a path differs the difference is called out.
+
+== Install via Homebrew
+
+The simplest install on either platform is the bottled Homebrew formula:
+
+[source,bash]
+----
+brew install linkuistics/taps/ravel-lite
+----
+
+Updates flow through the same channel:
+
+[source,bash]
+----
+brew upgrade ravel-lite
+----
+
+Homebrew installs a precompiled binary, so the user does not need a Rust toolchain. The four target tarballs (Intel and Apple-Silicon macOS, x86_64 and aarch64 Linux glibc) are built and published from a developer machine via `cargo-release` plus the two scripts under `scripts/release-*.sh` — the published Linux binaries pin glibc to 2.17 for wide compatibility.
+
+Verify the install:
+
+[source,bash]
+----
+$ ravel-lite version
+ravel-lite 0.1.0 (v0.1.0-2-g15c2c8c, built 2026-04-21T06:42:18Z)
+----
+
+The three components are the crate version, `git describe --tags --always --dirty` from the build, and the UTC build timestamp. A running binary therefore always identifies the commit it was built from — useful when reporting an issue.
+
+[NOTE]
+====
+If you do not use Homebrew, clone the repository and `cargo install --path .` against a stable Rust toolchain. The release tarballs pinned to glibc 2.17 are intended for users who want a single binary; building from source is the supported alternative for everyone else.
+====
+
+== `ravel-lite init`
+
+`init` writes the embedded defaults — agent configuration files, phase prompts, the universal coding-style and memory-style files under `fixed-memory/` — into a target directory. That directory becomes your *config directory*: every subsequent invocation reads from it.
+
+[source,bash]
+----
+ravel-lite init ~/.config/ravel-lite
+----
+
+The path is a suggestion; you can put the config directory wherever you like. The default lookup order on macOS is `~/Library/Application Support/ravel-lite/`, and on Linux it is `~/.config/ravel-lite/`. Pointing `init` at one of those defaults means subsequent commands will find it without any environment variable. Pointing it elsewhere — under `~/Development/`, on an external volume — means you will need to tell ravel-lite where to look, covered below.
+
+After `init` runs, the directory contains the materialised tree:
+
+[source,text]
+----
+~/.config/ravel-lite/
+├── agents/
+│   ├── claude-code/
+│   │   ├── config.yaml          # per-phase model, dangerous flag
+│   │   └── ...
+│   └── pi/
+│       ├── config.yaml
+│       └── subagents/           # pi's brainstorming/tdd/writing-plans skills
+├── fixed-memory/                # universal coding/memory style
+│   ├── coding-style.md
+│   ├── coding-style-rust.md
+│   └── memory-style.md
+├── phases/                      # per-phase prompt templates
+│   ├── work.md
+│   ├── analyse-work.md
+│   └── ...
+├── create-plan.md               # the bootstrap conversation prompt
+├── config.yaml                  # base config (headroom, agent default)
+├── projects.yaml                # per-user component catalog (empty)
+└── related-components.yaml      # cross-plan graph (empty)
+----
+
+Every file in the tree is text on disk. Editing one is supported — the orchestrator reads the file on each phase invocation, so a customised prompt or a new model setting takes effect on the next phase. The link:../docs/config-and-prompts.html[Configuration and prompts] reference covers the layout in full.
+
+== Re-running `init`
+
+If you re-run `init` against a directory that already exists and is non-empty, ravel-lite refuses unless you pass `--force`:
+
+[source,bash]
+----
+$ ravel-lite init ~/.config/ravel-lite
+error: target directory ~/.config/ravel-lite is non-empty; pass --force to overwrite
+
+$ ravel-lite init ~/.config/ravel-lite --force
+wrote 31 files to ~/.config/ravel-lite
+----
+
+`--force` rewrites every embedded default. Local edits to those files are lost — back them up first if you have customised anything. The intended use case for `--force` is refreshing prompts after upgrading the binary: a new release may ship updated phase prompts, and re-init is how you pick them up.
+
+The tradeoff is symmetrical: skip `--force` and stay on your customised prompts; run `--force` and lose customisations to gain upstream improvements. There is no automatic merge — the prompts are plain Markdown, and a hand-merge after `--force` is the supported path for users who want both.
+
+== Telling ravel-lite where the config directory is
+
+If you used the platform default location, you can skip this section. Otherwise, ravel-lite needs to know where to look. The precedence chain is:
+
+. `--config <path>` on the command line, if supplied;
+. `RAVEL_LITE_CONFIG` environment variable, if set;
+. the platform default (`~/.config/ravel-lite/` on Linux, `~/Library/Application Support/ravel-lite/` on macOS).
+
+If none of the three resolves to an existing directory, every command that needs the config errors with a hint pointing back at `init`. The recommended workstation setup is to set the environment variable in your shell profile:
+
+[source,bash]
+----
+# ~/.zshrc or ~/.bashrc
+export RAVEL_LITE_CONFIG="$HOME/.config/ravel-lite"
+----
+
+Reload the shell or run `source ~/.zshrc`, then verify:
+
+[source,bash]
+----
+$ ravel-lite state projects list
+projects: {}
+----
+
+An empty catalog is valid output — it just means no projects have been registered yet. We will add one in the next chapter.
+
+The `--config` flag exists for one-off overrides: running an isolated config directory for an experiment, or driving multiple installations from the same shell. It overrides the env var without changing it.
+
+== Sanity check
+
+Three signals tell you the install is healthy.
+
+First, `ravel-lite version` returns a version line. Second, `ravel-lite state projects list` prints `projects: {}` (or any catalog you have already populated) — that confirms the binary can find its config directory and parse it. Third, the config directory contains a populated `phases/` directory:
+
+[source,bash]
+----
+$ ls $RAVEL_LITE_CONFIG/phases/
+analyse-work.md  dream.md  reflect.md  triage.md  work.md
+----
+
+If any of those is missing, re-run `init --force`. Embedded defaults are versioned in the binary, so a missing prompt is always recoverable without reaching for git.
+
+With the binary installed and the config directory pointed at, you are ready to set up a project — the link:02-the-project.html[next chapter] introduces the worked-example reading-list-manager that the rest of the tutorial threads through.

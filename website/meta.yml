@@ -18,6 +18,11 @@ nav:
   - section: Tutorials
     pages:
       - tutorials/00-overview
+      - tutorials/01-install-and-config
+      - tutorials/02-the-project
+      - tutorials/03-creating-a-plan
+      - tutorials/04-the-first-cycle
+      - tutorials/05-further-cycles
   - section: Reference
     pages:
       - docs/index

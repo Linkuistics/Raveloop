@@ -1,0 +1,141 @@
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Before creating a plan, you need a <strong>project</strong> — the subtree ravel-lite will read, write, and commit against during a cycle. This chapter introduces what a project is in ravel-lite&#8217;s vocabulary, scaffolds a worked example we will use for the rest of the tutorial, and registers it in the per-user projects catalog.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_ravel_lite_means_by_project">What ravel-lite means by "project"</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A project is the subtree the orchestrator controls during a cycle. It is <strong>not</strong> derived from where <code>.git</code> sits — a single repository can host many projects as nested subtrees. It is derived from where the plan lives: given a plan directory at <code>&lt;project&gt;/&lt;state-dir&gt;/&lt;plan&gt;/</code> (typically <code>&lt;project&gt;/LLM_STATE/&lt;plan&gt;/</code>), ravel-lite computes the project as <code>&lt;plan_dir&gt;/../..</code> and treats that subtree as everything it is allowed to read, write, and commit.</p>
+</div>
+<div class="paragraph">
+<p>The decoupling matters in two situations. The common one is a single-purpose repository where the project root <strong>is</strong> the repository root — the path math just happens to coincide. The interesting one is a monorepo, where the project is a subtree like <code>monorepo/services/billing/</code> and ravel-lite needs to stay out of sibling subtrees. In both cases the orchestrator scopes its git operations using a pathspec on the project subtree, so dirty-tree checks, baseline diffs, and the analyse-work snapshot all see only the project&#8217;s files.</p>
+</div>
+<div class="paragraph">
+<p>For this tutorial the project will be a standalone directory under <code>~/Development/</code> — no monorepo concerns — but the path math is the same.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_a_non_code_worked_example">A non-code worked example</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Throughout this tutorial we will operate on a small reading-list-manager: a curated list of articles and books to read, with notes and tags. There is no code; the project is purely a Markdown file and a YAML catalog. That is on purpose. A non-code project keeps the focus on the <strong>cycle</strong> — task selection, the headless phases, memory growth, the dream trigger — without diff-resolution gymnastics.</p>
+</div>
+<div class="paragraph">
+<p>Bootstrap the project directory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">mkdir -p ~/Development/ravel-tutorial-example
+cd ~/Development/ravel-tutorial-example
+git init</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>git init</code> is recommended even for a non-code project. The audit-trail commits ravel-lite produces (<code>run-plan: work</code>, <code>run-plan: reflect</code>, the per-phase baseline commits) need somewhere to land. Without a git repository, the <code>git-commit-*</code> audit-trail phases will fail loudly the first time they run.</p>
+</div>
+<div class="paragraph">
+<p>Now seed two files. A README the work phase will read, and a placeholder reading list:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">cat &gt; README.md &lt;&lt;'EOF'
+# Reading list
+
+A curated list of articles and books I want to read, with notes and tags.
+
+## Files
+
+- `reading-list.md` — the list, organised by tag.
+- `notes/` — per-entry notes, one Markdown file per item.
+
+## Conventions
+
+- Each entry has: title, author, source URL, status (`queued`, `reading`, `done`, `dropped`),
+  one or more tags, and an optional one-line annotation.
+- Notes for an entry live at `notes/&lt;slug&gt;.md`. The slug is the lower-kebab-case title.
+- Tags are free-form lower-kebab-case.
+EOF
+
+mkdir notes
+touch reading-list.md
+
+git add .
+git commit -m "Initial scaffold"</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You now have a project. Two files, one directory, one commit. Ravel-Lite will treat <code>~/Development/ravel-tutorial-example/</code> as the project root once we point a plan at it.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The README is not optional. The work phase reads <code>&lt;project&gt;/README.md</code> at the start of every iteration to ground the agent in project conventions. A missing README will not crash the phase, but the agent will work from less context — and any conventions you want enforced (the slug rule above, for instance) belong here so they survive across cycles.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_registering_the_project">Registering the project</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Ravel-Lite maintains a per-user <strong>projects catalog</strong> at <code>&lt;config-dir&gt;/projects.yaml</code>. The catalog maps human-friendly component names to absolute paths on disk. Component names are the shared currency of the cross-plan graph (<code>related-components.yaml</code>); the catalog is the per-user resolver from name to path.</p>
+</div>
+<div class="paragraph">
+<p>You do not have to populate the catalog manually — <code>ravel-lite run</code> auto-registers a project the first time it sees one. But it is instructive to do it by hand once:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state projects add --path ~/Development/ravel-tutorial-example
+added project 'ravel-tutorial-example' at /Users/you/Development/ravel-tutorial-example
+
+$ ravel-lite state projects list
+projects:
+  ravel-tutorial-example:
+    path: /Users/you/Development/ravel-tutorial-example</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If <code>--name</code> is omitted, the basename of the path is used. The catalog rejects duplicate names and duplicate paths so two entries cannot disagree about the same project. To rename later — say, after refactoring or moving the directory — use <code>state projects rename</code>; the rename cascades into <code>related-components.yaml</code> and the discover-cache so cross-references stay consistent. The full surface is documented on the <a href="../docs/cli-state.html">State commands</a> reference.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_shape_of_a_plan_directory">The shape of a plan directory</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A <strong>plan</strong> is a directory of state files representing an in-flight body of work. Conventionally it sits at <code>&lt;project&gt;/LLM_STATE/&lt;plan-name&gt;/</code>, though the state-directory name is configurable. We will create <code>~/Development/ravel-tutorial-example/LLM_STATE/main/</code> in the next chapter.</p>
+</div>
+<div class="paragraph">
+<p>Inside a plan, every piece of state ravel-lite needs lives as a readable file:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">LLM_STATE/main/
+├── backlog.yaml         # tasks, statuses, dependencies, results, hand-offs
+├── memory.yaml          # distilled learnings carried across cycles
+├── session-log.yaml     # one record per completed phase, append-only
+├── latest-session.yaml  # most recent session record, overwritten each cycle
+└── phase.md             # one-line file naming the phase to run next</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A project can host multiple plans. Each is its own directory under <code>LLM_STATE/</code> and runs its own cycle independently. For this tutorial we will run a single plan called <code>main</code>. The full schema for each file lives on the <a href="../docs/state-files.html">State files</a> reference; the current chapter only needs the high-level shape so the next chapter&#8217;s <code>create</code> command makes sense.</p>
+</div>
+<div class="paragraph">
+<p>With the project directory in place and registered, you are ready to bootstrap the plan — the <a href="03-creating-a-plan.html">next chapter</a> walks through <code>ravel-lite create</code>.</p>
+</div>
+</div>
+</div>

@@ -1,0 +1,197 @@
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Ravel-Lite is a single Rust binary plus a config directory. The binary lives on <code>PATH</code>; the config directory holds the prompts, agent settings, projects catalog, and cross-plan graph that the orchestrator reads on every invocation. This chapter installs the binary, materialises a default config directory, and points your shell at it.</p>
+</div>
+<div class="paragraph">
+<p>The walk-through assumes macOS or Linux; the steps are identical on either. Where a path differs the difference is called out.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_install_via_homebrew">Install via Homebrew</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The simplest install on either platform is the bottled Homebrew formula:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">brew install linkuistics/taps/ravel-lite</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Updates flow through the same channel:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">brew upgrade ravel-lite</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Homebrew installs a precompiled binary, so the user does not need a Rust toolchain. The four target tarballs (Intel and Apple-Silicon macOS, x86_64 and aarch64 Linux glibc) are built and published from a developer machine via <code>cargo-release</code> plus the two scripts under <code>scripts/release-*.sh</code> — the published Linux binaries pin glibc to 2.17 for wide compatibility.</p>
+</div>
+<div class="paragraph">
+<p>Verify the install:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite version
+ravel-lite 0.1.0 (v0.1.0-2-g15c2c8c, built 2026-04-21T06:42:18Z)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The three components are the crate version, <code>git describe --tags --always --dirty</code> from the build, and the UTC build timestamp. A running binary therefore always identifies the commit it was built from — useful when reporting an issue.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you do not use Homebrew, clone the repository and <code>cargo install --path .</code> against a stable Rust toolchain. The release tarballs pinned to glibc 2.17 are intended for users who want a single binary; building from source is the supported alternative for everyone else.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_ravel_lite_init"><code>ravel-lite init</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><code>init</code> writes the embedded defaults — agent configuration files, phase prompts, the universal coding-style and memory-style files under <code>fixed-memory/</code> — into a target directory. That directory becomes your <strong>config directory</strong>: every subsequent invocation reads from it.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">ravel-lite init ~/.config/ravel-lite</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The path is a suggestion; you can put the config directory wherever you like. The default lookup order on macOS is <code>~/Library/Application Support/ravel-lite/</code>, and on Linux it is <code>~/.config/ravel-lite/</code>. Pointing <code>init</code> at one of those defaults means subsequent commands will find it without any environment variable. Pointing it elsewhere — under <code>~/Development/</code>, on an external volume — means you will need to tell ravel-lite where to look, covered below.</p>
+</div>
+<div class="paragraph">
+<p>After <code>init</code> runs, the directory contains the materialised tree:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">~/.config/ravel-lite/
+├── agents/
+│   ├── claude-code/
+│   │   ├── config.yaml          # per-phase model, dangerous flag
+│   │   └── ...
+│   └── pi/
+│       ├── config.yaml
+│       └── subagents/           # pi's brainstorming/tdd/writing-plans skills
+├── fixed-memory/                # universal coding/memory style
+│   ├── coding-style.md
+│   ├── coding-style-rust.md
+│   └── memory-style.md
+├── phases/                      # per-phase prompt templates
+│   ├── work.md
+│   ├── analyse-work.md
+│   └── ...
+├── create-plan.md               # the bootstrap conversation prompt
+├── config.yaml                  # base config (headroom, agent default)
+├── projects.yaml                # per-user component catalog (empty)
+└── related-components.yaml      # cross-plan graph (empty)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Every file in the tree is text on disk. Editing one is supported — the orchestrator reads the file on each phase invocation, so a customised prompt or a new model setting takes effect on the next phase. The <a href="../docs/config-and-prompts.html">Configuration and prompts</a> reference covers the layout in full.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_re_running_init">Re-running <code>init</code></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you re-run <code>init</code> against a directory that already exists and is non-empty, ravel-lite refuses unless you pass <code>--force</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite init ~/.config/ravel-lite
+error: target directory ~/.config/ravel-lite is non-empty; pass --force to overwrite
+
+$ ravel-lite init ~/.config/ravel-lite --force
+wrote 31 files to ~/.config/ravel-lite</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>--force</code> rewrites every embedded default. Local edits to those files are lost — back them up first if you have customised anything. The intended use case for <code>--force</code> is refreshing prompts after upgrading the binary: a new release may ship updated phase prompts, and re-init is how you pick them up.</p>
+</div>
+<div class="paragraph">
+<p>The tradeoff is symmetrical: skip <code>--force</code> and stay on your customised prompts; run <code>--force</code> and lose customisations to gain upstream improvements. There is no automatic merge — the prompts are plain Markdown, and a hand-merge after <code>--force</code> is the supported path for users who want both.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_telling_ravel_lite_where_the_config_directory_is">Telling ravel-lite where the config directory is</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you used the platform default location, you can skip this section. Otherwise, ravel-lite needs to know where to look. The precedence chain is:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>--config &lt;path&gt;</code> on the command line, if supplied;</p>
+</li>
+<li>
+<p><code>RAVEL_LITE_CONFIG</code> environment variable, if set;</p>
+</li>
+<li>
+<p>the platform default (<code>~/.config/ravel-lite/</code> on Linux, <code>~/Library/Application Support/ravel-lite/</code> on macOS).</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>If none of the three resolves to an existing directory, every command that needs the config errors with a hint pointing back at <code>init</code>. The recommended workstation setup is to set the environment variable in your shell profile:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash"># ~/.zshrc or ~/.bashrc
+export RAVEL_LITE_CONFIG="$HOME/.config/ravel-lite"</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Reload the shell or run <code>source ~/.zshrc</code>, then verify:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state projects list
+projects: {}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>An empty catalog is valid output — it just means no projects have been registered yet. We will add one in the next chapter.</p>
+</div>
+<div class="paragraph">
+<p>The <code>--config</code> flag exists for one-off overrides: running an isolated config directory for an experiment, or driving multiple installations from the same shell. It overrides the env var without changing it.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_sanity_check">Sanity check</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Three signals tell you the install is healthy.</p>
+</div>
+<div class="paragraph">
+<p>First, <code>ravel-lite version</code> returns a version line. Second, <code>ravel-lite state projects list</code> prints <code>projects: {}</code> (or any catalog you have already populated) — that confirms the binary can find its config directory and parse it. Third, the config directory contains a populated <code>phases/</code> directory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ls $RAVEL_LITE_CONFIG/phases/
+analyse-work.md  dream.md  reflect.md  triage.md  work.md</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If any of those is missing, re-run <code>init --force</code>. Embedded defaults are versioned in the binary, so a missing prompt is always recoverable without reaching for git.</p>
+</div>
+<div class="paragraph">
+<p>With the binary installed and the config directory pointed at, you are ready to set up a project — the <a href="02-the-project.html">next chapter</a> introduces the worked-example reading-list-manager that the rest of the tutorial threads through.</p>
+</div>
+</div>
+</div>

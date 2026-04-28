@@ -1,0 +1,136 @@
+= Creating a plan
+
+A plan is the unit ravel-lite drives a cycle against. Plans are *not* hand-written. They are bootstrapped through an interactive Claude Code conversation that asks you what you want to work on, then materialises the plan-state files from your answers. This chapter walks through `ravel-lite create` against the reading-list-manager from the previous chapter.
+
+== `ravel-lite create`
+
+The command takes one argument — the path of the new plan directory — and refuses to create it if the directory already exists. The parent must exist (so it knows where to write):
+
+[source,bash]
+----
+ravel-lite create ~/Development/ravel-tutorial-example/LLM_STATE/main
+----
+
+Two things happen behind the scenes. First, ravel-lite reads the *create-plan* prompt template from `<config-dir>/create-plan.md`, appends the target plan path to it, and uses the result as the system prompt for a fresh Claude Code session. Second, it spawns Claude Code with stdio inherited so the conversation runs directly in your terminal — no TUI, no JSON streaming, just a normal headful claude session.
+
+The `create` phase reuses the same agent-and-model configuration as the work phase (from `<config-dir>/agents/claude-code/config.yaml`), so the bootstrap conversation runs against whichever model you have configured for actual work. Pi is not currently supported as the create-plan agent — `create` is interactive, and the integration was built first against Claude Code.
+
+[NOTE]
+====
+The first time claude runs against a new directory it asks for trust. If you have not used Claude Code in this project subtree before, expect a prompt like *"Do you want to trust this directory?"* — answer *yes* once and the trust grant is remembered in `~/.claude.json` for the next run.
+====
+
+== The conversation
+
+The create-plan prompt asks four questions in order: what is this plan for, what does the project look like, what is the initial backlog, and is there starter context to seed memory with. Below is an illustrative slice of the conversation against the reading-list-manager.
+
+[source,text]
+----
+> I'd like to understand the goal of this plan. What is this plan for, in
+> one or two sentences?
+
+I want to populate a curated reading list with about thirty entries
+across distributed-systems, type-theory, and writing-craft tags, with
+short notes for each.
+
+> What does the project look like? Anything I should know about its
+> conventions before I shape the backlog?
+
+The project is at ~/Development/ravel-tutorial-example. The README
+defines the entry format and naming conventions. There's no code —
+just reading-list.md and notes/<slug>.md per entry.
+
+> Got it. What should the initial backlog look like? List the tasks you
+> want to start with, in any order.
+
+Three tasks to start:
+1. Add the first ten distributed-systems entries.
+2. Add five type-theory entries focused on dependent-typing introductions.
+3. Cross-link entries that cite each other (e.g. Lamport's clocks paper
+   and Liskov's distributed systems chapter).
+
+> Should I seed memory with anything you'd want every cycle to know? A
+> style preference, a constraint, a domain bit?
+
+Yes — memory should remember:
+- Each entry needs a one-line annotation, not a full summary; longer
+  thoughts go in notes/<slug>.md.
+- Slugs are lower-kebab-case derived from the title; the convention is
+  in the README.
+- Tags should be reused before inventing new ones; check existing tags
+  in reading-list.md before adding.
+
+> Thanks. Writing the plan now.
+----
+
+Claude then writes the plan files using the `ravel-lite state` CLI rather than direct file edits. That choice matters: it routes every mutation through the schemas in `src/state/<name>/schema.rs`, which means a malformed entry never lands on disk.
+
+After the conversation finishes you will see a populated plan directory:
+
+[source,bash]
+----
+$ ls ~/Development/ravel-tutorial-example/LLM_STATE/main/
+backlog.yaml  memory.yaml  phase.md  session-log.yaml  work-baseline
+----
+
+`session-log.yaml` is empty — no cycles have run. `phase.md` reads `work` so the next phase is the first work prompt. `work-baseline` holds the project's HEAD SHA, captured so the first analyse-work has something to diff against.
+
+== Inspecting what `create` produced
+
+Read the backlog the conversation seeded:
+
+[source,bash]
+----
+$ ravel-lite state backlog list ~/Development/ravel-tutorial-example/LLM_STATE/main \
+    --format markdown
+
+## reading-list
+
+| title                                                          | status      | deps |
+|----------------------------------------------------------------|-------------|------|
+| Add first ten distributed-systems entries                      | not_started | —    |
+| Add five type-theory entries on dependent typing               | not_started | —    |
+| Cross-link entries that cite each other                        | not_started | —    |
+----
+
+And the seeded memory:
+
+[source,bash]
+----
+$ ravel-lite state memory list ~/Development/ravel-tutorial-example/LLM_STATE/main
+entries:
+  - id: one-line-annotations-only
+    title: Annotations are one line; longer thoughts go in notes/<slug>.md
+    body: |
+      The README defines the entry format. Keep `reading-list.md` skim-friendly:
+      title, author, source, status, tags, one-line annotation. Anything
+      longer is a separate file under `notes/`.
+  - id: slug-convention-from-readme
+    title: Slugs are lower-kebab-case from the title
+    body: |
+      Defined in README.md. Used to name `notes/<slug>.md` and to keep
+      cross-references stable.
+  - id: reuse-tags-before-inventing
+    title: Reuse existing tags before inventing new ones
+    body: |
+      Check `reading-list.md` for existing tags before introducing a new
+      one. Tag drift makes the catalog harder to navigate.
+----
+
+These are the two files the work phase will read at the start of the first cycle. Memory is durable — these three entries will carry across every future cycle of this plan, sharpened by reflect and (eventually) compacted by dream.
+
+[NOTE]
+====
+The plan files are plain YAML. You can hand-edit them between phases — typo a task title, reorder the backlog, add a memory entry — and the next phase will read whatever is there. The orchestrator never holds shadow state. The link:../docs/state-files.html[State files] reference documents the schema and per-file lifecycle.
+====
+
+== When `create` fails
+
+The two failure modes new users hit:
+
+. *Plan directory already exists.* `create` refuses to clobber. Move the existing directory aside or pick a different plan name.
+. *Trust modal hangs.* If you are running inside a multiplexer (tmux, screen) and the claude trust prompt does not render, ravel-lite's UI may not surface it. The known workaround is to `claude` once at the project's parent directory beforehand to grant trust outside of ravel-lite, or to run `create` in a plain terminal.
+
+Either way, no plan files are written if the conversation does not finish — `create` is atomic on the orchestrator side. A partial `LLM_STATE/main/` directory after a failed `create` is rare, but if it happens, removing it manually and re-running is safe.
+
+With the plan in place, the link:04-the-first-cycle.html[next chapter] runs the first cycle: `ravel-lite run`, the work phase, the headless phases that follow, and what the audit-trail commits look like in `git log`.

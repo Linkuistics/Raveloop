@@ -1,0 +1,213 @@
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>With the plan created, you can run a cycle. This chapter walks through <code>ravel-lite run</code> against the reading-list-manager plan from the previous chapter — the work-phase prompt, the headless phases that follow, and what the audit-trail commits look like in <code>git log</code> afterwards.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_starting_the_loop">Starting the loop</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><code>ravel-lite run</code> is the phase-loop entry point. It reads <code>&lt;plan-dir&gt;/phase.md</code> to decide which phase runs next, dispatches to the matching handler, and on completion advances <code>phase.md</code> to the successor. Single-plan mode (one directory) loops continuously, prompting between cycles. Multi-plan mode (two or more) prioritises across plans via an LLM survey and runs one cycle at a time on the chosen plan.</p>
+</div>
+<div class="paragraph">
+<p>For now we run a single plan:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">ravel-lite run ~/Development/ravel-tutorial-example/LLM_STATE/main</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The TUI takes over the terminal. A banner identifies the plan and the agent backend; the first <code>phase.md</code> read picks up <code>work</code>, and the work phase begins.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The first time <code>run</code> sees a project it has never touched, it auto-registers it in the projects catalog. If the catalog already maps that name to a different path (an old project of the same basename, for instance), ravel-lite prompts you to pick which path is canonical. We populated the catalog manually in chapter 02, so this prompt does not fire here.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_work_phase">The work phase</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The work phase is the only interactive phase in the cycle. The agent reads four sources of context — <code>&lt;project&gt;/README.md</code>, the backlog, distilled memory, and declared peer-project relationships — then asks you to steer task selection. Below is an illustrative session.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">[work] reading-list-manager / main
+
+Backlog (3 not-started, 0 in-progress, 0 done, 0 blocked):
+
+## reading-list
+| title                                                       | status      |
+|-------------------------------------------------------------|-------------|
+| Add first ten distributed-systems entries                   | not_started |
+| Add five type-theory entries on dependent typing            | not_started |
+| Cross-link entries that cite each other                     | not_started |
+
+Any input on which task to work on next? If yes, name it; otherwise
+I'll pick the best next task.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Three tasks, none blocked, no momentum from a prior cycle. Pick the first:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">&gt; the distributed-systems entries
+
+Working on: Add first ten distributed-systems entries.
+
+[edits reading-list.md, creates notes/lamport-clocks.md, ...]
+
+Done. Set status to done, recorded results.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Behind the scenes the agent is calling <code>ravel-lite state backlog set-status</code> to flip the task to <code>done</code> and <code>ravel-lite state backlog set-results</code> to record what it did. The source-file edits to <code>reading-list.md</code> and the new files under <code>notes/</code> are <strong>not</strong> committed by the work phase — they are left dirty for analyse-work, the next phase, to see and commit-message from the actual diff. This split is deliberate: the work phase records <strong>what was decided</strong>, the analyse-work phase records <strong>what was changed in the tree</strong>, and a commit message authored from the tree is more reliable than a commit message authored from a self-report.</p>
+</div>
+<div class="paragraph">
+<p>When the work phase finishes, it writes <code>analyse-work</code> to <code>phase.md</code> and exits. The TUI advances and the next phase starts.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_headless_phases">The headless phases</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>From here, the cycle runs unattended through analyse-work, git-commit-work, reflect, git-commit-reflect, (optionally dream and git-commit-dream), triage, and finally git-commit-triage. The TUI banners each phase as it starts, streams the agent output, and shows the per-phase exit status. Each runs in its own subprocess with its own prompt; nothing is shared between them except the plan-state files on disk.</p>
+</div>
+<div class="paragraph">
+<p>A few things are worth watching for as the cycle progresses.</p>
+</div>
+<div class="paragraph">
+<p><strong>Analyse-work.</strong> The phase examines the actual git diff and writes two artifacts: a session-log entry (overwriting <code>latest-session.yaml</code>) and <code>commits.yaml</code>, which describes how to partition the diff into commits. Default is one commit per cycle; the phase splits only when the diff genuinely spans independent concerns. For a small reading-list update, expect a single commit.</p>
+</div>
+<div class="paragraph">
+<p><strong>Git-commit-work.</strong> A pure Rust handler — no LLM. It reads <code>commits.yaml</code>, applies each entry as <code>git reset HEAD&#8201;&#8212;&#8201;.</code> then <code>git add&#8201;&#8212;&#8201;&lt;paths&gt;</code> then <code>git commit -m &lt;message&gt;</code>, then appends <code>latest-session.yaml</code> to <code>session-log.yaml</code> and captures the next baseline. Two to three commits land: the work commit(s), and a <code>save-reflect-baseline</code> follow-on commit recording the SHA the reflect phase will diff against.</p>
+</div>
+<div class="paragraph">
+<p><strong>Reflect.</strong> Distils the latest session&#8217;s learnings into durable memory. Reflect is the only <strong>lossy</strong> phase — it can sharpen, contradict, and prune memory entries based on what the session uncovered. For a first cycle the agent typically adds zero or one new entries; reflection is more interesting from cycle 3 onward when patterns start to emerge.</p>
+</div>
+<div class="paragraph">
+<p><strong>Dream.</strong> Conditional. Runs only when memory has grown past <code>baseline + headroom</code> words (default 1500 from <code>defaults/config.yaml</code>). On a first cycle, memory is well within the threshold and dream is skipped — the TUI shows a <strong>DREAM banner: skipped — memory within headroom</strong> line so the absence is as legible as the work that ran.</p>
+</div>
+<div class="paragraph">
+<p><strong>Triage.</strong> Reviews the backlog, mines completed tasks for hand-offs, and reprioritises. For a first cycle on a fresh backlog, triage usually does little: the remaining tasks are still well-shaped, and there is no cross-plan dispatch to author. From cycle 2 onward, triage&#8217;s narrative starts to carry <code>[REPRIORITISED]</code>, <code>[PROMOTED]</code>, and <code>[ARCHIVED]</code> labels alongside its actions.</p>
+</div>
+<div class="paragraph">
+<p><strong>Git-commit-triage.</strong> Lands the triage mutations, captures <code>work-baseline</code>, and exits the inner phase loop. The cycle is over. The TUI prints <strong>"Proceed to next work phase?"</strong> and waits.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_inspecting_what_landed">Inspecting what landed</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Stop here for a moment and look at the audit trail. <code>git log --oneline</code> between two <code>save-work-baseline</code> commits is the full record of one cycle:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git log --oneline -10
+b1c4f3a run-plan: save-work-baseline (main)
+3f9a8e2 run-plan: triage (main)
+77b2e4d run-plan: save-triage-baseline (main)
+4c8d1a9 run-plan: reflect (main)
+2e6f7b0 run-plan: save-reflect-baseline (main)
+9a1d3c5 run-plan: work (main)
+ed5b8f6 run-plan: save-work-baseline (main)
+abc1234 Initial scaffold</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Reading bottom-up: the initial scaffold, the seeded <code>work-baseline</code>, the work commit (your edits to <code>reading-list.md</code> and the new notes), the <code>save-reflect-baseline</code> SHA capture, the reflect commit (memory mutations), the <code>save-triage-baseline</code> capture, the triage commit, and the next <code>save-work-baseline</code> ready for cycle 2. A reader can scrub through a cycle the same way they would scrub through a video.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The "no magic" principle cashes out here. There is no shadow state in memory between phases — every state transition is a file write or a commit. A crash mid-cycle is recoverable from <code>phase.md</code>: whichever phase was running when the orchestrator died is the phase that runs again on next invocation. The <a href="../docs/phase-cycle.html">Phase cycle</a> reference documents this in detail.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Inspect the session log to see what reflect saw:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state session-log show-latest \
+    ~/Development/ravel-tutorial-example/LLM_STATE/main
+
+id: 2026-04-28-add-first-ten-distributed-systems-entries-analyse-work
+timestamp: '2026-04-28T14:33:07Z'
+phase: analyse-work
+body: |
+  Added ten distributed-systems entries to reading-list.md and a notes
+  file per entry under notes/. Followed the slug and one-line-annotation
+  conventions from memory. Tags reused: distributed-systems, theory,
+  classics. No new tags introduced.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>And the memory after reflect:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state memory list ~/Development/ravel-tutorial-example/LLM_STATE/main
+entries:
+  - id: one-line-annotations-only
+    [...]
+  - id: slug-convention-from-readme
+    [...]
+  - id: reuse-tags-before-inventing
+    [...]
+  - id: classic-papers-have-stable-canonical-urls
+    title: Classic papers have stable canonical URLs at the source publisher
+    body: |
+      For papers (Lamport, Liskov, etc.), the source URL should be the
+      publisher's canonical PDF link, not a third-party mirror. Mirrors
+      rot. Use ACM, IEEE, or the author's institutional page.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A new memory entry — <strong>"Classic papers have stable canonical URLs"</strong> — distilled from the session. Reflect added it because the work phase had to make a choice about citation URLs that was not previously codified, and that choice is now durable across cycles.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_continuing_or_stopping">Continuing or stopping</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>After git-commit-triage exits, the TUI prompts:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-text" data-lang="text">Proceed to next work phase? [y/N]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Answer <code>y</code> to start cycle 2. Answer <code>n</code> to exit the loop cleanly. The plan directory is left in a fully consistent state either way — <code>phase.md</code> reads <code>work</code>, ready for the next invocation. There is no "save and quit" step: every transition has already been written to disk and committed.</p>
+</div>
+<div class="paragraph">
+<p>The <a href="05-further-cycles.html">next chapter</a> runs cycles 2 and 3, watches memory accumulate, and demonstrates the dream trigger and a hand-off being mined by triage.</p>
+</div>
+</div>
+</div>

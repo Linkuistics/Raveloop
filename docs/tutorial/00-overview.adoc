@@ -40,4 +40,4 @@ LLM_STATE/<plan-name>/
 └── phase.md             # the phase to run next
 ----
 
-Everything Ravel-Lite does ends up in one of these files. Nothing is embedded in the binary, nothing lives only in an agent's head: the next chapter walks through how to inspect these files from the command line while a cycle is running.
+Everything Ravel-Lite does ends up in one of these files. Nothing is embedded in the binary, nothing lives only in an agent's head: the next chapter — link:01-install-and-config.html[Install and configure] — installs the binary and materialises the config directory before we set up a project to run a real cycle against.

@@ -1,0 +1,114 @@
+= Further cycles
+
+A single cycle gives you a feel for the loop's mechanics. The texture of ravel-lite emerges across cycles three and beyond — when memory starts to compound, triage starts to mine hand-offs, and the dream phase eventually fires to compact what reflect has accumulated. This chapter walks through cycles 2 and 3 of the reading-list-manager plan, and finishes with how to tell when to stop.
+
+== Cycle 2: a hand-off appears
+
+Answer `y` at the *Proceed to next work phase?* prompt and the loop begins again. The work phase reads a now-richer context: the same README, the now-four-entry memory, and a backlog with one task `done` and two `not_started`.
+
+Pick the type-theory task this time:
+
+[source,text]
+----
+> the type-theory entries
+
+Working on: Add five type-theory entries on dependent typing.
+
+[edits reading-list.md, creates notes/lof-pierce-tapl.md, ...]
+
+Done. Set status to done, recorded results.
+
+Hand-off: noticed three of the five entries cite Idris and Agda
+implementations that aren't yet linked from reading-list.md. A
+follow-up pass to add `implementation:` cross-references would tighten
+the catalog.
+----
+
+The agent has flagged a *hand-off block* on the task. A hand-off is extra context attached to a completed task — usually a partially-settled design or a follow-up the agent did not feel justified its own backlog entry yet. The hand-off lives on the task's `handoff` field in `backlog.yaml` until triage decides what to do with it.
+
+Continue through analyse-work, reflect, dream-trigger-skipped, and triage. Triage is where the hand-off gets mined. Three options the triage prompt considers for each hand-off block:
+
+* *Promote.* Convert it into a new top-level backlog task, with a synthesised title and description.
+* *Archive.* Add it to durable memory if it is a learning that future cycles need to remember.
+* *Dispatch.* If a peer plan would benefit from the hand-off (the cross-plan graph names one as `related`), write a `subagent-dispatch.yaml` entry asking the orchestrator to spawn a subagent against the peer.
+
+For this hand-off, *promote* is the right call — adding implementation cross-references is concrete, scoped work that fits as its own task. After triage you should see something like:
+
+[source,bash]
+----
+$ ravel-lite state backlog list \
+    ~/Development/ravel-tutorial-example/LLM_STATE/main --format markdown
+
+## reading-list
+
+| title                                                          | status      |
+|----------------------------------------------------------------|-------------|
+| Add first ten distributed-systems entries                      | done        |
+| Add five type-theory entries on dependent typing               | done        |
+| Cross-link entries that cite each other                        | not_started |
+| Add implementation: cross-references for Idris/Agda entries    | not_started |
+----
+
+The new task, promoted from the hand-off, is now first-class. Triage clears the `handoff` field on the original task after promoting; the original task's `Results:` block stays intact, so the audit trail still ties the new task to its origin.
+
+== Cycle 3: memory growth and the dream trigger
+
+Cycle 3 picks the cross-link task. The work agent threads citations across entries, recording in the session log that "Lamport's clocks paper is referenced by Liskov's distributed-systems chapter; cross-references added in both directions." Reflect distils this into another memory entry — perhaps *"Cross-references go both ways; orphan references are a smell"*.
+
+By this point, memory has grown to roughly six or seven entries. The dream trigger is a function of word count rather than entry count: if the running word count of every entry's `title + body` exceeds `baseline + headroom`, dream fires. With the default `headroom: 1500`, a small reading-list plan typically takes 15-30 cycles before dream fires for the first time. We will not see it on cycle 3 — but it is worth understanding the mechanism now so you recognise it when it does fire.
+
+Two files drive the trigger: `<plan>/dream-word-count` (the post-last-dream baseline, or 0 if dream has never run) and the `headroom` setting from config. After git-commit-reflect lands the reflect mutations, the handler computes the current word count by summing `title + body` across every memory entry. If the count exceeds baseline plus headroom, `phase.md` becomes `dream` instead of `triage`, and the dream phase runs.
+
+Dream is *strictly lossless*. The contract is to consolidate overlapping entries and tighten verbose prose without losing any actionable content — pure duplicates are the only deletion allowed. After dream lands its rewrites, `update_dream_word_count` rewrites the baseline to the new (smaller) count, so the next dream fires only after `headroom` further words accumulate. A dream that consolidates memory aggressively therefore lengthens the time until the next dream — which is the desired behaviour.
+
+[NOTE]
+====
+A bad dream is recoverable. Memory is always tracked in git, so `git checkout memory.yaml` restores the prior version. Or — more useful in practice — `git log -- memory.yaml` shows every reflect and dream commit that has touched the file, and `git show <commit>:memory.yaml` lets you inspect a previous version without restoring it.
+====
+
+== Adjusting headroom
+
+The default headroom (1500 words) is calibrated for active engineering plans where memory grows fast. A non-code plan like the reading-list-manager accumulates memory more slowly; you may want to raise the headroom so dream fires less often. The setting lives in `config.lua` at either the workstation or per-plan layer:
+
+[source,lua]
+----
+-- ~/Development/ravel-tutorial-example/LLM_STATE/main/config.lua
+ravel.set_headroom(3000)
+----
+
+The plan-layer file overrides the workstation-layer file for this plan only. The link:../docs/config-and-prompts.html[Configuration and prompts] reference covers the two-layer composition rules — *setters last-write-wins, registrators accumulate* — in full.
+
+== Multi-plan mode
+
+Once you have more than one plan, `ravel-lite run` shifts into a different shape. With two or more plan directories on the command line, every cycle starts with an LLM-driven survey across all plans, you pick one from a numbered prompt, and one phase cycle runs against the chosen plan:
+
+[source,bash]
+----
+ravel-lite run --survey-state ~/.config/ravel-lite/survey.yaml \
+    ~/Development/ravel-tutorial-example/LLM_STATE/main \
+    ~/Development/ravel-tutorial-example/LLM_STATE/wishlist
+----
+
+`--survey-state` is required for multi-plan mode and rejected for single-plan. The same file is read as the prior survey at the start of each cycle and rewritten with the new survey at the end, so it is the persistent integration point — survey priorities sharpen across cycles rather than starting from scratch each time.
+
+For the tutorial we stay with the single `main` plan. Multi-plan mode is the path forward when you have several genuinely independent bodies of work to keep in motion concurrently.
+
+== When to stop
+
+The default loop runs until you stop it. Two natural stopping points:
+
+. *The backlog is empty.* When every task is `done`, the work phase prompt has nothing to pick. You can either close the loop (`n` at the next prompt) or let triage decide whether the plan still has work — it may promote a hand-off, archive a stale entry, or simply confirm the plan is finished.
+. *You need to hand-edit something.* The plan-state files are plain YAML; editing them between cycles is first-class. Stop the loop, edit the file, and re-run `ravel-lite run` — the next cycle will read whatever you have written.
+
+There is no "save and quit" step. Every transition is already on disk, and every reasoning phase is idempotent against partial prior runs. Stop the loop with `n`, with `Ctrl-C`, or by closing the terminal — none lose work.
+
+== Where to go from here
+
+The rest of ravel-lite's surface is documented in the link:../docs/index.html[reference]. The pieces most worth visiting next, in order of likely usefulness:
+
+* link:../docs/state-files.html[State files] — the schema for every YAML file in `LLM_STATE/`. Read this before hand-editing.
+* link:../docs/cli-state.html[State commands] — every `ravel-lite state` verb. The dense surface — most CRUD lives here.
+* link:../docs/phase-cycle.html[Phase cycle] — what each phase reads, writes, and decides. The contract every prompt is written against.
+* link:../docs/config-and-prompts.html[Configuration and prompts] — the two-layer Lua config and the prompt-append mechanism.
+
+If something feels off — a phase makes an unexpected decision, the TUI hangs, a commit lands in an unexpected shape — the design assumes you can answer with file inspection. The orchestrator wrote it down. `git log`, `cat backlog.yaml`, `ravel-lite state memory list`. The "no magic" principle is the contract that makes the whole system legible.
