@@ -1,0 +1,5 @@
+Three tasks to start:
+1. Add the first ten distributed-systems entries.
+2. Add five type-theory entries focused on dependent-typing introductions.
+3. Cross-link entries that cite each other (e.g. Lamport's clocks paper
+   and Liskov's distributed systems chapter).

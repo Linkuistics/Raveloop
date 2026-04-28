@@ -1,0 +1,3 @@
+I want to populate a curated reading list with about thirty entries
+across distributed-systems, type-theory, and writing-craft tags, with
+short notes for each.

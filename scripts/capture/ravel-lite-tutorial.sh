@@ -4,7 +4,8 @@
 #
 # Outputs (under docs/captures/ravel-lite-tutorial/):
 #   state/        — pulled LLM_STATE/ tree from the VM after the run
-#   screens/      — PNG screenshots of TUI moments (chapters 04-05)
+#   screens/      — PNG screenshots of TUI / interactive moments
+#                   (chapter 03 create conversation + chapters 04-05 run TUI)
 #   transcripts/  — per-command stdout+stderr captures, paste-ready into
 #                   the [source,bash] / [source,console] blocks under
 #                   docs/tutorial/01..05*.adoc
@@ -32,9 +33,22 @@
 # script over `testanyware exec`, so transcript_at writes a verbatim
 # transcript per command. Chapters 04-05 cover the TUI run flow whose
 # output lives inside the VM's GUI Terminal; those moments are captured
-# as screenshots, not text. Chapter 03 (`ravel-lite create`) is also
-# interactive and currently uncaptured — extending the script to handle
-# it is the next iteration's job.
+# as screenshots, not text.
+#
+# Chapter 03 (`ravel-lite create`) is interactive and hybrid:
+#   - The four-question scope conversation is paraphrased by claude per
+#     run, so byte-accurate text capture is brittle. We drive it with
+#     `testanyware input type` against pre-staged response files in
+#     `responses/03-*.txt` (mirroring the chapter's illustrative
+#     responses verbatim) and screenshot each prompt moment for
+#     visual capture.
+#   - Once claude exits, the resulting plan files are deterministic
+#     enough to capture as text via transcript_at (`ls`, `state
+#     backlog list`, `state memory list`).
+# A marker `echo` after the create call is the completion signal — it
+# only appears in the GUI Terminal once claude has returned control to
+# the shell, so the post-create transcripts are guaranteed to read
+# real on-disk state.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -44,6 +58,7 @@ readonly CAPTURE_DIR="$REPO_ROOT/docs/captures/ravel-lite-tutorial"
 readonly STATE_DIR="$CAPTURE_DIR/state"
 readonly SCREENS_DIR="$CAPTURE_DIR/screens"
 readonly TRANSCRIPTS_DIR="$CAPTURE_DIR/transcripts"
+readonly RESPONSES_DIR="$REPO_ROOT/scripts/capture/responses"
 
 # Default macOS VM user. Override via env if your golden image differs.
 # Used only for the absolute-path argument to `testanyware download`;
@@ -118,6 +133,38 @@ screenshot_at() {
   testanyware screenshot --vm "$VM_ID" -o "$SCREENS_DIR/${label}.png"
 }
 
+# type_lines <response-file>
+#
+# Types each line of <response-file> via `testanyware input type`,
+# pressing return between lines. We do not rely on `input type`
+# carrying through embedded newlines — line-then-return is the
+# predictable contract claude's prompt sees.
+type_lines() {
+  local response_file="$1"
+  local line
+  while IFS= read -r line; do
+    testanyware input type --vm "$VM_ID" "$line"
+    testanyware input key --vm "$VM_ID" return
+  done <"$response_file"
+}
+
+# drive_scope_question <label> <wait-text>
+#
+# Waits for <wait-text> to appear (claude's paraphrased prompt for
+# this scope question), screenshots the moment, then types the
+# matching response file. Response files at $RESPONSES_DIR/03-<label>.txt
+# mirror the illustrative responses in docs/tutorial/03-creating-a-plan.adoc.
+#
+# Wait substrings are the most stable topic word for each prompt and
+# may need tuning on the first live run if claude paraphrases past
+# them.
+drive_scope_question() {
+  local label="$1" wait_text="$2"
+  testanyware find-text --vm "$VM_ID" "$wait_text" --timeout 60 >/dev/null
+  screenshot_at "03-conversation-${label}-prompt"
+  type_lines "$RESPONSES_DIR/03-${label}.txt"
+}
+
 install_ravel_lite() {
   log INSTALL "brew install linkuistics/taps/ravel-lite"
   vm_run "brew tap linkuistics/taps && brew install ravel-lite"
@@ -151,28 +198,62 @@ capture_chapter02_transcripts() {
     "ravel-lite state projects list"
 }
 
-# scenario_run drives the chapter 04-05 TUI flow. TUI stdout lives
-# inside the VM's GUI Terminal, so capture is via screenshots (and the
-# downloaded LLM_STATE tree at the end), not transcript_at.
-scenario_run() {
-  log SCENARIO_RUN "opening Terminal in VM"
+# capture_chapter03_create_session drives the interactive
+# `ravel-lite create LLM_STATE/main` conversation in the VM's GUI
+# Terminal. Per-prompt screenshots provide visual capture; the
+# scripted responses (responses/03-*.txt) mirror the chapter's
+# illustrative replies verbatim.
+capture_chapter03_create_session() {
+  log CAPTURE_SCREENS "chapter 03: creating-a-plan (interactive create)"
   vm_run "open -a Terminal"
   testanyware find-text --vm "$VM_ID" "\$" --timeout 15 >/dev/null
 
-  log SCENARIO_RUN "driving 'ravel-lite create'"
+  log SCENARIO_RUN "invoking 'ravel-lite create LLM_STATE/main'"
   testanyware input type --vm "$VM_ID" \
-    "cd ~/Development/ravel-tutorial-example && ravel-lite create"
-  testanyware input key --vm "$VM_ID" return
-  testanyware find-text --vm "$VM_ID" "plan name" --timeout 15 >/dev/null
-  screenshot_at "01-create-plan-name-prompt"
-  testanyware input type --vm "$VM_ID" "main"
+    "cd ~/Development/ravel-tutorial-example && ravel-lite create LLM_STATE/main"
   testanyware input key --vm "$VM_ID" return
 
-  log SCENARIO_RUN "driving 'ravel-lite run'"
-  testanyware input type --vm "$VM_ID" "ravel-lite run main"
+  # Four scope questions per defaults/create-plan.md §1.
+  drive_scope_question "purpose"     "plan for"
+  drive_scope_question "project"     "project"
+  drive_scope_question "backlog"     "backlog"
+  drive_scope_question "memory-seed" "memory"
+
+  # Marker echo waits until claude exits and the shell prompt is
+  # back. Only then are the post-create files guaranteed on disk for
+  # capture_chapter03_post_state to read via testanyware exec.
+  log SCENARIO_RUN "waiting for create session to complete"
+  testanyware input type --vm "$VM_ID" "echo CHAPTER_03_CREATE_DONE"
+  testanyware input key --vm "$VM_ID" return
+  testanyware find-text --vm "$VM_ID" "CHAPTER_03_CREATE_DONE" \
+    --timeout 180 >/dev/null
+  screenshot_at "03-conversation-completion"
+}
+
+# capture_chapter03_post_state captures the deterministic post-create
+# state via transcript_at. These three commands feed the chapter's
+# "Inspecting what create produced" section.
+capture_chapter03_post_state() {
+  log CAPTURE_TRANSCRIPTS "chapter 03: post-create state"
+  local plan_dir="~/Development/ravel-tutorial-example/LLM_STATE/main"
+  transcript_at "03-ls-plan-dir" "ls $plan_dir/"
+  transcript_at "03-backlog-list" \
+    "ravel-lite state backlog list $plan_dir --format markdown"
+  transcript_at "03-memory-list" \
+    "ravel-lite state memory list $plan_dir"
+}
+
+# scenario_run drives the chapter 04-05 TUI flow against the plan
+# created in chapter 03. TUI stdout lives inside the VM's GUI
+# Terminal, so capture is via screenshots (and the downloaded
+# LLM_STATE tree at the end), not transcript_at.
+scenario_run() {
+  log SCENARIO_RUN "driving 'ravel-lite run' on the created plan"
+  testanyware input type --vm "$VM_ID" \
+    "ravel-lite run ~/Development/ravel-tutorial-example/LLM_STATE/main"
   testanyware input key --vm "$VM_ID" return
   testanyware find-text --vm "$VM_ID" "phase: work" --timeout 30 >/dev/null
-  screenshot_at "02-tui-phase-work"
+  screenshot_at "04-tui-phase-work"
 }
 
 capture_state() {
@@ -187,6 +268,8 @@ main() {
   install_ravel_lite
   capture_chapter01_transcripts
   capture_chapter02_transcripts
+  capture_chapter03_create_session
+  capture_chapter03_post_state
   scenario_run
   capture_state
   log MAIN "capture complete; outputs in $CAPTURE_DIR"

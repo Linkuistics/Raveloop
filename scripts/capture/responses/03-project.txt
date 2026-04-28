@@ -1,0 +1,3 @@
+The project is at ~/Development/ravel-tutorial-example. The README
+defines the entry format and naming conventions. There's no code —
+just reading-list.md and notes/<slug>.md per entry.

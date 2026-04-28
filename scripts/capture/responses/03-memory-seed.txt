@@ -1,0 +1,7 @@
+Yes — memory should remember:
+- Each entry needs a one-line annotation, not a full summary; longer
+  thoughts go in notes/<slug>.md.
+- Slugs are lower-kebab-case derived from the title; the convention is
+  in the README.
+- Tags should be reused before inventing new ones; check existing tags
+  in reading-list.md before adding.

@@ -1,10 +1,25 @@
-id: session-75
-timestamp: 2026-04-28T00:32:29Z
+id: session-76
+timestamp: 2026-04-28T01:31:05Z
 phase: work
 body: |
-  ### Session 75 (2026-04-28T00:32:29Z) — Rewrite tutorial capture script for testanyware 0.2.0
+  ### Session 76 (2026-04-28T01:31:05Z) — Implement hybrid interactive capture mechanism for chapter 03
 
-  - Attempted: validate and extend `scripts/capture/ravel-lite-tutorial.sh` against the real `testanyware` 0.2.0 CLI surface, adding transcript-capture capability for chapters 01-02 headless commands.
-  - What worked: The script was substantively rewritten. The broken `vm list --format json` endpoint-discovery pipeline was replaced with deterministic `VM_ID` generation passed to `vm start --id` and reused via `--vm` throughout. A `transcript_at <label> <command>` helper was added that captures per-command stdout+stderr to `transcripts/<label>.txt` in paste-ready `[source,console]` format. Chapter 01 and 02 transcript captures are now explicitly wired (11 named captures). Every `testanyware` subcommand the script invokes was validated against `--help` output. `bash -n` syntax check passes.
-  - What didn't: No live VM run was executed (option B scope explicitly deferred wall-clock cost). Chapter 03 (`ravel-lite create`) is still interactive and uncaptured. The 58 `----` listing delimiters in chapters 01-05 remain illustrative.
-  - What this suggests trying next: Run the rewritten script against a live TestAnyware VM, debug any divergence between `--help`-deduced assumptions and real VM behaviour, then fold `transcripts/01-*.txt` and `transcripts/02-*.txt` into the respective tutorial chapters as a first cut.
+  - Implemented hybrid capture mechanism for `ravel-lite create` in `scripts/capture/ravel-lite-tutorial.sh`
+  - Added `type_lines` and `drive_scope_question` helpers for driving the four-question scope conversation via `testanyware input type` + screenshot, using pre-staged response files in `scripts/capture/responses/03-*.txt`
+  - Added `capture_chapter03_create_session` (screenshot-per-prompt approach for the paraphrase-sensitive conversation) and `capture_chapter03_post_state` (deterministic text via `transcript_at` for `ls`, `state backlog list`, `state memory list`)
+  - Fixed a latent `scenario_run` bug: was invoking `ravel-lite create` with no argument and waiting for a non-existent "plan name" prompt; corrected to `ravel-lite run` against the plan created in chapter 03
+  - Added four response files (`scripts/capture/responses/03-{purpose,project,backlog,memory-seed}.txt`) matching the chapter's illustrative responses verbatim; these are authored content and deliberately outside `docs/captures/` so they are tracked in git
+  - Task blocked (not failed): mechanism is complete, but live VM run and chapter block replacement remain pending alongside the chapter 01-02 transcripts task
+
+  What worked:
+  - The hybrid design (screenshot the volatile conversation, `transcript_at` the deterministic post-create state) cleanly maps capture fidelity to content stability
+  - The marker-echo completion signal (`echo CHAPTER_03_CREATE_DONE`) is a robust sync point for knowing when claude has returned control to the shell
+  - Treating `scripts/capture/responses/` as authored source (not captured output) keeps `.gitignore`'s `docs/captures/` rule from silently swallowing the files
+
+  What didn't work / open risks:
+  - The four `find-text` wait substrings (`plan for`, `project`, `backlog`, `memory`) depend on claude's paraphrasing staying within those words; this is the highest-risk axis and will likely need tuning on first live run
+  - No live VM validation yet (same blocker as the preceding chapter 01-02 task)
+
+  What to try next:
+  - A live-VM phase that runs the full script end-to-end, tunes any failing `find-text` substrings, and folds both the chapter 01-02 and chapter 03 captures into the tutorial docs in one pass
+  - Consider tightening the `defaults/create-plan.md` template phrasing to reduce paraphrasing variance — would benefit both capture stability and first-time user consistency

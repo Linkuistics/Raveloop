@@ -147,7 +147,8 @@ tasks:
 - id: design-and-implement-interactive-capture-mechanism-for-tutorial-chapter-03-ravel-lite-create
   title: Design and implement interactive capture mechanism for tutorial chapter 03 (ravel-lite create)
   category: docs
-  status: not_started
+  status: blocked
+  blocked_reason: Mechanism implemented; live VM run + chapter 03 block replacement deferred to the same VM-time-needed phase as the chapter 01-02 transcripts task
   dependencies: []
   description: |
     Design and implement a capture mechanism for `docs/tutorial/03-creating-a-plan.adoc`
@@ -173,3 +174,138 @@ tasks:
     A mechanism is implemented in `scripts/capture/ravel-lite-tutorial.sh`, validated
     against a live VM, and chapter 03's `----` illustrative blocks are replaced with
     verbatim captures or screenshots as appropriate.
+  results: |
+    ## Scope executed
+
+    Designed and implemented an interactive-capture mechanism for chapter 03
+    (`ravel-lite create`) inside `scripts/capture/ravel-lite-tutorial.sh`,
+    matching the predecessor task's option-B precedent: build the
+    mechanism, defer the live VM run and chapter rewrite to a follow-up
+    that consumes a real VM.
+
+    ## Design choice (hybrid)
+
+    Chapter 03's content splits cleanly into two regimes; the mechanism
+    matches each regime to the right capture form:
+
+    - **Interactive scope conversation** — claude paraphrases each of the
+      four scope questions (`defaults/create-plan.md` §1 gives claude a
+      bullet list of topics, not literal prompt strings), so byte-accurate
+      text capture would rot every time claude's wording shifted. Captured
+      via screenshots on each prompt moment, with scripted responses
+      driven from pre-staged response files. The chapter's existing
+      "illustrative slice" framing remains correct.
+    - **Post-create on-disk state** — `ls`, `state backlog list`,
+      `state memory list` outputs are deterministic given the responses
+      we feed claude. Captured via the existing `transcript_at` mechanism.
+
+    Other options considered and rejected:
+
+    - `script(1)` inside the VM with ANSI-stripping post-processing —
+      rejected because the claude-code interactive prompt is a TUI with
+      heavy ANSI redraws; even with `col -bp` plus sed for SGR sequences
+      the output would be noisy and brittle.
+    - Pure screenshots for the entire chapter — rejected because the
+      post-create state IS deterministic and text-renderable; downgrading
+      to images for that section would harm tutorial readability for no
+      benefit.
+    - `expect(1)` inside the VM — rejected because it would add an
+      in-VM dependency for marginal gain over the input/find-text driver
+      we already have.
+
+    ## What changed
+
+    **`scripts/capture/ravel-lite-tutorial.sh`** (196 → 278 lines):
+
+    - New `RESPONSES_DIR` constant pointing at `scripts/capture/responses/`.
+    - New `type_lines <response-file>` helper — types each line of a file
+      via `testanyware input type` with `input key return` between lines.
+      Avoids relying on `input type` carrying through embedded newlines
+      (the CLI takes a single `<text>` argument; line-then-return is the
+      predictable contract claude's input box sees).
+    - New `drive_scope_question <label> <wait-text>` helper — `find-text`
+      wait, screenshot, then `type_lines` from `responses/03-<label>.txt`.
+      Wait substrings are the most stable topic word per question and may
+      need tuning on first live run.
+    - New `capture_chapter03_create_session` function — opens Terminal,
+      invokes `ravel-lite create LLM_STATE/main`, drives the four scope
+      questions, then waits for an injected `echo CHAPTER_03_CREATE_DONE`
+      marker (deterministic post-claude-exit signal) before screenshotting
+      completion. The marker is the sync point that guarantees the
+      post-create files exist on disk before the next step queries them.
+    - New `capture_chapter03_post_state` function — `transcript_at` on
+      `ls`, `state backlog list`, `state memory list` against the freshly
+      created plan.
+    - `scenario_run` cleaned up: previously invoked `ravel-lite create`
+      with no argument and waited for a non-existent "plan name" prompt
+      (latent bug — same shape as the previous task's `vm list --format
+      json` assumption that would fail at first contact with a live VM).
+      Now only drives `ravel-lite run` against the plan that chapter 03
+      already created.
+    - `main()` wired to call `capture_chapter03_create_session` then
+      `capture_chapter03_post_state` between chapter 02 and chapter 04.
+    - Header doc updated with a "Chapter 03" subsection explaining the
+      hybrid design and the marker-echo completion signal; outputs comment
+      updated to note `screens/` now covers chapter 03 too.
+
+    **`scripts/capture/responses/03-{purpose,project,backlog,memory-seed}.txt`**
+    — four new files. Verbatim copies of the illustrative responses from
+    `docs/tutorial/03-creating-a-plan.adoc` lines 32-34, 38-41, 45-50,
+    54-62 respectively. Authored content (NOT generated capture output);
+    they live under `scripts/capture/` rather than `docs/captures/` so
+    they fall outside `.gitignore`'s `docs/captures/` rule and get tracked
+    in git.
+
+    ## Validation done
+
+    - `bash -n` syntax check passes.
+    - `shellcheck` not available locally (same constraint as the previous
+      task); no lint-level pass beyond `bash -n`.
+    - Verified `ravel-lite create --help` against my invocation
+      (`ravel-lite create LLM_STATE/main` with `cd` into the project
+      directory) — single positional `<PLAN_DIR>` argument, parent must
+      exist, target must not. The chapter 02 setup creates the parent.
+    - `.gitignore` already covers `docs/captures/`, so the new chapter 03
+      screens / transcripts will land there ignored. `scripts/capture/responses/`
+      is correctly NOT ignored (authored content).
+
+    ## What did NOT happen (and why)
+
+    - **No live VM run.** Same blocker as the predecessor task — VM time
+      is the constraint, not mechanism readiness.
+    - **No chapter 03 edits.** The `[source,text]` conversation block and
+      the `[source,bash]` post-create blocks remain illustrative. Editing
+      them requires a successful live run to produce real captures (the
+      `ls`/backlog/memory transcripts will differ in detail from the
+      imagined ones — claude infers task titles, categories, and memory
+      entry IDs from our responses but won't reproduce the chapter's text
+      byte-for-byte).
+    - **No memory updates.** The reflect phase owns memory writes; this
+      phase only implements.
+
+    ## What this suggests next
+
+    - A live-VM phase that runs the script end-to-end against a real
+      TestAnyware VM, debugs whichever `find-text` wait substrings fail
+      (claude's paraphrasing is the highest-risk axis), and folds the
+      resulting captures into chapters 01-02 AND 03 in one pass. The
+      predecessor task and this task are now coupled around the same
+      pending live run; triage should consider merging them or marking
+      this task as a dependency of the predecessor.
+    - If on first live run the four scope-question wait substrings prove
+      unstable (claude saying "tell me about your codebase" instead of a
+      prompt containing "project", say), the fix is to either (a) widen
+      the substring with a regex, (b) tighten the create-plan template
+      itself to make claude's wording more deterministic, or (c) add
+      intermediate "what is claude waiting for" probes via screenshots +
+      manual labelling. (b) is probably right — the template already
+      paraphrases freely; pinning the prompt wording would help capture
+      AND give users a more consistent first-time experience.
+    - The chapter-03 conversation block may want to switch from
+      `[source,text]` to a screenshot-driven block once we see what
+      claude actually produces. Decide that after the live run.
+    - The injected marker (`echo CHAPTER_03_CREATE_DONE`) is a pattern
+      worth generalising — any future capture that drives an interactive
+      command in the GUI Terminal will have the same "when did it finish"
+      problem, and a marker-echo + find-text idiom is the cleanest signal
+      available without instrumenting the orchestrator.
