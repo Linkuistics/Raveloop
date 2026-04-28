@@ -1,6 +1,6 @@
 [package]
 name = "ravel-lite"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
 description = "An orchestration loop for LLM development cycles"
 repository = "https://github.com/Linkuistics/Ravel-Lite"
