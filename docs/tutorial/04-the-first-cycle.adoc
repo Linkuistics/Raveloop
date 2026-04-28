@@ -72,28 +72,29 @@ A few things are worth watching for as the cycle progresses.
 
 *Dream.* Conditional. Runs only when memory has grown past `baseline + headroom` words (default 1500 from `defaults/config.yaml`). On a first cycle, memory is well within the threshold and dream is skipped — the TUI shows a *DREAM banner: skipped — memory within headroom* line so the absence is as legible as the work that ran.
 
-*Triage.* Reviews the backlog, mines completed tasks for hand-offs, and reprioritises. For a first cycle on a fresh backlog, triage usually does little: the remaining tasks are still well-shaped, and there is no cross-plan dispatch to author. From cycle 2 onward, triage's narrative starts to carry `[REPRIORITISED]`, `[PROMOTED]`, and `[ARCHIVED]` labels alongside its actions.
+*Triage.* Reviews the backlog, mines completed tasks for hand-offs, and reprioritises. Two things triage does even on a first cycle: it *removes the completed task* from the backlog (the audit trail of the work it did lives in the git history and the session log, not in the open backlog), and it tightens dependency edges between remaining tasks when the work just done makes a dependency newly visible. From cycle 2 onward, triage's narrative starts to carry `[REPRIORITISED]`, `[PROMOTED]`, and `[ARCHIVED]` labels alongside its actions.
 
 *Git-commit-triage.* Lands the triage mutations, captures `work-baseline`, and exits the inner phase loop. The cycle is over. The TUI prints *"Proceed to next work phase?"* and waits.
 
 == Inspecting what landed
 
-Stop here for a moment and look at the audit trail. `git log --oneline` between two `save-work-baseline` commits is the full record of one cycle:
+Stop here for a moment and look at the audit trail. `git log --oneline` after one full cycle is the complete record of what landed:
 
-[source,bash]
+[source,console]
 ----
 $ git log --oneline -10
-b1c4f3a run-plan: save-work-baseline (main)
-3f9a8e2 run-plan: triage (main)
-77b2e4d run-plan: save-triage-baseline (main)
-4c8d1a9 run-plan: reflect (main)
-2e6f7b0 run-plan: save-reflect-baseline (main)
-9a1d3c5 run-plan: work (main)
-ed5b8f6 run-plan: save-work-baseline (main)
-abc1234 Initial scaffold
+4f5807d run-plan: save-work-baseline (main)
+f7f1715 run-plan: triage (main)
+1739944 run-plan: save-triage-baseline (main)
+d852fbc run-plan: reflect (main)
+5d3be6a run-plan: save-reflect-baseline (main)
+97c724e Add ten distributed-systems reading-list entries
+5ef24da Initial scaffold
 ----
 
-Reading bottom-up: the initial scaffold, the seeded `work-baseline`, the work commit (your edits to `reading-list.md` and the new notes), the `save-reflect-baseline` SHA capture, the reflect commit (memory mutations), the `save-triage-baseline` capture, the triage commit, and the next `save-work-baseline` ready for cycle 2. A reader can scrub through a cycle the same way they would scrub through a video.
+Reading bottom-up: the initial scaffold from chapter 02; the work commit, whose message is authored by analyse-work from the actual diff (so it reads like a normal feature commit, not a templated `run-plan: work`); the `save-reflect-baseline` capturing the SHA reflect will diff against; the reflect commit (memory mutations); `save-triage-baseline`; the triage commit; and the closing `save-work-baseline` ready for cycle 2. A reader can scrub through a cycle the same way they would scrub through a video.
+
+The first cycle is a special case in one respect: there is no leading `save-work-baseline` between *Initial scaffold* and the work commit. The scaffold itself is the baseline ravel-lite diffs against; the first explicit `save-work-baseline` lands at the *end* of cycle 1 in preparation for cycle 2.
 
 [NOTE]
 ====
@@ -102,42 +103,71 @@ The "no magic" principle cashes out here. There is no shadow state in memory bet
 
 Inspect the session log to see what reflect saw:
 
-[source,bash]
+[source,console]
 ----
 $ ravel-lite state session-log show-latest \
     ~/Development/ravel-tutorial-example/LLM_STATE/main
-
-id: 2026-04-28-add-first-ten-distributed-systems-entries-analyse-work
-timestamp: '2026-04-28T14:33:07Z'
-phase: analyse-work
+id: session-1
+timestamp: 2026-04-28T06:06:30Z
+phase: work
 body: |
-  Added ten distributed-systems entries to reading-list.md and a notes
-  file per entry under notes/. Followed the slug and one-line-annotation
-  conventions from memory. Tags reused: distributed-systems, theory,
-  classics. No new tags introduced.
+  ### Session 1 (2026-04-28T06:06:30Z) — Add ten distributed-systems reading-list entries
+
+  - Attempted: add the first ten distributed-systems entries as specified in the backlog task.
+  - What worked: all ten entries added to `reading-list.md` as a markdown table; ten companion `notes/<slug>.md` files created. The README was extended with a full entry-format specification (the original was a one-line stub with no format defined), which was necessary for this task and the two follow-on tasks to have a shared source of truth.
+  - Tags established: `time-and-order`, `consensus`, `replication`, `storage`, `failure-modes`, `paper`, `book` — covering the four areas the task specified (time/order, consensus, replication, failure modes).
+  - What this suggests next: the type-theory task is unblocked (format documented, tag conventions established); the cross-link task is most productive once both batches exist but has natural clusters available now (FLP/Paxos/Raft/Viewstamped Replication; Lamport/Dynamo/Spanner; Bigtable/Spanner).
 ----
+
+The body is the *attempted / what worked / what this suggests next* shape that analyse-work distils from the diff. The "What this suggests next" line is what triage will read in the next phase to decide whether dependencies between backlog tasks should be tightened.
 
 And the memory after reflect:
 
-[source,bash]
+[source,console]
 ----
 $ ravel-lite state memory list ~/Development/ravel-tutorial-example/LLM_STATE/main
 entries:
-  - id: one-line-annotations-only
-    [...]
-  - id: slug-convention-from-readme
-    [...]
-  - id: reuse-tags-before-inventing
-    [...]
-  - id: classic-papers-have-stable-canonical-urls
-    title: Classic papers have stable canonical URLs at the source publisher
-    body: |
-      For papers (Lamport, Liskov, etc.), the source URL should be the
-      publisher's canonical PDF link, not a third-party mirror. Mirrors
-      rot. Use ACM, IEEE, or the author's institutional page.
+- id: annotations-are-one-liners-depth-goes-in-notes-slug-md
+  title: Annotations are one-liners; depth goes in notes/<slug>.md
+  body: |
+    [seeded in chapter 03 — three-line spec; full body elided here]
+- id: slugs-are-lower-kebab-case-derived-from-the-title
+  title: Slugs are lower-kebab-case derived from the title
+  body: |
+    [seeded in chapter 03 — full body elided here]
+- id: reuse-existing-tags-before-inventing-new-ones
+  title: Reuse existing tags before inventing new ones
+  body: |
+    [seeded in chapter 03 — full body elided here]
+- id: readme-md-is-the-authoritative-entry-format-specification
+  title: README.md is the authoritative entry-format specification
+  body: |
+    `README.md` is the **authoritative specification for the entry format** — columns, annotation rules, slug convention, tag vocabulary. Read it before adding or editing entries.
+
+    **Why:** The original README was a one-line stub with no format defined. After the first batch of entries, it was extended with a complete spec so that all sessions work from the same source of truth. The per-entry rules in memory (annotations, slugs, tags) are derived from it; if they conflict, README wins.
+
+    **How to apply:** Before adding any new entry, read `README.md` to confirm the current format, column order, and any constraints. Do not infer format from existing table rows alone — the README may contain rules not visible from examples.
 ----
 
-A new memory entry — *"Classic papers have stable canonical URLs"* — distilled from the session. Reflect added it because the work phase had to make a choice about citation URLs that was not previously codified, and that choice is now durable across cycles.
+A new memory entry — *"README.md is the authoritative entry-format specification"* — distilled from the session. Reflect added it because the work-phase agent extended the README during the cycle (the original was a one-line stub) and that extension established a precedence rule between the README and the per-entry memories: when they conflict, README wins. Reflect noticed and made the rule durable.
+
+The four-entry shape is also worth noting. Three of the entries are the seeds from chapter 03; the fourth is the cycle-1 distillation. Memory grows by accumulation, not replacement — the seeds stay until a future reflect or dream phase decides to consolidate them.
+
+And the backlog after triage:
+
+[source,console]
+----
+$ ravel-lite state backlog list \
+    ~/Development/ravel-tutorial-example/LLM_STATE/main --format markdown
+## reading-list
+
+| title | status | deps |
+|---|---|---|
+| Add five type-theory entries focused on dependent-typing introductions | not_started | — |
+| Cross-link entries that cite each other | not_started | add-five-type-theory-entries-focused-on-dependent-typing-introductions |
+----
+
+The completed task is gone — triage removed it; its trail lives in the work commit and the session log entry above. The cross-link task gained a dependency on the type-theory task: it is most productive once both batches of entries exist, and triage saw that constraint in the *"What this suggests next"* line of the session log and made it explicit. Cycle 2's work phase will see only the type-theory task as actionable.
 
 == Continuing or stopping
 

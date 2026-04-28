@@ -1,15 +1,11 @@
-id: session-78
-timestamp: 2026-04-28T04:31:10Z
+id: session-79
+timestamp: 2026-04-28T06:25:02Z
 phase: work
 body: |
-  ### Session 78 (2026-04-28T04:31:10Z) — Implement capture-script flags and scenario_run for chapters 04-05
+  ### Session 79 (2026-04-28T06:25:02Z) — Fold live-captured transcripts into tutorial chapters 04 and 05
 
-  - Attempted the script side of TUI screenshot capture for tutorial chapters 04-05. The task's full "Done when" criterion requires a live TestAnyware VM run to actually capture screenshots and fold them into chapter prose; that part remains outstanding.
-  - Added `--from <step>`, `--vm-id <id>`, and `--keep-vm` flag parsing to `scripts/capture/ravel-lite-tutorial.sh`. The `--from` flag validates against a fixed step set and refuses values beyond `chapter01` without an accompanying `--vm-id` (the prerequisite VM state is missing on a fresh VM).
-  - Added `maybe_run <step-name> <fn>` gating helper. Step names are chapter-granular (`chapter01`..`chapter04`, `final`); the flag flips an internal `STARTED` sentinel on first match and all subsequent calls run unconditionally.
-  - Made VM lifecycle ownership explicit via an `OWN_VM` flag: `--vm-id` disables teardown, `--keep-vm` also disables teardown and prints the resume command for the next iteration.
-  - Replaced the placeholder `scenario_run` body (which had a wrong `find-text "phase: work"` target — that string only appears in YAML, not the TUI) with a complete implementation: drives `ravel-lite run`, screenshots the WORK banner, settles 25s, types the task choice from `responses/04-task-choice.txt`, polls every 10s for completion (up to ~20 min), captures mid-cycle screenshots every 60s, screenshots the exit prompt, types `n`, then captures six deterministic post-cycle transcripts.
-  - Added `scripts/capture/responses/04-task-choice.txt` with the illustrative selection `the distributed-systems entries`.
-  - Syntax-checked with `bash -n`; validated `--help`, `--from` rejection paths, and cleanup trap behaviour against a fake VM id.
-  - Task flipped to `blocked` because the chapter prose half requires the user to run the script against a live VM, inspect produced screenshots, and update `docs/tutorial/04-*.adoc` / `05-*.adoc`.
-  - What to try next: user runs `./ravel-lite-tutorial.sh --keep-vm` to complete chapters 01-03, then iterates chapter04-05 captures with `--vm-id <id> --from chapter04`; triage should consider splitting the task into "script done" (done) + "fold captures into chapter prose" (not_started).
+  - Attempted: run `scripts/capture/ravel-lite-tutorial.sh` against a live TestAnyware macOS VM to capture chapters 04-05 transcripts, then fold the output into the tutorial prose and re-render HTML.
+  - What worked: all target transcripts captured (git log, session-log show-latest, memory list, backlog list after triage); folded into chapters 04 and 05 replacing all illustrative placeholders; two capture-script bugs found and fixed during the run; HTML re-rendered cleanly.
+  - Three prose corrections that came out of comparing illustrative vs. real output: (a) first cycle has no leading save-work-baseline between the scaffold and the work commit; (b) triage removes done tasks rather than leaving them open; (c) work commit messages are diff-authored, not templated as `run-plan: work`. Chapter 05 task names also normalised to match the real create-flow output from chapter 03.
+  - Three script bugs encountered: (1) `transfer_claude_auth` RETURN trap dereferenced `$creds_file` under `set -u` — fixed with `${creds_file:-}`; (2) `scenario_run` pre-run SHA capture had no failure tolerance for cold-agent 30s timeout — fixed with `|| pre_run_sha=""`; (3) chapter-03 driver doesn't wait for claude to exit before typing into the GUI Terminal — not fixed, worked around manually.
+  - What this suggests next: fix the chapter-03/chapter-04 cross-talk (add `/exit` wait after the polling-for-backlog check); decide which layer owns work-phase auto-exit (ravel-lite vs. capture script).

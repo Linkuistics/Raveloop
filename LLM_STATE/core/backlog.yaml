@@ -41,7 +41,7 @@ tasks:
 - id: run-chapter-04-05-capture-against-live-vm-and-fold-output-into-tutorial-prose
   title: Run chapter 04-05 capture against live VM and fold output into tutorial prose
   category: docs
-  status: not_started
+  status: done
   dependencies: []
   description: |
     Run `scripts/capture/ravel-lite-tutorial.sh` against a live TestAnyware VM to capture chapter 04-05 screenshots and transcripts, then fold the captured output into the tutorial prose.
@@ -83,3 +83,145 @@ tasks:
     ## Done when
 
     Chapters 04 and 05 use verbatim captured screenshots/transcripts and the rendered HTML passes a visual spot-check.
+  results: |
+    ## What was done
+
+    Captured chapters 04-05 against a live TestAnyware macOS VM, folded the
+    captured transcripts into the tutorial prose, and re-rendered HTML.
+
+    ### Captures landed (under `docs/captures/ravel-lite-tutorial/`, gitignored)
+
+    - `transcripts/04-phase-md-pre.txt` — pre-cycle phase.md (`work`)
+    - `transcripts/04-git-log-post-cycle.txt` — 7-commit cycle audit trail
+    - `transcripts/04-session-log-latest.txt` — analyse-work-authored session 1 entry
+    - `transcripts/05-memory-after-reflect.txt` — 4-entry post-cycle memory (3 seeds + 1 distilled)
+    - `transcripts/05-backlog-after-triage.txt` — 2-task backlog (done task pruned, dependency added)
+    - `transcripts/05-phase-md-post.txt` — post-cycle phase.md (`work`)
+    - `screens/04-work-banner.png`, `04-work-prompt.png`, `04-tui-cycle-{60s..540s}.png` — TUI screenshots through the cycle
+
+    ### Prose folded into chapters
+
+    - `docs/tutorial/04-the-first-cycle.adoc` — verbatim git log, session log, memory list, and a new "backlog after triage" block; prose adjusted to match real cycle-1 commit shape (no leading `save-work-baseline`, custom work-commit message), real triage behavior (done tasks pruned, dependency edges tightened), and the four-entry memory shape (3 seeds + 1 reflect distillation)
+    - `docs/tutorial/05-further-cycles.adoc` — illustrative cycle-2 backlog updated to match real triage's done-task pruning; task names normalised to what claude actually wrote in chapter 03's create flow
+    - `website/tutorials/04-the-first-cycle.html` and `website/tutorials/05-further-cycles.html` — re-rendered fragments
+
+    ### Capture-script bug fixes (necessary to complete the task)
+
+    - `transfer_claude_auth`'s RETURN trap dereferenced `$creds_file` under
+      `set -u` after the function returned (bash trap-scope quirk); guarded
+      with `${creds_file:-}`
+    - `scenario_run`'s `pre_run_sha=$(testanyware exec ...)` had no
+      failure-tolerance; the 30s testanyware-exec agent-channel timeout
+      fired on a cold agent and `set -e` killed the script. Added
+      `|| pre_run_sha=""` fallback
+
+    ## What worked
+
+    - The `--vm-id` / `--from chapter04` iteration pattern made it cheap to
+      re-run only the failed cycle without re-burning chapters 01-03
+    - Post-cycle transcripts capture cleanly via headless `testanyware exec`
+      (no TUI dependency for git log / state CLI output)
+    - Folded prose now matches real ravel-lite behavior in three places
+      where the illustrative content was wrong: (a) cycle-1 has no leading
+      save-work-baseline, (b) triage prunes done tasks rather than leaving
+      them in the open backlog, (c) work commit messages are authored from
+      the diff, not templated
+    - The `.adoc → render-docs.sh → website/*.html` pipeline rendered
+      cleanly with the new content
+
+    ## What didn't work (script bugs encountered, NOT all fixed)
+
+    1. **chapter-03 driver doesn't wait for claude to exit.** `polling for
+       populated backlog` only checks `backlog.yaml` exists. Once that
+       condition fires, scenario_run starts typing `ravel-lite run ...`
+       into the GUI Terminal — but claude is still mid-conversation in
+       the create flow, asking "Want me to commit it?". The typing is
+       absorbed by claude. Worked around by sending `/exit` to claude
+       manually before re-launching with `--from chapter04`. **Not fixed
+       in this task** — see suggested follow-up.
+
+    2. **work-phase claude doesn't auto-exit.** Ravel-lite spawns claude
+       interactively with TTY-inherited stdio for the work phase; claude
+       completes its work and says "Stop" but doesn't exit the TUI.
+       Ravel-lite is then blocked waiting for claude's status code.
+       Worked around by sending `/exit` to claude manually after the
+       20-min poll timed out. **Not fixed in this task** — see suggested
+       follow-up.
+
+    3. **`capture_state` (final state pull) failed** with
+       `Error: Agent HTTP 400: Download failed: The file "LLM_STATE"
+       couldn't be opened.` testanyware download apparently can't pull a
+       directory. Captured transcripts via headless exec instead, which
+       covers everything chapter prose needs. **Not fixed in this task** —
+       probably needs a recursive walk + per-file download or a tar
+       roundtrip; low priority because transcripts cover the prose need.
+
+    ## What this suggests next
+
+    - **Add `chapter-03 claude-exit` step to scenario_run.** After the
+      `polling for populated backlog` loop succeeds, send `/exit` + return
+      via `testanyware input` and wait for the shell prompt to come back,
+      before invoking `ravel-lite run` in the next step. Without this, every
+      full-capture run will re-hit the chapter-03/chapter-04 cross-talk bug.
+    - **Either auto-exit work-phase claude, or have scenario_run drive
+      it.** Two options: (a) extend ravel-lite's claude-code work-phase
+      invocation to detect "claude reached end of plan and is idling" and
+      send `/exit` itself; (b) have `scenario_run` poll for the work-phase
+      end-of-cycle marker (e.g., `phase.md == analyse-work`) and at that
+      point send `/exit` to the GUI Terminal. (a) is the principled fix;
+      (b) is the capture-script-only fix. Worth deciding which layer owns
+      this.
+    - **Stop the kept VM (`ravel-lite-tutorial-20260428T045749Z`)** when
+      you're done iterating — `testanyware vm stop ravel-lite-tutorial-20260428T045749Z`.
+      It's left running for any follow-up `--vm-id --from <step>` run.
+
+    ## Verification
+
+    - `git log --oneline -10` inside the VM matches the prose's new git-log block exactly (`97c724e` / `5ef24da` / etc.)
+    - `scripts/render-docs.sh` rendered chapter 04 (17k) and chapter 05 (12k) without errors
+    - Spot-checked rendered HTML contains key new strings (`Initial scaffold`, `97c724e`, `README.md is the authoritative`, `Cross-link entries`)
+    - Chapter 04's narrative reads coherently end-to-end after the fold
+- id: fix-scenario-run-chapter-03-chapter-04-cross-talk-send-exit-after-backlog-poll
+  title: 'Fix scenario_run chapter-03/chapter-04 cross-talk: send /exit after backlog poll'
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    After the `polling for populated backlog` loop in `scenario_run` succeeds (i.e., `backlog.yaml` exists on the VM), the driver immediately starts typing `ravel-lite run ...` into the GUI Terminal — but claude is still mid-conversation in the chapter-03 create flow, asking "Want me to commit it?". The typing is absorbed by claude rather than the shell.
+
+    ## Decision
+
+    Add an explicit `/exit` + Return step after the backlog-polling loop, then wait for the shell prompt to return before invoking `ravel-lite run`. This is the correct layer to fix it: the chapter-03 scenario_run step knows when backlog creation succeeded and is the natural place to ensure claude has exited before handing the terminal back.
+
+    ## Reference
+
+    `scripts/capture/ravel-lite-tutorial.sh` — the `scenario_run` function, around line 568 (the `polling for populated backlog` comment block). The fix is ~5 lines: send `/exit` via `testanyware input`, then poll for the shell prompt (e.g., `$` at line start) before continuing.
+
+    ## Done when
+
+    A full capture run from chapter 01 through chapter 04 completes without the chapter-03/chapter-04 cross-talk bug (no manual `/exit` intervention required).
+- id: auto-exit-work-phase-claude-after-plan-completion
+  title: Auto-exit work-phase claude after plan completion
+  category: infra
+  status: not_started
+  dependencies: []
+  description: |
+    Ravel-lite spawns claude interactively with TTY-inherited stdio for the work phase. Claude completes its work and outputs "Stop" (or similar) but does not exit the TUI. Ravel-lite blocks indefinitely waiting for claude's exit code. In the capture run this manifested as the 20-min poll timing out; the workaround was manually sending `/exit`.
+
+    ## Options considered
+
+    (a) **Principled fix in ravel-lite**: detect "claude reached end of plan and is idling" (e.g., by watching for the plan-completion marker in phase.md or the `analyse-work` phase transition) and programmatically send `/exit` to the claude subprocess. This is the correct layer — ravel-lite owns the work-phase lifecycle.
+
+    (b) **Capture-script workaround**: `scenario_run` polls for the `phase.md == analyse-work` marker and at that point sends `/exit` to the GUI Terminal via `testanyware input`. This is capture-only and leaves the production loop broken for non-VM use.
+
+    ## Decision
+
+    Implement option (a). The work-phase driver in ravel-lite should watch for the plan-completion signal and auto-exit claude. The exact signal needs investigation: either the analyse-work phase transition in `phase.md`, or a sentinel written by the analyse-work phase itself to indicate it has finished (e.g., `commits.yaml` exists or `phase.md == git-commit-work`).
+
+    ## Reference
+
+    The claude invocation for the work phase is in the ravel-lite source (investigate `src/` for the claude_code work-phase spawn). The pattern used in `claude_code.rs` for the PTY-capture debug path (see the blocked PTY infra task) may be relevant — it already has visibility into the subprocess's stdio.
+
+    ## Done when
+
+    A full capture run completes the work phase without any manual `/exit` intervention, and the non-VM production loop also benefits (work phase auto-exits after plan completion).

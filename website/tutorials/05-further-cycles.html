@@ -9,18 +9,18 @@
 <h2 id="_cycle_2_a_hand_off_appears">Cycle 2: a hand-off appears</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Answer <code>y</code> at the <strong>Proceed to next work phase?</strong> prompt and the loop begins again. The work phase reads a now-richer context: the same README, the now-four-entry memory, and a backlog with one task <code>done</code> and two <code>not_started</code>.</p>
+<p>Answer <code>y</code> at the <strong>Proceed to next work phase?</strong> prompt and the loop begins again. The work phase reads a now-richer context: the same README (extended in cycle 1 with a full entry-format spec), the now-four-entry memory, and a two-task backlog — the type-theory task and the cross-link task that depends on it.</p>
 </div>
 <div class="paragraph">
-<p>Pick the type-theory task this time:</p>
+<p>Pick the type-theory task:</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-text" data-lang="text">&gt; the type-theory entries
 
-Working on: Add five type-theory entries on dependent typing.
+Working on: Add five type-theory entries focused on dependent-typing introductions.
 
-[edits reading-list.md, creates notes/lof-pierce-tapl.md, ...]
+[edits reading-list.md, creates notes/pierce-tapl.md, notes/norell-agda-tutorial.md, ...]
 
 Done. Set status to done, recorded results.
 
@@ -50,25 +50,20 @@ the catalog.</code></pre>
 </ul>
 </div>
 <div class="paragraph">
-<p>For this hand-off, <strong>promote</strong> is the right call — adding implementation cross-references is concrete, scoped work that fits as its own task. After triage you should see something like:</p>
+<p>For this hand-off, <strong>promote</strong> is the right call — adding implementation cross-references is concrete, scoped work that fits as its own task. After triage the backlog has shed the type-theory task (done tasks are removed by triage; their record lives in the git history and session log) and gained the promoted hand-off:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ ravel-lite state backlog list \
-    ~/Development/ravel-tutorial-example/LLM_STATE/main --format markdown
-
-## reading-list
+<pre class="highlight"><code class="language-text" data-lang="text">## reading-list
 
 | title                                                          | status      |
 |----------------------------------------------------------------|-------------|
-| Add first ten distributed-systems entries                      | done        |
-| Add five type-theory entries on dependent typing               | done        |
 | Cross-link entries that cite each other                        | not_started |
 | Add implementation: cross-references for Idris/Agda entries    | not_started |</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>The new task, promoted from the hand-off, is now first-class. Triage clears the <code>handoff</code> field on the original task after promoting; the original task&#8217;s <code>Results:</code> block stays intact, so the audit trail still ties the new task to its origin.</p>
+<p>The new task, promoted from the hand-off, is now first-class. The original task&#8217;s <code>Results:</code> block — written during the work phase before triage ran — stays in the git history (look at <code>git show &lt;reflect-commit&gt;:LLM_STATE/main/backlog.yaml</code> if you want to see the pre-triage shape), so the audit trail still ties the new task to its origin.</p>
 </div>
 </div>
 </div>

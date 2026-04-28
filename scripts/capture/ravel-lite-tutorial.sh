@@ -352,7 +352,7 @@ transfer_claude_auth() {
   log AUTH "transferring claude OAuth credentials (HARNESS-ONLY)"
   local creds_file
   creds_file="$(mktemp -t claude-creds.XXXXXX)"
-  trap 'rm -f "$creds_file"' RETURN
+  trap 'rm -f "${creds_file:-}"' RETURN
   security find-generic-password \
     -s "Claude Code-credentials" -a "$USER" -w >"$creds_file"
   testanyware upload --vm "$VM_ID" "$creds_file" "/tmp/claude-creds.json"
@@ -568,10 +568,16 @@ scenario_run() {
   # runs: the prior cycle's tail is already a save-work-baseline commit,
   # so a string-only match would short-circuit before the new cycle
   # starts.
-  local pre_run_sha
+  # The 30s testanyware-exec agent-channel timeout fires here on a cold
+  # agent (verified empirically). Tolerate failure: an empty pre_run_sha
+  # is still useful — the polling check requires save-work-baseline
+  # at HEAD, which won't be true until the cycle actually completes,
+  # so we cannot short-circuit even with the SHA-difference predicate
+  # vacuously satisfied.
+  local pre_run_sha=""
   pre_run_sha=$(testanyware exec --vm "$VM_ID" \
     "$VM_SHELL_PRELUDE cd $project_dir && git rev-parse HEAD" 2>/dev/null \
-    | tr -d '[:space:]')
+    | tr -d '[:space:]') || pre_run_sha=""
   log SCENARIO_RUN "pre-run HEAD: ${pre_run_sha:-<unknown>}"
 
   log SCENARIO_RUN "invoking 'ravel-lite run' in the GUI Terminal"

@@ -4,17 +4,17 @@ A single cycle gives you a feel for the loop's mechanics. The texture of ravel-l
 
 == Cycle 2: a hand-off appears
 
-Answer `y` at the *Proceed to next work phase?* prompt and the loop begins again. The work phase reads a now-richer context: the same README, the now-four-entry memory, and a backlog with one task `done` and two `not_started`.
+Answer `y` at the *Proceed to next work phase?* prompt and the loop begins again. The work phase reads a now-richer context: the same README (extended in cycle 1 with a full entry-format spec), the now-four-entry memory, and a two-task backlog — the type-theory task and the cross-link task that depends on it.
 
-Pick the type-theory task this time:
+Pick the type-theory task:
 
 [source,text]
 ----
 > the type-theory entries
 
-Working on: Add five type-theory entries on dependent typing.
+Working on: Add five type-theory entries focused on dependent-typing introductions.
 
-[edits reading-list.md, creates notes/lof-pierce-tapl.md, ...]
+[edits reading-list.md, creates notes/pierce-tapl.md, notes/norell-agda-tutorial.md, ...]
 
 Done. Set status to done, recorded results.
 
@@ -32,24 +32,19 @@ Continue through analyse-work, reflect, dream-trigger-skipped, and triage. Triag
 * *Archive.* Add it to durable memory if it is a learning that future cycles need to remember.
 * *Dispatch.* If a peer plan would benefit from the hand-off (the cross-plan graph names one as `related`), write a `subagent-dispatch.yaml` entry asking the orchestrator to spawn a subagent against the peer.
 
-For this hand-off, *promote* is the right call — adding implementation cross-references is concrete, scoped work that fits as its own task. After triage you should see something like:
+For this hand-off, *promote* is the right call — adding implementation cross-references is concrete, scoped work that fits as its own task. After triage the backlog has shed the type-theory task (done tasks are removed by triage; their record lives in the git history and session log) and gained the promoted hand-off:
 
-[source,bash]
+[source,text]
 ----
-$ ravel-lite state backlog list \
-    ~/Development/ravel-tutorial-example/LLM_STATE/main --format markdown
-
 ## reading-list
 
 | title                                                          | status      |
 |----------------------------------------------------------------|-------------|
-| Add first ten distributed-systems entries                      | done        |
-| Add five type-theory entries on dependent typing               | done        |
 | Cross-link entries that cite each other                        | not_started |
 | Add implementation: cross-references for Idris/Agda entries    | not_started |
 ----
 
-The new task, promoted from the hand-off, is now first-class. Triage clears the `handoff` field on the original task after promoting; the original task's `Results:` block stays intact, so the audit trail still ties the new task to its origin.
+The new task, promoted from the hand-off, is now first-class. The original task's `Results:` block — written during the work phase before triage ran — stays in the git history (look at `git show <reflect-commit>:LLM_STATE/main/backlog.yaml` if you want to see the pre-triage shape), so the audit trail still ties the new task to its origin.
 
 == Cycle 3: memory growth and the dream trigger
 

@@ -7,6 +7,9 @@
 # Playwright MCP scratch dir (created when a work phase uses the
 # browser tools to visually verify built HTML)
 .playwright-mcp/
+# Claude Code per-project runtime state (scheduled-task lock, local
+# settings overrides). Personal/per-machine; never shipped with the repo.
+.claude/
 # Raw outputs from scripts/capture/*.sh (TestAnyware capture runs).
 # Tutorial authors selectively `git add` the screenshots and state
 # samples that ship in chapters.
