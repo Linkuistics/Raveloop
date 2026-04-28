@@ -77,7 +77,7 @@ tasks:
   title: Replace tutorial illustrative transcripts with TestAnyware-captured transcripts
   category: docs
   status: blocked
-  blocked_reason: scripts/capture/ravel-lite-tutorial.sh has known-approximation status (VNC_ENDPOINT/AGENT_ENDPOINT unvalidated on a live VM); unblock once a TestAnyware run completes successfully
+  blocked_reason: 'Capture script extended for per-command transcripts and validated against testanyware 0.2.0 CLI surface (the prior ''vm list --format json'' approximation was actually broken, now fixed via deterministic --id and --vm resolution). Remaining: a dedicated phase for the live VM run + per-chapter ---- block replacement in chapters 01-05.'
   dependencies: []
   description: |
     Replace the illustrative terminal transcripts in tutorial chapters
@@ -112,3 +112,35 @@ tasks:
 
     All five tutorial chapters use verbatim captured output and the rendered
     HTML passes a visual spot-check.
+  results: |
+    ## Scope executed (option B)
+
+    User unblocked the task ("TestAnyware has a vm, and that is the only issue unblocked") and chose option B from a three-way scoping menu: extend the capture script for terminal-text capture and validate it against the real `testanyware` CLI surface, without spending live VM time. The task's full scope (live run + per-chapter block replacement) was deliberately deferred to a follow-up phase.
+
+    ## What changed
+
+    **`scripts/capture/ravel-lite-tutorial.sh`** — substantive rewrite:
+
+    - **Endpoint discovery removed.** Probing `testanyware vm list --help` showed the subcommand accepts NO flags — `--format json` does not exist. The previous `vm list --format json | jq` pipeline would have failed at first contact with a live VM. Replaced with deterministic `VM_ID="ravel-lite-tutorial-$(date -u +%Y%m%dT%H%M%SZ)"` passed to `vm start --id` and reused via `--vm "$VM_ID"` thereafter; testanyware itself resolves `--vm <id>` against its own per-VM spec at `$XDG_STATE_HOME/testanyware/vms/<id>.json`. The `VNC_ENDPOINT`/`AGENT_ENDPOINT` env-var override block and the `jq` dependency are gone.
+    - **Transcript capture added.** New `transcripts/` output dir under `docs/captures/ravel-lite-tutorial/`, plus a `transcript_at <label> <command>` helper that runs the command on the VM with `RAVEL_LITE_CONFIG` pre-set and captures combined stdout+stderr to `<label>.txt`. The transcript leads with `$ <command>` so files drop paste-ready into `[source,console]` blocks; the env-var bookkeeping is added at the wire level only, kept off the displayed line so transcripts match the chapters' user-perspective phrasing.
+    - **Chapter coverage**: chapters 01 (`install-and-config`) and 02 (`the-project`) now have explicit transcript captures wired (`01-version`, `01-init-fresh`, `01-init-refuse`, `01-init-force`, `01-ls-phases`, `01-projects-list-empty`, `02-git-init`, `02-git-commit`, `02-projects-add`, `02-projects-list-populated`). Tolerates non-zero exit (the `01-init-refuse` case is expected to fail).
+    - **TUI flow unchanged in shape, retargeted to `--vm`.** Chapters 04–05 stay screenshot-driven because TUI stdout lives inside the VM's GUI Terminal, not on the agent channel. Chapter 03 (`ravel-lite create`) is not yet captured — also interactive, deferred to next iteration.
+    - **Header doc rewritten** to explain endpoint plumbing, the headless-vs-TUI capture split, and what's deliberately not in scope yet.
+
+    ## Validation done
+
+    - Probed every `testanyware` 0.2.0 subcommand the script invokes (`vm start`, `vm stop`, `exec`, `screenshot`, `find-text`, `download`, `input type`, `input key`) and confirmed every flag in the rewritten script matches.
+    - `bash -n` syntax check passes.
+    - No `shellcheck` available locally, so no lint-level pass beyond `bash -n`.
+
+    ## What did NOT happen (and why)
+
+    - **No live VM run.** Option B was specifically scoped to avoid the wall-clock and VM-budget cost of a real run. The script is now ready for one but hasn't been exercised end-to-end.
+    - **No chapter edits.** The 58 `----` listing delimiters across `docs/tutorial/01..05*.adoc` are still illustrative content; replacing them with verbatim captures is the next-phase deliverable.
+    - **No memory update.** The existing memory entry `capture-scripts-template-documentation-with-real-system-runs` still describes the old approximation; updating it is reflect's job, not work's.
+
+    ## What this suggests next
+
+    - A dedicated phase to run the script live, debug whatever real-VM behaviour diverges from `--help`-deduced assumptions, and fold the resulting `transcripts/` files into chapters 01–02 as a first cut.
+    - Chapter 03 (`ravel-lite create`) needs a capture mechanism that handles interactive prompt-and-response — likely `testanyware input type` on a real terminal with `find-text` waits, plus `script(1)` recording inside the VM if we want full text fidelity. Worth scoping separately from the headless 01-02 work.
+    - Memory entry `capture-scripts-template-documentation-with-real-system-runs` is now factually wrong on the "vm list --format json approximation" — reflect should rewrite it to reflect the post-rewrite design (deterministic `--id` + `--vm` resolution, no JSON parsing) so the historical "approximation" framing doesn't mislead future drift checks.

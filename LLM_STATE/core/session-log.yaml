@@ -1085,3 +1085,13 @@ sessions:
     - Rendered all six HTML fragments into `website/tutorials/` and updated `website/meta.yml` nav to list all five new chapters
     - Discovered: the `publish-new-docs-update-projects-ravel-lite-html-hub-and-sync-yml` follow-up task is obsolete — it targets `projects/ravel-lite.html` and `SYNC.yml`, neither of which exists in the post-2026-04-26 pipeline; the current pipeline reads `website/` via `git archive` directly
     - What's next: mark the publish follow-up task as obsolete in triage; TestAnyware-VM-captured transcripts remain future polish
+- id: session-75
+  timestamp: 2026-04-28T00:32:29Z
+  phase: work
+  body: |
+    ### Session 75 (2026-04-28T00:32:29Z) — Rewrite tutorial capture script for testanyware 0.2.0
+
+    - Attempted: validate and extend `scripts/capture/ravel-lite-tutorial.sh` against the real `testanyware` 0.2.0 CLI surface, adding transcript-capture capability for chapters 01-02 headless commands.
+    - What worked: The script was substantively rewritten. The broken `vm list --format json` endpoint-discovery pipeline was replaced with deterministic `VM_ID` generation passed to `vm start --id` and reused via `--vm` throughout. A `transcript_at <label> <command>` helper was added that captures per-command stdout+stderr to `transcripts/<label>.txt` in paste-ready `[source,console]` format. Chapter 01 and 02 transcript captures are now explicitly wired (11 named captures). Every `testanyware` subcommand the script invokes was validated against `--help` output. `bash -n` syntax check passes.
+    - What didn't: No live VM run was executed (option B scope explicitly deferred wall-clock cost). Chapter 03 (`ravel-lite create`) is still interactive and uncaptured. The 58 `----` listing delimiters in chapters 01-05 remain illustrative.
+    - What this suggests trying next: Run the rewritten script against a live TestAnyware VM, debug any divergence between `--help`-deduced assumptions and real VM behaviour, then fold `transcripts/01-*.txt` and `transcripts/02-*.txt` into the respective tutorial chapters as a first cut.
