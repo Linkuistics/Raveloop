@@ -1,11 +1,11 @@
-id: session-79
-timestamp: 2026-04-28T06:25:02Z
+id: session-80
+timestamp: 2026-04-28T10:17:07Z
 phase: work
 body: |
-  ### Session 79 (2026-04-28T06:25:02Z) — Fold live-captured transcripts into tutorial chapters 04 and 05
+  ### Session 80 (2026-04-28T10:17:07Z) — Fix chapter-03/chapter-04 cross-talk in capture script
 
-  - Attempted: run `scripts/capture/ravel-lite-tutorial.sh` against a live TestAnyware macOS VM to capture chapters 04-05 transcripts, then fold the output into the tutorial prose and re-render HTML.
-  - What worked: all target transcripts captured (git log, session-log show-latest, memory list, backlog list after triage); folded into chapters 04 and 05 replacing all illustrative placeholders; two capture-script bugs found and fixed during the run; HTML re-rendered cleanly.
-  - Three prose corrections that came out of comparing illustrative vs. real output: (a) first cycle has no leading save-work-baseline between the scaffold and the work commit; (b) triage removes done tasks rather than leaving them open; (c) work commit messages are diff-authored, not templated as `run-plan: work`. Chapter 05 task names also normalised to match the real create-flow output from chapter 03.
-  - Three script bugs encountered: (1) `transfer_claude_auth` RETURN trap dereferenced `$creds_file` under `set -u` — fixed with `${creds_file:-}`; (2) `scenario_run` pre-run SHA capture had no failure tolerance for cold-agent 30s timeout — fixed with `|| pre_run_sha=""`; (3) chapter-03 driver doesn't wait for claude to exit before typing into the GUI Terminal — not fixed, worked around manually.
-  - What this suggests next: fix the chapter-03/chapter-04 cross-talk (add `/exit` wait after the polling-for-backlog check); decide which layer owns work-phase auto-exit (ravel-lite vs. capture script).
+  - **Attempted:** Fix the chapter-03 → chapter-04 cross-talk bug where `scenario_run` started typing `ravel-lite run ...` into the GUI Terminal while claude's TUI was still active after plan creation, causing input to be absorbed by claude rather than the shell.
+  - **Worked:** Added a `/exit` + sentinel-echo handshake at the tail of `capture_chapter03_create_session` in `scripts/capture/ravel-lite-tutorial.sh`. The fix sends `/exit` + Return into the GUI Terminal, then types `echo CHAPTER_03_CLAUDE_EXITED` + Return, and uses `testanyware find-text … "CHAPTER_03_CLAUDE_EXITED" --timeout 30` to confirm the shell is back before the function returns. The fix is robust to claude having already exited — `/exit` becomes a harmless command-not-found and the sentinel still renders. Also updated a stale docstring comment in the same function.
+  - **Didn't work / deferred:** Full end-to-end verification (a clean chapter-01-through-04 capture run) was not feasible inside this work phase — it requires a real TestAnyware VM. The sentinel handshake is the right failure mode: if it times out, the script errors loudly rather than silently misfiring.
+  - **Blocked:** `auto-exit-work-phase-claude-after-plan-completion` was moved to `blocked`. User design decision (2026-04-28): work-phase claude must remain interactive after plan completion. The cross-talk fix therefore belongs in the capture script, not in ravel-lite core.
+  - **Next:** Run the capture script end-to-end to empirically confirm chapter-03 → chapter-04 no longer cross-talks. Also stop the kept TestAnyware VM `ravel-lite-tutorial-20260428T045749Z` (separate backlog item).

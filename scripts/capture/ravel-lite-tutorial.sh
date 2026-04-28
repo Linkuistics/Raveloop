@@ -468,9 +468,10 @@ capture_chapter02_transcripts() {
 #
 # Screenshots are taken at fixed intervals (no find-text dependency
 # on prompt characters; macOS zsh defaults to '%', not the '$' an
-# earlier draft assumed). The marker `echo CHAPTER_03_CREATE_DONE`
-# is the only deterministic completion signal — it appears in the
-# Terminal only after claude has exited and the shell prompt is back.
+# earlier draft assumed). Completion is detected by polling
+# `backlog.yaml` on disk via the agent channel; a final `/exit` is
+# sent into the GUI Terminal so claude's TUI hands the shell back
+# before the next chapter starts typing into the same Terminal.
 capture_chapter03_create_session() {
   log CAPTURE_SCREENS "chapter 03: creating-a-plan (single-shot description)"
   vm_run "open -a Terminal"
@@ -519,6 +520,27 @@ capture_chapter03_create_session() {
     fi
   done
   screenshot_at "03-conversation-completion"
+
+  # Claude has finished plan creation but its TUI does not exit on its
+  # own — it stays interactive in case the user wants to add more
+  # input. Without an explicit `/exit` here, the next chapter's
+  # `ravel-lite run` typing in scenario_run is absorbed by claude's
+  # TUI rather than the shell (chapter-03/chapter-04 cross-talk).
+  #
+  # Send `/exit` + Return, then a sentinel echo, and use find-text to
+  # confirm the shell processed it before returning. The shell echoes
+  # the sentinel verbatim; claude's TUI does not, so seeing the
+  # sentinel rendered proves we are back at a real prompt. This is
+  # robust to claude already having exited on its own — the `/exit`
+  # then becomes a harmless command-not-found at the shell, and the
+  # sentinel still appears.
+  log SCENARIO_RUN "exiting claude TUI to return shell control"
+  testanyware input type --vm "$VM_ID" "/exit"
+  testanyware input key --vm "$VM_ID" return
+  testanyware input type --vm "$VM_ID" "echo CHAPTER_03_CLAUDE_EXITED"
+  testanyware input key --vm "$VM_ID" return
+  testanyware find-text --vm "$VM_ID" "CHAPTER_03_CLAUDE_EXITED" --timeout 30 >/dev/null
+  log SCENARIO_RUN "claude exited; shell prompt confirmed"
 }
 
 # capture_chapter03_post_state captures the deterministic post-create
