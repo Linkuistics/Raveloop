@@ -661,10 +661,6 @@ entries:
   title: TUI banner text differs from YAML `phase:` field
   body: |
     `find-text "phase: work"` will never match in a capture run: the string `phase: work` lives in YAML state files only; the TUI renders the phase name via `term_title.rs` OSC escapes and banner text, not the raw YAML field. Use a screenshot or a banner-text string for phase-change sync points.
-- id: chapter-03-capture-driver-does-not-wait-for-claude-exit-before-chapter-04
-  title: Chapter 03 capture driver does not wait for claude exit before chapter 04
-  body: |
-    The chapter-03 scenario setup does not issue an `/exit` wait after the polling-for-backlog check. Without it, the chapter-03 `claude` process may still be running when chapter-04 starts typing into the GUI Terminal. Currently worked around manually during live VM capture runs. Fix: add `/exit` wait in the chapter-03/04 transition before chapter-04 GUI input.
 - id: testanyware-download-cannot-pull-a-directory-use-per-file-exec-workaround
   title: testanyware download cannot pull a directory; use per-file exec workaround
   body: |
@@ -673,3 +669,7 @@ entries:
     Workaround used: capture individual transcripts via headless `testanyware exec` calls; this covers everything the tutorial prose needs.
 
     Full fix options: (a) recursive walk + per-file download; (b) tar roundtrip (`testanyware exec -- tar czf /tmp/llm_state.tar.gz LLM_STATE && testanyware download /tmp/llm_state.tar.gz`). Low priority because the per-file exec workaround is sufficient for prose-fold tasks.
+- id: capture-chapter-transitions-use-exit-sentinel-echo-before-next-chapter
+  title: Capture chapter transitions use /exit + sentinel echo before next chapter
+  body: |
+    At the tail of a capture chapter that may leave Claude running (e.g., `capture_chapter03_create_session`), send `/exit` + Return into the GUI Terminal, type `echo <SENTINEL>` + Return, and wait with `testanyware find-text "<SENTINEL>" --timeout 30`. Robust to Claude having already exited: `/exit` becomes harmless command-not-found and the sentinel still renders. Prevents the next chapter from typing into a Claude TUI instead of the shell. See: `Hybrid capture splits screenshot vs transcript_at by content stability`.
